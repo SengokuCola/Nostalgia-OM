@@ -1,3 +1,8 @@
+> [!WARNING]
+> **Experiment branch `experiment/screen-info`, not for use.** Shooting-screen items (2026-11-14): how the OM-3 draws
+> its shooting info and whether single items can be hidden. Research only, emulator probes, no camera build; details in
+> `research/NOTES.md`, "Shooting-screen info", and `research/screeninfo/`.
+
 <h1 align="center">Caduceus for OM-3</h1>
 
 

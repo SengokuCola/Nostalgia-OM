@@ -1,5 +1,9 @@
 // Editor test 1 in a full om-emu E147 play session (our script).
 //   OM_EMU_MODEL=E147 node session_ed1.mjs EMU_DIR IMAGE CARD.omsd OUT.json SAVE.omsd 'tokens...'
+// DEVICE=evf runs the session (and its shots) on the viewfinder instead of the rear screen. More tokens (screen-info
+// research, 2026-11-14): rdump:ADDR:LEN:FILE (hex) writes memory to a file, w8:ADDR=HEX writes bytes, strdump:FILE the
+// camera's text table as JSON, dbdump:FILE the GUI variable store (0x6036f6e4: every variable's address, size, bytes),
+// panels prints the GUI panels shown so far, warm arms the WRANGE watch (as 'down' does) without a key.
 // NV_FILE=PATH keeps the camera's settings between runs (S-NVRAM). Tokens: s1 (half-press click), ok/down/info/... (key click), main+N / sub+N (dials), wait. After each token: STATE,
 // the editor fields of P (marker, axis, dirty, status), slot 0..3 hue/light/flags, and the settings 928..975 + 2197.
 const [EMU, IMAGE, CARD, OUT, SAVE, SCRIPT] = process.argv.slice(2);
@@ -19,7 +23,7 @@ const rom = expandImage(new Uint8Array(fs.readFileSync(IMAGE)));
 const nvram = process.env.NV_FILE ? (await import(EMU + '/host/nvram.mjs')).fileNvram(process.env.NV_FILE) : null;
 const env = { rom, resBlock: loadBlock(), createHash, card, ...(nvram ? { nvram } : {}),
   deflate: (b, l) => new Uint8Array(zlib.deflateSync(b, { level: l })), inflate: (b) => new Uint8Array(zlib.inflateSync(b)) };
-const pl = new Player({ ...PLAYER_PARSER, no_browser: true, idle: 'off', a15: 'on', out: '<out>', no_wait_on_error: true, device: 'tft' },
+const pl = new Player({ ...PLAYER_PARSER, no_browser: true, idle: 'off', a15: 'on', out: '<out>', no_wait_on_error: true, device: process.env.DEVICE || 'tft' },
   { ...env, wallClock: () => performance.now() / 1000 });
 pl.open_session();
 const s = pl.session, lab = s.lab, log = []; let saved_sp_for_desc;
@@ -59,8 +63,24 @@ for (const t of SCRIPT.split(/\s+/).filter(Boolean)) {
     const parts = []; for (const [lo, hi] of [[0x60000000, 0x63000000], [0xa2000000, 0xa6000000]]) { for (let a = lo; a < hi; a += 0x100000) parts.push(Buffer.from(rd(a, 0x100000))); }
     fs.writeFileSync(t.slice(5), Buffer.concat(parts));
   }
+  else if (t.startsWith('rdump:')) { const [lo, n, f] = t.slice(6).split(':'); fs.writeFileSync(f, Buffer.from(rd(parseInt(lo, 16) >>> 0, parseInt(n, 16)))); }
+  else if (t.startsWith('w8:')) { const [a, hex] = t.slice(3).split('='); lab.sim.write(parseInt(a, 16) >>> 0, Uint8Array.from(Buffer.from(hex, 'hex'))); }
+  else if (t.startsWith('strdump:')) {
+    const tab = u32((0x603794a0 + 4 * rd(0x6036f980, 1)[0]) >>> 0), out = {};
+    for (let i = 0; i < 40000; i++) { let p; try { p = u32(tab + 4 * i); } catch (e) { break; } if (p < 0x60000000 || p > 0xb0000000) continue;
+      try { const b = rd(p, 2), wide = b[1] === 0; let s = '', o = p; for (let k = 0; k < 400; k++) { if (wide) { const c = u16(o); if (!c) break; s += String.fromCharCode(c); o += 2; } else { const c = rd(o, 1)[0]; if (!c) break; s += String.fromCharCode(c); o += 1; } } out[i] = s; } catch (e) {} }
+    fs.writeFileSync(t.slice(8), JSON.stringify(out)); console.log('STRDUMP', tab.toString(16), Object.keys(out).length);
+  }
+  else if (t.startsWith('dbdump:')) {      // the display DB (0x6036f6e4): every entry's {get, set, ptr, size} and its bytes
+    const obj = u32(0x6036f6e4), tab = u32(obj + 8), n = u16(obj + 12), out = { obj: obj.toString(16), tab: tab.toString(16), n, e: {} };
+    for (let i = 0; i < n; i++) { const e = tab + 16 * i, g = u32(e), st = u32(e + 4), p = u32(e + 8), sz = u32(e + 12); let b = '';
+      if (p && sz && sz < 0x10000) { try { b = Buffer.from(rd(p, sz)).toString('hex'); } catch (x) { b = 'ERR'; } }
+      out.e[i] = [g.toString(16), st.toString(16), p.toString(16), sz, b]; }
+    fs.writeFileSync(t.slice(7), JSON.stringify(out)); console.log('DBDUMP', out.obj, out.tab, n);
+  }
+  else if (t === 'panels') { console.log('PANELS', JSON.stringify(lab.panels.slice(-30))); }
   else if (t.startsWith('shot:')) {
-    s.scene_frame(); s.a15_apply('tft'); const comp = lab.compose('tft', true, true); const w = comp.header.width, h = comp.header.height, px = comp.raw; const bpp = px.length / (w * h); console.log('shot', w, h, bpp, comp.status, comp.errors.length);
+    const DV = process.env.DEVICE || 'tft'; s.scene_frame(); s.a15_apply(DV); const comp = lab.compose(DV, true, true); const w = comp.header.width, h = comp.header.height, px = comp.raw; const bpp = px.length / (w * h); console.log('shot', w, h, bpp, comp.status, comp.errors.length);
     const raw = Buffer.alloc((w * 3 + 1) * h);
     for (let y = 0; y < h; y++) { raw[y * (w * 3 + 1)] = 0; for (let x = 0; x < w; x++) { const i = (y * w + x) * bpp, o = y * (w * 3 + 1) + 1 + x * 3; raw[o] = px[i]; raw[o + 1] = px[i + 1]; raw[o + 2] = px[i + 2]; } }
     const crcT = []; for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; crcT[n] = c >>> 0; }
@@ -212,9 +232,9 @@ for (const t of SCRIPT.split(/\s+/).filter(Boolean)) {
     s.switch_input('power', 1 - s.bit_of('power')); const off = s.power_down(); log.push({ step: t, power_off: off ? true : null }); break;
   }
   else if (t.startsWith('hold:')) { const k = t.slice(5); s.key(k, 'down'); s.camapp.pump(); s.idle_slice(lab.lab_time() + 2000e6); s.key(k, 'up'); s.camapp.pump(); }
-  else if (t !== 'wait') { s.key(t, 'down'); s.camapp.pump(); s.idle_slice(lab.lab_time() + 150e6); s.key(t, 'up'); s.camapp.pump(); }
+  else if (t !== 'wait' && t !== 'warm' && t !== 'panels') { s.key(t, 'down'); s.camapp.pump(); s.idle_slice(lab.lab_time() + 150e6); s.key(t, 'up'); s.camapp.pump(); }
   curStep = t; s.idle_slice(lab.lab_time() + 1200e6); snap(t);
-  if (wdbg) { if (t === 'down') wdbg.watch(WRANGE.split(',').map((r, i) => { const [lo, n] = r.split(':'); return { id: i, lo: parseInt(lo, 16), len: parseInt(n, 16), kind: process.env.WKIND || 'r', action: 'log' }; })); for (const r of wdbg.watchLog()) wlog.push({ step: t, id: r.id, pc: r.pc.toString(16), addr: (r.addr >>> 0).toString(16) }); }
+  if (wdbg) { if (t === 'down' || t === 'warm') wdbg.watch(WRANGE.split(',').map((r, i) => { const [lo, n] = r.split(':'); return { id: i, lo: parseInt(lo, 16), len: parseInt(n, 16), kind: process.env.WKIND || 'r', action: 'log' }; })); for (const r of wdbg.watchLog()) wlog.push({ step: t, id: r.id, pc: r.pc.toString(16), addr: (r.addr >>> 0).toString(16) }); }
 }
 const st = s.storage;
 const nv = lab.store_log?.nvram;
