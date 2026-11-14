@@ -4322,3 +4322,38 @@ already draws as "not shown"):
   om-emu never drew (battery, warnings), EVF styles 1 / 2, HDMI, whether a hidden touch icon still allows touch.
 - **Rough effort:** firmware hook + LookLab panel: 1 build, 1-2 camera rounds. On-camera menu page: +2-4 rounds.
 - Waiting for the owner's choice; no test firmware built.
+
+## Film Mode, step 2 of the research: frames left on the screen, and the open design points (2026-11-14; emulator + analysis)
+Follows "Film Mode (a "roll" that locks the film): feasibility" (2026-11-12, tabled) and uses "Shooting-screen info"
+above. Research lab (`experiment/screen-info`); nothing built for the camera.
+- **Frames left can use the camera's own shots-left number** (om-emu, stock main block + the `set` probe):
+  `research/screeninfo/run.sh set fm_36 '34:8:1:24,34:9:1:00' 'wait wait shot:a.png'` with `NV_SRC=` saved settings
+  (`~/om3-work/wheel/nv3.json`) puts 36 in var 34 +8 as it is set: the top row shows **36** where stock shows 803, same
+  font and place, nothing else changes. So the number is drawn from the GUI field, not from setting 803 itself.
+  **Emulator only.** A real build would write the roll's frames left into the updater's buffer (slot (8,sp), +8 u16,
+  +12 the shown flag) in the same hook as the hide lists (0x6123043d), only while a roll runs and only in stills; movie
+  time (+16) is left alone. Setting 803 and the camera's card-full logic are never touched (analysis): the camera still
+  stops at a full card, and the card's own count comes back when no roll runs.
+- **Where the roll lives (analysis, on camera-tested pieces):** a few bytes in store M's tail next to the user block
+  (on, length, shots taken, the locked selection: COLOR k / FILM j and its 897 / 901 values); M survives power-off,
+  battery pulls and card swaps (mp1, f2: camera-tested). Count in RAM in `ex_hook` (once per photo, in the capture: no
+  settings calls there); copy to M and set the changed byte 0xa32bfb32 at the next gated shutter event (`ub_try`'s
+  moment, never during capture or start-up). The camera writes M on the return from a menu and at power-off, so a
+  battery pull can lose the frames since the last save (a count a few frames short; never a corrupt block: the CRC
+  covers it). Nothing at start-up: the lock and the counter start working at the first half-press, as films do.
+- **Locked (analysis):** in `sx_set` (facade SetValue for 897 / 901) a running roll replaces any new value with the
+  locked one: the Creative Dial, the Picture Mode list, our film strip and the FILM rows all land back on the roll's film
+  (the v0.27 dial mapping did this rewrite, camera-tested). Paths not through the facade (custom-mode C1-C4 recall, menu
+  reset, power-on's direct 897 set): re-check at each half-press and set the locked film back. Not traced: whether C1-C4
+  recall goes through the facade. Film *edits* (sliders) for the locked film: open (owner choice; lock them or not).
+- **Counting (analysis; camera to confirm):** one frame per shutter release that makes a photo: RAW+JPEG = 1, each
+  burst frame = 1, deleting does not give frames back (like film). Open: does `ex_hook` run for RAW-only shots (the ORF
+  has EXIF; not checked), and for Pro Capture / High Res / Live ND / focus bracketing composites (one frame each?).
+  Fallback: the camera's file number (not traced). Video: not counted, film not changeable in video either (to decide).
+- **End of the roll (proposal):** at 0 the number shows 0 (and the FILM cell could say "END"); frames shot in a burst
+  past 0 are kept as normal photos; at the next half-press the roll is closed, the lock lifts and the card count
+  returns. Owner to choose: Film Mode stays on and the next roll starts when a film is picked, or it turns off.
+- **Setting it:** a Picture Mode choice row "Film Mode" (Off / 24 / 36 / 72) as for Film Grain, or in LookLab with the
+  Extras. Starting a roll while one runs, or turning it off early, needs a "rewind" choice (owner to decide).
+- Effort (guess): after the screen-info hook exists, 1 build and 2-3 camera rounds; alone, the counter on the screen
+  is the larger half. Status: analysis + one emulator check (the number field); nothing on the camera.
