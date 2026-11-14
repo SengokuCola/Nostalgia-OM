@@ -4357,3 +4357,32 @@ above. Research lab (`experiment/screen-info`); nothing built for the camera.
   Extras. Starting a roll while one runs, or turning it off early, needs a "rewind" choice (owner to decide).
 - Effort (guess): after the screen-info hook exists, 1 build and 2-3 camera rounds; alone, the counter on the screen
   is the larger half. Status: analysis + one emulator check (the number field); nothing on the camera.
+
+## Screen info, design step: the stock Info Settings menu and the INFO cycle (2026-11-14; emulator + analysis, nothing built)
+Branch `feature/screen-info` (from `experiment/screen-info` 3347e53). Owner's design (2026-11-14): a menu page like the
+camera's own info-display settings, with show / hide per item, several set-ups, INFO cycles through them.
+- **Menu (om-emu, v0.29.3 build):** Custom menu, page "4. Information" (`menu left left` from Card/Folder/File): EVF
+  Style, Camera Info Settings, Info by half-pressing, EVF Camera Info Settings, EVF Level Gauge, Movie Info Settings.
+  Each Info Settings page is a tick list: Image Only, Information 1 (always on, greyed), Information 2, Information 3,
+  each Information row with a ">" sub-page of tick rows. Stills rear and EVF sub-pages: histogram, Highlight&Shadow, Level
+  Gauge (+ Silent Operation on the rear). The movie sub-pages already have 12 per-item rows (histogram, level,
+  stabiliser, picture mode, WB, AF mode, subject detection, sound meter, headphone volume, time code, silent, grid)
+  and scroll: the stills pages can take a longer list the same way.
+- **Row records (static reading):** 28 B each, from 0x6156c5d0: `{u16 0, u16 sid, u16 4, u16 label, u32 0x6156b26c,
+  12 B 0}` (0x6156b26c = the tick-box row handler). Stills rear Info 1 `{805, 806, 807, 2089}` at 0x6156c608, Info 2
+  `{811..813, 2091}` 0x6156c678, Info 3 `{2094, 2092, 2093, 2096}` 0x6156c6e8; EVF Info 1 `{808..810}` 0x6156c7c8, Info 2
+  `{814..816}` 0x6156c81c, Info 3 `{2102, 2100, 2101}` 0x6156c870; movie Info 1 12 rows 0x6156c918, Info 2 0x6156ca68.
+  Top lists: rear `{802, 2087, ...}` 0x6156c5d0.., EVF `{803, 804, 2097}` 0x6156c774. Menu descriptors 24 B from
+  ~0x6156d088: `{u32 id, u32 rows, u32 count, u32 ?, u32 0x6156b328, u32 ?}` (e.g. rows 0x6156c60c count 4 at
+  0x6156d0a4, movie Info 1 count 12 at 0x6156d164). So a longer stills sub-page = a copy of the rows in an ext tail plus
+  new rows with our own setting ids (answered by sl_get / sl_set as the films' FLB ids are), and the descriptor's
+  rows / count pointed at the copy (as the Delete row's `dl_oks`). To check in the build: the descriptor's first word
+  (0x6156d0a0 region alignment above is read, not tested) and that the tick handler takes any sid through the facade.
+- **Row names:** the camera's text table already has Shooting Mode, Shutter Speed, Aperture Value, Exposure Comp., ISO,
+  WB, Picture Mode, Image Stabilizer, AF Mode, Subject Detection, Drive Mode, Metering, Record Mode, Image Aspect,
+  Remaining Files, Touch screen, Focal Length (strdump indices; the label ids the rows use still to be matched).
+- **INFO cycle (om-emu):** with Information 3 ticked, INFO steps Information 1 -> 2 -> 3 -> Image Only -> 1, i.e. the
+  ticked entries of the top list, as in the stock camera. Information 3's stock layout draws fewer items. So the
+  owner's "set-ups" map onto Information 1 / 2 / 3 per screen (rear and EVF separately) with the stock ticks deciding
+  the cycle; more than three would mean new display modes (not planned).
+- Plan sent to the owner; waiting for the OK before any firmware.
