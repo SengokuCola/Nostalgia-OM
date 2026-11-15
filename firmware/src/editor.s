@@ -8096,6 +8096,625 @@ s_wl:
 9:
  jmp wl_back
 
+/* ---- better grain g1 (2026-11-15, feature/better-grain): our own grain tile, in colour, for the fast route.
+ * The texture builder 0x604cf0b9 (TXGET's cache miss) loads the camera's grain tile (resource 0x8001: 1536 x 1536,
+ * format 0x0c04 = grey) into a fresh buffer and lets the image processor repeat it over the whole texture.
+ * While the code block's xb_tex asks for our texture (tg_own = size 1..5), two call sites in the builder are ours:
+ * 0x604cf156 (the tile's size: ours is 1536 x 1536 in 0x0c02, YCbYCr, 3072 B a row, and the source format becomes
+ * 0x0c02) and 0x604cf1a4 (the load: tg_fill writes our tile into the buffer instead). Grainy Film's own texture and
+ * every other caller are untouched (tg_own 0 -> the stock calls). research/NOTES.md "Better grain g1". */
+ .set TG_BYTES, 1536 * 1536 * 2   /* our tile: 1536 x 1536, 0x0c02 */
+ .set TG_YM, 48                   /* our tile's Y mid level (the blend adds texture Y as it is: rc1 / rc2a) */
+ .set USCLK, 0x98900284           /* the us counter (grain diagnostics gd1-gd4) */
+.section .hook_trs,"ax"
+ call tr_sz,[d2,d3,a2],16         /* stock 0x604cf156: call 0x601d7546,[d2,d3,a2],16 (the tile's size) */
+
+.section .hook_trl,"ax"
+ jmp tr_ld                        /* stock 0x604cf1a4: call 0x604ce6c9,[d2,d3,a2,a3],24 (load the tile) */
+
+.section .ext12,"ax"
+tr_sz:                            /* 0x601d7546's frame: the builder's (k,sp) = (16 + k,sp) */
+ movbu (tg_own),d2
+ cmp 0,d2
+ beq 9f
+ mov 0x0c02,d2
+ movhu d2,(120,sp)                /* the builder's (104,sp): the source's format (0x0c04 grey -> 0x0c02 colour) */
+ mov TG_BYTES,d0
+ ret [d2,d3,a2],16
+9:
+ jmp RES_SZ
+
+tr_ld:
+ call tr_ld2,[d2,d3,a2,a3],24
+ jmp TLD_BACK
+tr_ld2:                           /* 0x604ce6c9's frame: the builder's (4,sp) / (8,sp) = (28,sp) / (32,sp), the
+                                     buffer's bus address (lo / hi); returns it in d0 / d1 as the stock load does */
+ movbu (tg_own),d2
+ cmp 0,d2
+ bne 1f
+ jmp RES_LD
+1:
+ mov (28,sp),d0
+ mov (32,sp),d1
+ cmp 0,d1
+ bne 2f
+ call tg_fill,[d2,d3,a2,a3],104
+ bra 3f
+2:
+ mov 1,d0
+ movbu d0,(tg_bad)
+3:
+ mov (28,sp),d0
+ mov (32,sp),d1
+ ret [d2,d3,a2,a3],24
+
+/* tg_fill: `call tg_fill,[d2,d3,a2,a3],104`, d0 = the tile buffer's 32-bit bus address. Our tile: Y = 48 + noise
+ * (sigma 16), Cb / Cr = 128 + noise (sigma 16), each a w x w box of uniform random bytes (w = tg_own for Y, (w + 1) / 2
+ * for Cb / Cr, which are half width and here also half height), seamless: rows repeat every 768 (row y + 768 = row
+ * y), columns every 1536. The box sums: column sums C (one per pixel, kept from row to row: + the row entering,
+ * - the row leaving, both made again from their own seed, tg_seed) and a running sum along the row (tg_row). Rows go
+ * to the buffer through the bus window (hl_open; tg_put). tg_bad = 1 when anything fails (the code block then gives
+ * the texture no weight: no grain rather than a wrong one). Time (1/1024 s units, about ms) -> tg_ms, count tg_n.
+ * Locals: (0) call slot, (4) bus, (8) work (malloc), (12) R row (cached), (16) CY, (20) CB, (24) CR (cached),
+ * (28) y, (32) w, (36) wc, (40) start, (44) failed; (48) Y params, (64) chroma params (tg_row: N, w, K, add),
+ * (80) counter, (84) a seed. */
+ .set TG_ROWB, 3072
+ .set TG_WORK, 3072 + 2 * (1536 + 8) + 4 * (768 + 8)
+ .set TG_CYB, 2 * (1536 + 8)
+ .set TG_CBB, 2 * (768 + 8)
+ .set TG_SUMW, (TG_WORK - TG_ROWB) / 4
+ .set TG_HALF, 768 * TG_ROWB
+ .set TG_YADD, (TG_YM << 16) + 32768
+ .set TG_CADD, (128 << 16) + 32768
+tg_fill:
+ mov d0,(4,sp)
+ clr d0
+ mov d0,(8,sp)
+ mov d0,(28,sp)
+ mov d0,(44,sp)
+ movbu d0,(tg_bad)
+ mov (USCLK),d0
+ mov d0,(40,sp)
+ mov (tg_n),d1
+ xor d1,d0
+ mov 0x9e3779b9,d1
+ mul d1,d0
+ mov d0,(tg_sb)
+ movbu (tg_own),d0
+ cmp 6,d0
+ bcs 1f
+ mov 5,d0
+1:
+ cmp 0,d0
+ bne 1f
+ mov 1,d0
+1:
+ mov d0,(32,sp)
+ movbu d0,(tg_w)
+ inc d0
+ lsr 1,d0
+ mov d0,(36,sp)
+ mov sp,a2                        /* Y params: N 1536, w, K = 14189 / w (sigma 16 from w^2 bytes of sigma 73.9),
+                                     add = (48 << 16) + 32768 - 127.5 w^2 K */
+ add 48,a2
+ mov (32,sp),d0
+ call tg_par,[d2,d3],12
+ mov 1536,d0
+ mov d0,(a2)
+ mov (12,a2),d1
+ add TG_YADD,d1
+ mov d1,(12,a2)
+ mov sp,a2                        /* chroma params: N 768, wc, its K, add = (128 << 16) + 32768 - 127.5 wc^2 K */
+ add 64,a2
+ mov (36,sp),d0
+ call tg_par,[d2,d3],12
+ mov 768,d0
+ mov d0,(a2)
+ mov (12,a2),d1
+ add TG_CADD,d1
+ mov d1,(12,a2)
+
+ mov TG_WORK,d0
+ call malloc,[],4
+ cmp 0,a0
+ beq 90f
+ mov a0,(8,sp)
+ call FLUSH,[d2,d3],16            /* no stale lines for the work buffer's cached alias */
+ mov (8,sp),d0
+ cmp 0xa0000000,d0
+ bcs 1f
+ cmp 0xb8000000,d0
+ bcc 1f
+ add -0x40000000,d0
+1:
+ mov d0,(12,sp)                   /* R: the row, 3072 B */
+ add TG_ROWB,d0
+ mov d0,(16,sp)                   /* CY: 1536 + 8 halfwords */
+ add TG_CYB,d0
+ mov d0,(20,sp)                   /* CB: 768 + 8 */
+ add TG_CBB,d0
+ mov d0,(24,sp)                   /* CR: 768 + 8 */
+ mov (16,sp),a0                   /* the sums start at 0 */
+ mov TG_SUMW,d1
+ clr d0
+2:
+ mov d0,(a0)
+ inc4 a0
+ add -1,d1
+ bne 2b
+ clr d0                           /* the first w rows into CY */
+ mov d0,(80,sp)
+3:
+ mov (80,sp),d0
+ clr d1
+ call tg_seed,[],0
+ mov d0,d2
+ clr d3
+ mov (16,sp),a0
+ mov 1536,d1
+ call tg_col,[d2,d3,a2,a3],16
+ mov (80,sp),d0
+ inc d0
+ mov d0,(80,sp)
+ mov (32,sp),d1
+ cmp d1,d0
+ bcs 3b
+ clr d0                           /* the first wc chroma rows into CB and CR */
+ mov d0,(80,sp)
+4:
+ mov (80,sp),d0
+ mov 1,d1
+ call tg_seed,[],0
+ mov d0,d2
+ clr d3
+ mov (20,sp),a0
+ mov 768,d1
+ call tg_col,[d2,d3,a2,a3],16
+ mov (80,sp),d0
+ mov 2,d1
+ call tg_seed,[],0
+ mov d0,d2
+ clr d3
+ mov (24,sp),a0
+ mov 768,d1
+ call tg_col,[d2,d3,a2,a3],16
+ mov (80,sp),d0
+ inc d0
+ mov d0,(80,sp)
+ mov (36,sp),d1
+ cmp d1,d0
+ bcs 4b
+
+10:                               /* row y = 0 .. 767 */
+ mov (28,sp),d0
+ btst 1,d0
+ bne 20f
+ mov (20,sp),a0                   /* even y: Cb / Cr from chroma row y / 2 (odd y keeps them) */
+ mov (12,sp),a1
+ add 1,a1
+ mov sp,a2
+ add 64,a2
+ call tg_row,[d2,d3,a2,a3],16
+ mov (24,sp),a0
+ mov (12,sp),a1
+ add 3,a1
+ mov sp,a2
+ add 64,a2
+ call tg_row,[d2,d3,a2,a3],16
+ mov 1,d0
+ mov d0,(80,sp)
+11:                               /* Cb (1), Cr (2): + chroma row (y / 2 + wc) mod 384, - chroma row y / 2 */
+ mov (28,sp),d0
+ lsr 1,d0
+ mov (36,sp),d1
+ add d1,d0
+ cmp 384,d0
+ bcs 12f
+ add -384,d0
+12:
+ mov (80,sp),d1
+ call tg_seed,[],0
+ mov d0,(84,sp)
+ mov (28,sp),d0
+ lsr 1,d0
+ mov (80,sp),d1
+ call tg_seed,[],0
+ mov d0,d3
+ mov (84,sp),d2
+ mov (20,sp),a0
+ mov (80,sp),d0
+ cmp 1,d0
+ beq 13f
+ mov (24,sp),a0
+13:
+ mov 768,d1
+ call tg_col,[d2,d3,a2,a3],16
+ mov (80,sp),d0
+ inc d0
+ mov d0,(80,sp)
+ cmp 3,d0
+ bcs 11b
+20:
+ mov (16,sp),a0                   /* Y of row y */
+ mov (12,sp),a1
+ mov sp,a2
+ add 48,a2
+ call tg_row,[d2,d3,a2,a3],16
+ mov (28,sp),d0                   /* + row (y + w) mod 768, - row y */
+ mov (32,sp),d1
+ add d1,d0
+ cmp 768,d0
+ bcs 21f
+ add -768,d0
+21:
+ clr d1
+ call tg_seed,[],0
+ mov d0,(84,sp)
+ mov (28,sp),d0
+ clr d1
+ call tg_seed,[],0
+ mov d0,d3
+ mov (84,sp),d2
+ mov (16,sp),a0
+ mov 1536,d1
+ call tg_col,[d2,d3,a2,a3],16
+ mov (28,sp),d0                   /* the row to tile rows y and y + 768 */
+ mov TG_ROWB,d1
+ mul d1,d0
+ mov (4,sp),d1
+ add d1,d0
+ mov d0,d2
+ mov (12,sp),a0
+ mov TG_ROWB,d1
+ call tg_put,[d2,d3,a2,a3],40
+ cmp 0,d0
+ bne 80f
+ mov d2,d0
+ add TG_HALF,d0
+ mov (12,sp),a0
+ mov TG_ROWB,d1
+ call tg_put,[d2,d3,a2,a3],40
+ cmp 0,d0
+ bne 80f
+ mov (28,sp),d0
+ inc d0
+ mov d0,(28,sp)
+ cmp 768,d0
+ bcs 10b
+ bra 85f
+80:
+ mov 1,d0
+ mov d0,(44,sp)
+85:
+ call FLUSH,[d2,d3],16            /* the work buffer's lines out of the cache before it goes back */
+ mov (8,sp),a0
+ call free,[],4
+ mov (44,sp),d0
+ cmp 0,d0
+ bne 90f
+ mov (USCLK),d0
+ mov (40,sp),d1
+ sub d1,d0
+ lsr 10,d0
+ mov d0,(tg_ms)
+ mov (tg_n),d0
+ inc d0
+ mov d0,(tg_n)
+ ret [d2,d3,a2,a3],104
+90:
+ mov 1,d0
+ movbu d0,(tg_bad)
+ mov (tg_nb),d0
+ inc d0
+ mov d0,(tg_nb)
+ ret [d2,d3,a2,a3],104
+
+/* tg_par: `call tg_par,[d2,d3],12`, d0 = box width w (1..5), a2 = params -> +4 w, +8 K = 14189 / w,
+ * +12 = -(127.5 w^2 K) (the caller adds its base and the rounding). */
+tg_par:
+ mov d0,(4,a2)
+ mov d0,d2
+ add -1,d0
+ asl2 d0
+ mov tg_kt,a0
+ add d0,a0
+ mov (a0),d0
+ mov d0,(8,a2)
+ mov d2,d1
+ mul d2,d1                        /* w^2 */
+ mul d0,d1                        /* w^2 K */
+ mov 255,d0
+ mul d0,d1
+ asr 1,d1                         /* 127.5 w^2 K */
+ clr d0
+ sub d1,d0
+ mov d0,(12,a2)
+ ret [d2,d3],12
+
+/* tg_seed: `call tg_seed,[],0`, d0 = row, d1 = channel (0 Y, 1 Cb, 2 Cr) -> d0 = that row's stream seed, never 0
+ * (a 0 stream stays 0: tg_col's "no row leaving"). Uses d0, d1 and MDR (so `ret`, not `retf`). */
+tg_seed:
+ asl 28,d1
+ xor d1,d0
+ mov 0x9e3779b9,d1
+ mul d1,d0
+ mov (tg_sb),d1
+ xor d1,d0
+ mov d0,d1
+ lsr 16,d1
+ xor d1,d0
+ mov 0x7feb352d,d1
+ mul d1,d0
+ mov d0,d1
+ lsr 15,d1
+ xor d1,d0
+ mov 0x846ca68b,d1
+ mul d1,d0
+ mov d0,d1
+ lsr 16,d1
+ xor d1,d0
+ cmp 0,d0
+ bne 1f
+ mov 1,d0
+1:
+ ret [],0
+
+/* tg_col: `call tg_col,[d2,d3,a2,a3],16`, a0 = sums (halfwords), d1 = N (a multiple of 4), d2 = the entering row's
+ * stream, d3 = the leaving row's (0: none). sums[x] += byte_in(x) - byte_out(x); bytes = xorshift32 words, low byte
+ * first. */
+tg_col:
+ add d1,d1
+ mov a0,d0
+ add d0,d1
+ mov d1,a1                        /* the end */
+1:
+ mov d2,d0
+ asl 13,d0
+ xor d0,d2
+ mov d2,d0
+ lsr 17,d0
+ xor d0,d2
+ mov d2,d0
+ asl 5,d0
+ xor d0,d2
+ mov d3,d0
+ asl 13,d0
+ xor d0,d3
+ mov d3,d0
+ lsr 17,d0
+ xor d0,d3
+ mov d3,d0
+ asl 5,d0
+ xor d0,d3
+ mov d2,d0
+ extbu d0
+ mov d3,d1
+ extbu d1
+ sub d1,d0
+ movhu (a0),d1
+ add d0,d1
+ movhu d1,(a0)
+ mov d2,d0
+ lsr 8,d0
+ extbu d0
+ mov d3,d1
+ lsr 8,d1
+ extbu d1
+ sub d1,d0
+ movhu (2,a0),d1
+ add d0,d1
+ movhu d1,(2,a0)
+ mov d2,d0
+ lsr 16,d0
+ extbu d0
+ mov d3,d1
+ lsr 16,d1
+ extbu d1
+ sub d1,d0
+ movhu (4,a0),d1
+ add d0,d1
+ movhu d1,(4,a0)
+ mov d2,d0
+ lsr 24,d0
+ mov d3,d1
+ lsr 24,d1
+ sub d1,d0
+ movhu (6,a0),d1
+ add d0,d1
+ movhu d1,(6,a0)
+ add 8,a0
+ cmp a1,a0
+ bcs 1b
+ ret [d2,d3,a2,a3],16
+
+/* tg_row: `call tg_row,[d2,d3,a2,a3],16`, a0 = sums (N + 8 halfwords), a1 = the first output byte, a2 = params
+ * {N, w, K, add}: out[x] = clamp((K * (sums[x] + .. + sums[x + w - 1]) + add) >> 16) for x < N (wrapping round:
+ * sums[N + i] = sums[i] first), every 2nd byte for N = 1536 (Y), every 4th for N = 768 (Cb / Cr). */
+tg_row:
+ mov (0,a2),d0
+ add d0,d0
+ mov a0,a3
+ add d0,a3                        /* &sums[N] */
+ mov (4,a2),d1
+ clr d2
+1:
+ movhu (d2,a0),d0
+ movhu d0,(d2,a3)
+ add 2,d2
+ add -1,d1
+ bne 1b
+ clr d2                           /* s = sums[0] + .. + sums[w - 1] */
+ mov (4,a2),d1
+ mov a0,a3
+2:
+ movhu (a3),d0
+ add d0,d2
+ add 2,a3
+ add -1,d1
+ bne 2b
+ mov (8,a2),d3                    /* K */
+ mov (0,a2),d1
+ cmp 1536,d1
+ bne 30f
+ add d1,d1
+ mov a0,d0
+ add d0,d1                        /* the end of the sums */
+ mov (12,a2),a2                   /* add */
+3:
+ mov d2,d0
+ mul d3,d0
+ add a2,d0
+ asr 16,d0
+ cmp 0,d0
+ bge 4f
+ clr d0
+4:
+ cmp 255,d0
+ ble 5f
+ mov 255,d0
+5:
+ movbu d0,(a1)
+ add 2,a1
+ movhu (a3),d0
+ add d0,d2
+ movhu (a0),d0
+ sub d0,d2
+ add 2,a0
+ add 2,a3
+ mov a0,d0
+ cmp d1,d0
+ bcs 3b
+ ret [d2,d3,a2,a3],16
+30:
+ add d1,d1
+ mov a0,d0
+ add d0,d1
+ mov (12,a2),a2
+31:
+ mov d2,d0
+ mul d3,d0
+ add a2,d0
+ asr 16,d0
+ cmp 0,d0
+ bge 32f
+ clr d0
+32:
+ cmp 255,d0
+ ble 33f
+ mov 255,d0
+33:
+ movbu d0,(a1)
+ add 4,a1
+ movhu (a3),d0
+ add d0,d2
+ movhu (a0),d0
+ sub d0,d2
+ add 2,a0
+ add 2,a3
+ mov a0,d0
+ cmp d1,d0
+ bcs 31b
+ ret [d2,d3,a2,a3],16
+
+/* tg_put: `call tg_put,[d2,d3,a2,a3],40`, d0 = bus address, a0 = source (cached), d1 = bytes (a multiple of 4)
+ * -> d0 = 0 written / 1 not. Through hl_open (the firmware's lock and this CPU's bus window), the window's cached
+ * view and FLUSH, as halation; pieces split at the window's 128 MB edges. Locals: (4) bus, (8) source, (12) left,
+ * (16) token, (20) this piece. */
+tg_put:
+ mov d0,(4,sp)
+ mov a0,(8,sp)
+ mov d1,(12,sp)
+1:
+ mov (12,sp),d0
+ cmp 0,d0
+ beq 8f
+ mov (4,sp),d1
+ and 0x07ffffff,d1
+ mov 0x08000000,d2
+ sub d1,d2                        /* room before the edge */
+ cmp d0,d2
+ bls 2f
+ mov d0,d2
+2:
+ mov d2,(20,sp)
+ mov (4,sp),d0
+ mov d2,d1
+ call hl_open,[d2,d3,a2,a3],28
+ mov d0,(16,sp)
+ cmp 0,a0
+ beq 7f
+ clr d3
+ mov a0,d0
+ cmp 0xb8000000,d0
+ bcs 3f
+ add -0x40000000,d0               /* the window's cached view */
+ mov d0,a0
+ mov 1,d3
+3:
+ mov (8,sp),a1
+ mov (20,sp),d1
+ lsr 2,d1
+4:
+ mov (a1),d0
+ inc4 a1
+ mov d0,(a0)
+ inc4 a0
+ add -1,d1
+ bne 4b
+ cmp 0,d3
+ beq 5f
+ call FLUSH,[d2,d3],16
+5:
+ mov (16,sp),d0
+ call UNLOCK,[d2],8
+ mov (20,sp),d0
+ mov (4,sp),d1
+ add d0,d1
+ mov d1,(4,sp)
+ mov (8,sp),d1
+ add d0,d1
+ mov d1,(8,sp)
+ mov (12,sp),d1
+ sub d0,d1
+ mov d1,(12,sp)
+ bra 1b
+7:
+ mov (16,sp),d0
+ call UNLOCK,[d2],8
+ mov 1,d0
+ ret [d2,d3,a2,a3],40
+8:
+ clr d0
+ ret [d2,d3,a2,a3],40
+
+ .balign 4
+tg_kt:                            /* K by box width 1..5: 16 / (73.9 w) x 65536 */
+ .long 14189, 7094, 4730, 3547, 2838
+tg_sb:                            /* this tile's seed */
+ .long 0
+tg_n:                             /* tiles made this power-on */
+ .long 0
+tg_nb:                            /* tiles that failed */
+ .long 0
+tg_ms:                            /* the last tile's time, 1/1024 s */
+ .long 0
+tg_own:                           /* set by the code block's xb_tex around TXGET: our tile's size 1..5, 0 = stock */
+ .byte 0
+tg_bad:                           /* 1: the last tile was not written (the code block gives the texture no weight) */
+ .byte 0
+tg_w:                             /* the last tile's size */
+ .byte 0
+ .balign 4
+tg_l1:
+ .asciz "\r\nGrain tiles (better grain g1): made "
+tg_l2:
+ .asciz ", failed "
+tg_l3:
+ .asciz ", last size "
+tg_l4:
+ .asciz ", last time (ms) "
+ .balign 4
+
 /* ------------------------------------------------------------------ split toning (v0.26)
  * research/NOTES.md "Split toning": the RGB gamma stage (0x60516ad9) copies the picture-mode curve into the job three
  * times (O+1252 R / +1892 G / +2532 B: 256 x u16 12-bit + 64 x u16 fine table, 640 B each) before the stage list that
@@ -9235,6 +9854,18 @@ lg_write:                         /* frame 40: (0) call slot, (4) handle, (12) t
  LGD
  LGS lg_t3
  mov (lg_w),d0
+ LGD
+ LGS tg_l1                        /* better grain g1: our grain tiles */
+ mov (tg_n),d0
+ LGD
+ LGS tg_l2
+ mov (tg_nb),d0
+ LGD
+ LGS tg_l3
+ movbu (tg_w),d0
+ LGD
+ LGS tg_l4
+ mov (tg_ms),d0
  LGD
  LGS lg_t4
  mov (4,a3),d0

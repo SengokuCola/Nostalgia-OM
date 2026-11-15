@@ -4386,3 +4386,66 @@ picks) changes Cn's copy. Plan and earlier findings: `research/per-mode-settings
   VERSION "v0.29.5 (per-mode settings, tested)" (same length as p2's; byte diff: only the name, the code-block tag, the
   built-in GUIDES CRC). `releases/v0.29.5`: patch.json (175 runs, 342,144 bytes), extras as v0.29.4. `patch.py` makes
   01ea3d14….
+
+## Better grain g1: our own colour grain tile (2026-11-15; branch feature/better-grain)
+- Owner: "I want better color grain, and I want to be able to set strength and size of grain". Settings mockup
+  (Film Grain Off / 1..5 slider + Grain Size Fine / Medium / Coarse) sent to cad for the owner's choice; g1 is the
+  probe for the texture itself and uses today's Film Grain row (Low / Med / High = size Fine / Medium / Coarse).
+- **Owner's choice (2026-11-15, via cad: "Both, as suggested"):** Film Grain becomes a slider Off, 1..5 (like Halo),
+  replacing Off / Low / Med / High; a new **Grain Size** row under it: Fine / Medium / Coarse; films saved with
+  Low / Med / High become 2 / 3 / 5; colour speckle on for every grain at a fixed amount tuned on the camera (no
+  colour setting for now). The rows follow once g1's grain works on the camera.
+- **How the camera makes Grainy Film's texture (static analysis, OM-3 1.1):**
+  - TXGET 0x604cd921 = a cache of 4 texture objects (116 B each at 0xa32e94b8; +112 refcount, +114 state 0 free /
+    1 being built / 2 ready). Key = obj+0..5 (the 6-byte block of xb_tex), matched by 0x604ce6f0: +0 halfword, +3
+    (TXPF 0x604b77fb: 1 or 3), +2 for some classes; a request with +5 = 1 never matches. On a miss: builder
+    0x604cf0b9. Release 0x604ce397: refcount <= 1 -> the buffer goes back (0x604afeb2) and the state to 0, so the
+    texture is made again for every shot that does not overlap a live one (bursts share it).
+  - Builder 0x604cf0b9: sizes from 0x604cec73; the **source = resource 0x8001**, size 0x601d7546(0x8001), loaded by
+    0x604ce6c9 into a buffer from 0x604afe6b (descriptor at the builder's sp+88: format +16 = 0x0c04 grey, 1536 x
+    1536, size +88 = (resource size + 1151) & -128, id +92 0x11100); texture buffer obj+8 (0x0c02, id 0x1104);
+    a kind-3 request, stage 0xf002 (0x604b5b44), copies the tile in strips of <= 1536 x 1536; DMA copies 0x604b0d0b
+    repeat that band downwards; the source buffer is released. Then the texture's pitch is set to the image width
+    (188) though it was written at (190), a shear, and obj+108 = an offset mask (the attach hook 0x604bc0cf adds
+    job+8312 & obj+108: a random shift per shot). So the camera's grain = one grey 1536 x 1536 tile, repeated,
+    sheared and shifted. The resource table (0xa32da49c) is empty in om-emu: the tile itself could not be read.
+  - Combiner set-up register image (context+8)+7988: the **second input's gains are +148 (low Y, high Cb) and +152
+    (Cr)**, laid out as the photo's +96 / +100 (case 0x60504bad: both inputs 1024 / 1024 / 1024; 0x60504c8c: second
+    115 / 115 / 115; 0x60504c23: second -1024). Combiner 1 (Grainy Film) writes the texture 1024 / 0 / 0 (grey grain)
+    and the photo's chroma 0 (mono); xb_c1e already gives the photo its chroma back.
+  - Analysis (rc1 numbers): the stock texture lifted Y by 26 at gain 1024 with grain std 19.5: 26 / 19.5 = 1.33, a
+    half-normal's mean / std. Reading (guess): the blend adds texture Y as it is (not centred), the camera's tile is
+    non-negative grain. Chroma inputs are centred (the output's chroma offsets are 512, and ft4's photo chroma came
+    through unchanged with gain 1024).
+- **g1 build (firmware only; emulator below):**
+  - Hooks (stock bytes checked by build.py): `.hook_trs` 0x604cf156 `call 0x601d7546,[d2,d3,a2],16` (ddf083d0ffe010)
+    -> `call tr_sz` (same form); `.hook_trl` 0x604cf1a4 `call 0x604ce6c9,[d2,d3,a2,a3],24` (cd25f5f018) -> `jmp tr_ld`
+    (`call tr_ld2,[d2,d3,a2,a3],24`, then back to 0x604cf1a9). Both run the stock call unless `tg_own` != 0.
+  - `xb_tex` (block): the key's 4th byte = 0x80 + size (Grainy Film's own are 1 / 3: neither gets the other's tile
+    from the cache); `tg_own` = size around its TXGET call. TXPF is no longer called there.
+  - With `tg_own`: `tr_sz` sets the source format (the builder's (104,sp)) to 0x0c02 and returns 1536 x 1536 x 2;
+    `tr_ld2` calls `tg_fill` (ext12) with the buffer's bus address instead of loading the camera's tile.
+  - `tg_fill`: Y = 48 + noise, Cb / Cr = 128 + noise, sigma 16 each; noise = a w x w box sum of uniform random bytes
+    (K = 14189 / w), w = size for Y, (w + 1) / 2 for Cb / Cr (half width and, here, half height). Rows repeat every
+    768 (row y + 768 = row y: half the work), columns every 1536; both wrap seamlessly. Column sums kept from row to
+    row (+ entering row, - leaving row, each made again from its own seed: `tg_seed`, xorshift32 streams), running
+    sum along the row (`tg_row`). Work memory: one malloc of 9264 B, used through its cached alias (FLUSH before and
+    after). Rows to the buffer by `tg_put`: `hl_open` (lock + this CPU's bus window, as halation), the window's cached
+    view, FLUSH, UNLOCK; split at the window's 128 MB edges. Failure anywhere -> `tg_bad` = 1.
+  - `xb_c1e`: +148 = Y gain 1024 | Cb gain 448 << 16, +152 = Cr gain 448, +180 low half = -192 (= -(4 x 48 x 1024 /
+    1024): our tile's Y level taken back, if the blend adds texture Y as it is). `tg_bad` -> both gains 0 (no grain
+    rather than a wrong one).
+  - Debug log (`DEBUG.TXT` on the card): "Grain tiles (better grain g1): made N, failed N, last size W, last time
+    (ms) T" (time from the us counter 0x98900284 >> 10).
+  - VERSION "v0.30-dev (better grain g1 probe)".
+- **g1 emulator (om-emu; it cannot develop a photo, so the builder, the image processor and the blend are untested):**
+  boots, half-presses, menus fine; debug log line present ("made 0, failed 0, ..."). `tg_fill` run natively (ncall
+  at tr_ld2's call, buffer at bus 0xb0100000 = the direct DRAM path, FLUSH stubbed: om-emu has no flush-done bit,
+  the first unstubbed run spun in FLUSH and ran node out of memory): sizes 1 and 3, the first 16 rows and their copies
+  768 rows down **equal a numpy model byte for byte** (scratch `models.py`); Y mean 48.0 / sigma 16.0 (size 1: 20..76,
+  size 3: 0..110), Cb / Cr 128 / 16. About 91 000 instructions a row -> ~70 M for a tile (camera time unknown; the
+  debug log will tell).
+- Package `test-builds/2026-11-15-grain-g1` (outside the repo): E1479999.BIN 0bd7997b…47ac; back 01ea3d14… (v0.29.5).
+  Camera questions: no freeze (plain, RAW+JPEG, Glow, Clarity, Shading, burst); colour speckle; brightness and colour
+  as grain Off (if lighter / darker: the blend centres texture Y after all; if tinted: chroma is not centred); the three
+  sizes; the time per tile (CADLOG.TXT); Grainy Film unchanged.

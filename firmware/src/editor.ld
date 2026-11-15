@@ -10,6 +10,8 @@ SECTIONS {
   .hook_sel2    0x60504b5d : { *(.hook_sel2) }
   .hook_c1e     0x605053cc : { *(.hook_c1e) }
   .hook_wl      0x604b8d91 : { *(.hook_wl) }
+  .hook_trs     0x604cf156 : { *(.hook_trs) }
+  .hook_trl     0x604cf1a4 : { *(.hook_trl) }
   .hook_tone    0x605197d7 : { *(.hook_tone) }
   .hook_fx      0x60555e50 : { *(.hook_fx) }
   .hook_lv      0x6046b8bb : { *(.hook_lv) }
@@ -109,6 +111,9 @@ LOCK          = 0x60075f73;   /* v0.28 halation: as the code block's xb_open */
 UNLOCK        = 0x60075fbc;
 WINMAP        = 0x60071018;
 FLUSH         = 0x60070e69;
+RES_SZ        = 0x601d7546;   /* better grain g1: the grain tile's size (resource 0x8001) */
+RES_LD        = 0x604ce6c9;   /* its load into the texture builder's buffer */
+TLD_BACK      = 0x604cf1a9;   /* after that call in the builder 0x604cf0b9 */
 OS_FOPEN      = 0x608d4d22;
 OS_FCLOSE     = 0x608d4d2b;
 OS_FSEEK      = 0x608d4fb1;

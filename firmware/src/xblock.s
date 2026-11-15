@@ -850,9 +850,9 @@ xb_tex:
  movhu d3,(4,sp)
  movbu (44,a3),d0
  movbu d0,(6,sp)
- mov d3,d0
- movbu (55,a3),d1
- call TXPF,[],4
+ movbu (xb_tl),d0                 /* better grain g1: the key's 4th byte = 0x80 + our tile's size (the camera's own
+                                     are TXPF's 1 or 3): Grainy Film never gets our tile, nor we its, from the cache */
+ or 0x80,d0
  movbu d0,(7,sp)
  movbu (55,a3),d0
  movbu d0,(8,sp)
@@ -861,7 +861,11 @@ xb_tex:
  mov (10280,a2),a0
  mov sp,a1
  add 4,a1
+ movbu (xb_tl),d0                 /* g1: while TXGET runs, the builder's tile is ours (editor.s tr_sz / tr_ld) */
+ movbu d0,(TG_OWN)
  call TXGET,[d2,d3,a2,a3],28
+ clr d1
+ movbu d1,(TG_OWN)
  cmp 0,a0
  beq 9f
  mov (10276,a2),a1
@@ -907,27 +911,40 @@ xb_c1e:
  mov d1,(96,a2)
  mov 1024,d1
  mov d1,(100,a2)
- cmp 3,d0                         /* ft5: the texture's gain (+148) by Grain: Low 512, Med 768, High 1024 (ft4: 1024 =
-                                     even, 2048 = darker) */
+ movbu (TG_BAD),d1                /* better grain g1: a tile not written -> the texture gets no weight */
+ cmp 0,d1
+ beq 2f
+ clr d1
+ mov d1,(148,a2)
+ mov d1,(152,a2)
+ bra 9f
+2:
+ cmp 3,d0
  bls 1f
  mov 3,d0
 1:
  add d0,d0
  mov xb_tgain-2,a0
  add d0,a0
- movhu (a0),d1
+ movhu (a0),d1                    /* the texture's Y gain (+148 low half) */
+ movhu (6,a0),d0                  /* g1: its Cb / Cr gains (+148 high half, +152; the second input's three gains,
+                                     as +96 / +100 are the photo's: combiner cases 0x60504bad / 0x60504c8c) */
+ mov d0,(152,a2)
+ asl 16,d0
+ or d0,d1
  mov d1,(148,a2)
- movhu (6,a0),d1                  /* rc2: the texture is not zero-mean: it lifted Y by ~0.026 x gain (8-bit) on every
-                                     tone (owner test PB081496..499); the output's Y offset (+180 low half, 0 in
-                                     combiner 1's set-up, guess) takes it back: -0.102 x gain (10-bit) */
+ movhu (12,a0),d1                 /* the output's Y offset (+180 low half; rc2a: camera-confirmed as Y): our tile's
+                                     Y sits at 48 (8-bit), added as it is -> -(4 x 48 x Y gain / 1024) (10-bit) */
  movhu d1,(180,a2)
 9:
  rets
  .balign 2
-xb_tgain:                         /* rc2: Low / Med / High (Med and High looked alike at 768 / 1024; 2048 went dark) */
- .hword 448, 832, 1280
-xb_tbias:                         /* -(0.102 x gain) as 16 bits, the same order */
- .hword -46 & 0xffff, -85 & 0xffff, -131 & 0xffff
+xb_tgain:                         /* g1: Y gain by Grain level (g1: the level is the tile's size; one strength) */
+ .hword 1024, 1024, 1024
+xb_tcgain:                        /* g1: Cb / Cr gain (our tile's chroma sigma 16 -> about 7) */
+ .hword 448, 448, 448
+xb_tbias:                         /* -(4 x 48 x Y gain / 1024), 16 bits */
+ .hword -192 & 0xffff, -192 & 0xffff, -192 & 0xffff
 
 /* xb_wl (ft8): `calls` from s_wl in the work-list builder 0x604b8cf7, a0 = job, before it picks the list by the
  * job's key (job+5352). A COLOR still (11) that already has our texture (job+8324, made at the set-up) and whose
