@@ -4450,3 +4450,14 @@ picks) changes Cn's copy. Plan and earlier findings: `research/per-mode-settings
   Camera questions: no freeze (plain, RAW+JPEG, Glow, Clarity, Shading, burst); colour speckle; brightness and colour
   as grain Off (if lighter / darker: the blend centres texture Y after all; if tinted: chroma is not centred); the three
   sizes; the time per tile (CADLOG.TXT); Grainy Film unchanged.
+- **On hold (owner, 2026-11-15):** after two previews (made outside the repo on a public-domain sample photo:
+  g1's tile added as xb_c1e's gains intend, Y + (tY - 48), C + 0.4375 (tC - 128)), the owner: "our grain is fine
+  for now". g1 was **not** camera-tested. Preview reading (analysis): Fine looks like light film texture, Medium /
+  Coarse colour speckle can read as digital colour noise, Coarse's square box clumps show at 300%. Compared with real
+  film: same amount in every tone (the texture is added as it is: no tone shaping on this route, as far as known),
+  one clump size, even colour speckle, a repeating tile.
+- A film-like variant for later (design preview only, float maths, not built): Y = 0.85 / 0.55 mix of two sizes of
+  noise box-filtered twice both ways (Fine 2 + 1, Medium 3 + 1, Coarse 4 + 2), normalised to sigma 16; Cb / Cr
+  box-filtered twice at half resolution (2 / 3 / 3) with the chroma gain about 0.18 (about 184 / 1024) instead of
+  448. Estimate: 2-3x tg_fill's work. To pick up again: camera-test g1 first (the image processor takes a 0x0c02
+  tile, brightness / tint, time per tile), then the film-like tile and the Strength / Size rows.

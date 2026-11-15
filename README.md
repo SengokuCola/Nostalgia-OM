@@ -1,3 +1,6 @@
+> **Branch `feature/better-grain`: on hold (owner, 2026-11-15).** Our own colour grain picture (test build g1),
+> emulator only, not camera-tested; see `research/NOTES.md`, "Better grain g1". The released firmware is on `main`.
+
 <h1 align="center">Caduceus for OM-3</h1>
 
 

@@ -41,7 +41,8 @@ probes the rest of section 6 (about 660 KB more, GX4); see `research/NOTES.md`, 
 1. **Halation** (Next, owner 2026-11-09: halation and custom crop modes finish the colour profiles). Port the E-P7's
    method, our own code, onto the Glow row's route; can use the new 256 KiB.
 2. **Our own grain texture:** colour speckle and grain size from the Grain Lab design, through the same fast texture
-   route. Plan: project doc `fast-grain-plan`, `research/NOTES.md`.
+   route. Plan: project doc `fast-grain-plan`, `research/NOTES.md`. On hold (owner, 2026-11-15): test build g1 made on
+   `feature/better-grain`, not camera-tested.
 3. **Fine-tune the 20 film sims** (draft 1, from the owner's colour checker photos, is in the optional `LOOKS.BIN` of
    v0.26.1 to v0.27). Gold 200 and CineStill 800T now carry their split tone on the Highlights wheel, as in the approved
    drafts (LookLab 2026-11-10, `LOOKS.BIN` from v0.27). Seven films keep
@@ -55,7 +56,7 @@ probes the rest of section 6 (about 660 KB more, GX4); see `research/NOTES.md`, 
 | Split toning: colour by brightness | Teal shadows and warm highlights (cinema), cool shadows (Portra), green shadows (Superia). | Medium | **Done (v0.26)** | Shadows and Highlights wheel pages, 12 colours, −5..+5, in photos and live view; camera-tested 2026-11-09. Asked for: a Midtones control ([#23](https://github.com/androidfanman/caduceus-om3/issues/23), not planned) and finer steps (film-sim drafts, 2026-11-09). **v0.28:** wheels 0..10 in half steps (10 = v0.26's +5), positive only, and a Tone Balance row; in LookLab too. |
 | Coloured glow (halation) | The red glow around lights of CineStill and other cinema film. | Medium | **Done (v0.28)** | Its own Picture Mode row, 0..5, a CPU pass after the Soft Focus blend (method after Caduceus for the E-P7, our own code); camera-tested 2026-11-12; LookLab slider and preview. `research/NOTES.md`. |
 | Highlight roll-off and toe | Film compresses highlights gently and has a soft toe in the blacks. | Medium | Not planned | Covered by what exists (owner, 2026-11-12): Blacks + Shadows give the toe, Whites − and Highlights − a soft shoulder (Highlight & Shadow is the camera's own tone curve). |
-| Film grain: size, colour speckle, by brightness | Film grain depends on the stock: size, colour and where it shows. | Medium | In progress (2026-11-15, `feature/better-grain`) | Today (v0.25 on): the camera's own Grainy Film texture laid on COLOR photos, Low / Med / High by strength only, no extra time, works with Glow and Shading. Next: our own texture with colour speckle and size, plus Strength and Size settings (owner, 2026-11-15); test build g1 = our own colour grain picture through the same route (emulator only so far). |
+| Film grain: size, colour speckle, by brightness | Film grain depends on the stock: size, colour and where it shows. | Medium | On hold (2026-11-15, `feature/better-grain`) | Today (v0.25 on): the camera's own Grainy Film texture laid on COLOR photos, Low / Med / High by strength only, no extra time, works with Glow and Shading. Next: our own texture with colour speckle and size, plus Strength and Size settings (owner, 2026-11-15); test build g1 = our own colour grain picture through the same route (emulator only, not camera-tested). On hold: the owner finds today's grain fine for now (2026-11-15). |
 | Faster grain with Glow | Grain plus glow cost about 3 s per photo and blocked burst shooting. | Medium | **Done (v0.25)** | Grain from the image processor's texture route: as fast as no grain, with Glow / Clarity and Shading. Art Effects were removed in v0.25. |
 
 ## Shooting like a roll of film
