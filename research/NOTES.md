@@ -4443,8 +4443,9 @@ picks) changes Cn's copy. Plan and earlier findings: `research/per-mode-settings
   at tr_ld2's call, buffer at bus 0xb0100000 = the direct DRAM path, FLUSH stubbed: om-emu has no flush-done bit,
   the first unstubbed run spun in FLUSH and ran node out of memory): sizes 1 and 3, the first 16 rows and their copies
   768 rows down **equal a numpy model byte for byte** (scratch `models.py`); Y mean 48.0 / sigma 16.0 (size 1: 20..76,
-  size 3: 0..110), Cb / Cr 128 / 16. About 91 000 instructions a row -> ~70 M for a tile (camera time unknown; the
-  debug log will tell).
+  size 3: 0..110), Cb / Cr 128 / 16. **Full tile, size 3: all 1536 rows equal the model**; the seams are seamless
+  (mean step across the repeat edges 10.54 / 10.59 = inside 10.54 / 10.52); tg_n 1, tg_bad 0. 66.4 M instructions
+  for a tile (camera time unknown: om-emu has no us counter; the debug log will tell).
 - Package `test-builds/2026-11-15-grain-g1` (outside the repo): E1479999.BIN 0bd7997b…47ac; back 01ea3d14… (v0.29.5).
   Camera questions: no freeze (plain, RAW+JPEG, Glow, Clarity, Shading, burst); colour speckle; brightness and colour
   as grain Off (if lighter / darker: the blend centres texture Y after all; if tinted: chroma is not centred); the three
