@@ -41,6 +41,7 @@ SECTIONS {
   .hook_bar     0x611d1035 : { *(.hook_bar) }
   .hook_rda     0x611d16b4 : { *(.hook_rda) }
   .hook_rdb     0x611d1725 : { *(.hook_rdb) }
+  .hook_si      0x6123043d : { *(.hook_si) }
   .ext2         0x607187a8 : { *(.ext2) }
   .ext7         0x6164afd0 : { *(.ext7) }
   .ext3         0x6081fe10 : { *(.ext3) }
@@ -53,6 +54,9 @@ SECTIONS {
   .ext12        0x60f59800 : { *(.ext12) }
 }
 color_builder = 0x60518381;
+si_get44      = 0x610fd8ef;   /* screen info: the shooting-screen updater's settings getter (d0 id, a0 out) */
+si_sv0        = 0x60b8781f;   /* screen info: the facade's stock SetValue (vtable +4) */
+si_back       = 0x61230443;   /* screen info: after the hook's replaced mov 0x62ceeb54,a0 */
 pm_back       = 0x611bd90f;
 stock_sel     = 0x60b86a01;
 rng_back      = 0x611d1090;

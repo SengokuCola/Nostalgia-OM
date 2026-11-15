@@ -4358,6 +4358,27 @@ above. Research lab (`experiment/screen-info`); nothing built for the camera.
 - Effort (guess): after the screen-info hook exists, 1 build and 2-3 camera rounds; alone, the counter on the screen
   is the larger half. Status: analysis + one emulator check (the number field); nothing on the camera.
 
+## Screen info build s1: PAUSED by the owner (2026-11-14), work in progress, emulator only, never on a camera
+**Where it stopped:** build s1 (rear screen, photo Information 1 / 2 / 3) is written and builds; no test package made.
+Code: `firmware/src/screeninfo.s` + `screeninfo.inc` (ids SIB 0x7d00 + 16 * page + k, the hide hook, the M record),
+small id checks in `editor.s` (sl_get, sl_cnt, sl_vbi, sl_sel; two `.include` lines), `.hook_si` at 0x6123043d in
+`editor.ld`, and in `build.py` the hook's stock bytes, `-I src`, the vtable words 0x60e57478 (SetValue -> si_sv) and
+0x60e57510 (GetDefault -> si_dfl, ext1 is full) and the copies of the three pages' item and row lists.
+**Seen in om-emu (s1 build):** the three pages show 14 more tick rows with the camera's own names, scrolling; OK ticks
+and unticks them (a tick's OK is facade SetValue mode 3, which the stock code refuses for unknown ids and which never
+reaches `.hook_set`: hence si_sv); the masks are written to M + 0x3C000 ('OM3I') and survive a power-off / on
+(Information 1 0x104b, 2 0x3fff, 3 0x14 read back); nothing of ours is read before the first half-press (si_ram
+empty until then); after it, Information 1 hid exactly the chosen items (mode icon, shutter, picture mode, shots
+left / time left), others unchanged.
+**Not tested yet (the next step):** the planned comparison runs against v0.29.3 (start-up screens before the first
+half-press, INFO cycling through every display including Information 3 and Image Only, video / S&Q, mode dial P / M /
+S and a custom mode, the viewfinder (must be unchanged in s1), other menu pages, playback, no card), pixel diffs where
+nothing should change; a held-back write (si_pend) while the camera saves M; then cad's review and a package.
+**Item map correction:** the research map was taken with other saved settings; with om-emu defaults the right column
+(stabiliser, WB, metering, drive) is drawn only after a setting changed in the menu, and the Image Only diff shows the
+fields in `si_tab` (screeninfo.s). Shutter / aperture text also lives in var 104, but clearing var 33's fields alone
+hides them (om-emu); var 39 / 40 / 104 / 105 / 20 changed nothing on the rear Information 1 screen.
+
 ## Screen info, design step: the stock Info Settings menu and the INFO cycle (2026-11-14; emulator + analysis, nothing built)
 Branch `feature/screen-info` (from `experiment/screen-info` 3347e53). Owner's design (2026-11-14): a menu page like the
 camera's own info-display settings, with show / hide per item, several set-ups, INFO cycles through them.
