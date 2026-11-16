@@ -5774,3 +5774,8 @@ rgb-page-counts-every-click, halation-matches-the-model). Package `test-builds/2
   go-back v0.30.3 `60b6d954…f546`; tests 1 / 1b never flashed (folders moved to the Trash).
 - **Owner approved the Border icon (2026-11-16: "Yes, use it").** Test 1c (`d8ce3d89…3db3`) is ready for the owner's
   camera test; nothing changed in the firmware.
+- **Test 1c camera-tested (owner's OM-3, 2026-11-16): "that works well!!!".** Flashed by cad from
+  `test-builds/2026-11-16-borders-test1c` (E1479999.BIN sha256 `d8ce3d89…3db3`, checked on the card). The owner's
+  report was overall, not per step: not reported separately are whether playback (or playback zoom) shows the border,
+  the aspect ratios one by one, and whether any old "Frame On" value turned up as Border 5. No DEBUG.TXT on the card,
+  so no log. Not merged, pushed or released (cad does that on the owner's word).
