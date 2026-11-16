@@ -5701,3 +5701,52 @@ rgb-page-counts-every-click, halation-matches-the-model). Package `test-builds/2
   tag (twice) and the built-in GUIDES CRC (53 bytes). E1479999.BIN 60b6d954…f546; `patch.py --release v0.30.3` makes it
   byte for byte, `--release v0.30.2` still 7fbd3957…. Extras as v0.30.2. LookLab rebuilt (h8's preview). PR #69 lands
   on main with this merge (its head 7b0cc80 is in the history).
+
+## Photo borders b1: a white Border row (2026-11-16; branch feature/image-borders; emulator only, camera test pending)
+- Owner (2026-11-16, reopening 2026-11-12's "Film borders: not planned"): **white**, **adjustable 1..5**, **per film on
+  a Picture Mode row**, **the same width on all sides**. JPEG only (the file keeps its size; the border covers the
+  photo's outer edge); RAW untouched.
+- Route: not the camera's Frame Art Effect (job flag 0x8000, our white frame pictures, v0.20..v0.25: restarts with
+  the fast grain on COLOR's list (ft5 / ft8), "picture error" with Glow + Frame + Grain (rc2b), removed in v0.25).
+  Instead our own pass on the finished picture, `bd_run` (editor.s ext12), run by the block's `xb_gs` after halation
+  and grain, on the Soft Focus route that Halation alone already takes (flag 0x80, `xb_wt` w 1024: the sharp image
+  unchanged; camera-tested h1..h8 with bursts and RAW+JPEG). No new hook, no new job flag (`xb_rv`'s #65 rule covers
+  0x80), nothing at start-up, nothing in live view or video (`xb_lv` unchanged).
+- Storage: the Frame row's old byte, BUNDLES slot **+50** / LOOKS and EDITS record **+48** (0 Off, 1..5). Already in
+  pf_bt (48 <-> slot 50), fl_xr row 11 (FRB: 48, 50), ed_isd0 (+48..+51) and build.py's defaults ('frame'); the camera
+  checks it as -5..5 in every OM-3 firmware, and v0.25..v0.30.3 ignore it (XB_ART 0), so going back keeps the films and
+  shows no border (a film with a border keeps its '*' there). Risk: an old "Frame On" (5) stored on a COLOR or a film in
+  the v0.20..v0.25 era now reads as Border 5 (the debug log does not show the byte: the owner checks the rows).
+- Row: FR_IT 5381 / FRB 0x7eb0 / class 10 turned from the Frame choice row into a 0..5 slider like Halation: sl_slot
+  reads (50,slot), sl_cnt 6, LOWCNT 0 / 6, sl_set0 writes +50 (82 from P + 64k), rw_bar's 0..5 ends, rv_chk / st_chk
+  take FRB, rd_a / rd_b the rd6 readouts. Title "Border" (ST_BDR, string id 0x7f07, was "Frame"), left icon "Bdr"
+  (IC_BD = IC_GM: mkicons PICTURES[3], G-M's unused place, ic_list entry 8; ic_pay +1024 B), the choice-row stubs
+  (fr_a..fr_d, lc_fr, fr_l0..2) gone; build.py registers FR_IT with the slider rows. pm_list: last, after Film Grain
+  (page 4: Film Grain, Border).
+- `bd_run` (`call bd_run,[d2,d3,a2,a3],88`, a0 = buffer record, d0 = 1..5; checks as hl_run: format 0x0c02, W 64..8192
+  and a multiple of 4, memHw >= W, H >= 64): B = max(1, (min(W, H) T) >> 16) rows top and bottom, T = 983 / 1966 /
+  2949 / 3932 / 4915 (1.5 / 3 / 4.5 / 6 / 7.5 % of the short side: 58..291 px on 5184 x 3888), Bp = (B + 1) / 2 pairs
+  left and right; word 0x80ff80ff (Y 255, Cb = Cr = 128). Three bands (top, sides, bottom), K rows per lock with
+  K = max(1, 120000 / (4 pairs + 60)) (BD_LOCKN as HL_LOCKN); rows through `hl_open`, the cached view FLUSHed; a group
+  across the window's edge is retried a row at a time, a row across it a pair at a time (a pair that cannot be
+  mapped is skipped). Exact model `research/border/model.py`; om-emu check `research/border/emu_check.py` (through
+  `research/halation/emu_hl.mjs`, which now takes `fn` / `frame`).
+- om-emu (out-bd1 / out-bd2): **bd_run bit-exact on 9 frames** (4:3, 3:4, 16:9, 1:1, 64 x 64, 1028 x 131 with
+  padding, 8192 x 64, levels 0 and 6 untouched; registers, sp and the bytes after the frame intact); **20 MP at level
+  5: 9.99 M instructions, 89 locks, at most 115 K under one lock** (halation h8: 104..124 M), so ~0.1 s (estimate from
+  halation's rate). Row: page 4 shows "Bdr ±0" under Film Grain, title "Border", the bar from the left; right / the
+  dials step it (main dial: -1 = up), "Bdr +3" with the row's '*'; clamps at 0 and 5; saved at the half-press and
+  kept over a power-off. Code: ext12 +1,576 B (7,088 B left), ext11 -112 B, the block +60 B (6,132 B).
+- Not in om-emu (camera-only): the photo itself; whether buffer 0x1000 is already cut to the aspect (3:2, 16:9, 1:1,
+  3:4) or cut later (then a side would be lost); playback (since #65 the camera's playback preview is one of the
+  shot's small developments without 0x80, so likely no border there, as Glow / Halation); timing and bursts; grain
+  with a border (the look leaves the plain grain path for the Soft Focus route, as Halation + Grain does).
+- Not done: LookLab (the record's +48 is written 0, "Art Effect Off"), the photo code (om3.1 has no border field),
+  docs / CHANGELOG (until the owner's camera test).
+- Suite (build of dd9c6f0, out-bd2): **28 of 28 pass**, incl. the new `border-matches-the-model` and
+  `border-row-0-to-5-kept` (boot 1: right x 7 -> 5, left x 2 -> 3, half-press; boot 2: still 3, left x 4 -> 0) and
+  `static:hook-list` / `static:changed-bytes` (no new hook or patch site).
+- Package: `test-builds/2026-11-16-borders-test1` (private folder): E1479999.BIN `2e6e86fc…13f2`, VERSION
+  "v0.30.3-dev (borders test 1: white Border row 0-5)" (51 characters), go-back v0.30.3 `60b6d954…f546` (patch.py
+  --release v0.30.3), TEST-STEPS (rows, aspects, RAW+JPEG, bursts, Glow + Halation + Grain together, Image Review,
+  video, playback, old Frame values). New camera pictures for the owner's OK: the title "Border", the icon "Bdr".
