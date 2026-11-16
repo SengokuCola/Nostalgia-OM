@@ -5761,3 +5761,14 @@ rgb-page-counts-every-click, halation-matches-the-model). Package `test-builds/2
 - b1b suite (build of ecca6b7, out-bd4): **28 of 28 pass**. ext12 254,032 B (8,112 B left), ext11 63,120 B, block
   6,132 B. Package `test-builds/2026-11-16-borders-test1b` (private folder): E1479999.BIN `14372929…2028`, go-back
   v0.30.3 `60b6d954…f546`; it replaces test 1 (`2e6e86fc…`, never flashed).
+- **b1c (owner on b1b, 2026-11-16: "the icon is too large and already cut off"):** 832 is drawn at its own 82 x 62 in
+  the 46 x 46 slot. The camera has no smaller Frame picture: a shape search over the 6,916 format-14 pictures in the
+  om-emu picture table (white-ink mask against 832's) finds the Frame icon only as 832 / 825 (the same family as the
+  other Art Effects 818..833, 3450..3453, 125, 156..158, 391 / 392); the small stock rectangles (e.g. 11161, 633) are
+  other functions' icons. Shrinking 832 would put a camera graphic into patch.json (not allowed), so the row gets our
+  own `mkicons.border_icon` (46 x 46, PICTURES[3], `IC_BD` = IC_GM again; ic_pay 17,152 B): a small photo with a 4 px
+  white border, a 1 px dark line, a grey sky and darker hill, the 2 px dark edge of the Glow / Halo / Balance icons.
+  om-emu: whole in the slot beside "+3", about the Film Grain icon's size. New picture: sent to the owner for approval.
+  VERSION "v0.30.3-dev (borders test 1c: own small Border icon)". Suite on c268419: **28 of 28 pass** (pass recorded).
+  ext12 254,544 B (7,600 B left). Package `test-builds/2026-11-16-borders-test1c`: E1479999.BIN `d8ce3d89…3db3`,
+  go-back v0.30.3 `60b6d954…f546`; tests 1 / 1b never flashed (folders moved to the Trash).
