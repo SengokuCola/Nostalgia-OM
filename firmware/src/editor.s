@@ -2732,7 +2732,8 @@ pm_list:                          /* item ids, in the order the owner reads them
 .set IC_F1, 0x7f8d
 .set IC_HL, IC_F0                 /* v0.28 "Halo" slider icon (mkicons PICTURES[12], Frame's old place) */
 .set IC_TB, IC_F1                 /* v0.28 "Bal" slider icon (mkicons PICTURES[13], Frame On's old place) */
-.set IC_BD, IC_GM                 /* borders: "Bdr" slider icon (mkicons PICTURES[3], G-M's unused place; ic_list 8) */
+.set IC_BD, 832                   /* borders: the camera's own Frame Art Effect picture (82 x 62: item 867's left-column
+                                   * cell for effect 3, Frame), ic_list 8; owner 2026-11-16: "use the frame effect icon" */
 .set IC_END, 0x7f8e
 .set IC_WB, 0x7f8f                 /* v0.25 the WB grid row's left cell (wb_desc, drawn at run time) */
 .set FV0, 100                     /* v0.24 film list: picture-mode values FV0 + j for film j (COLOR k = j / 5, look j % 5 + 1) */
@@ -5101,7 +5102,7 @@ ic_list:
  .long 0xffff, 7, 7, IC_BK
  .long 0xffff, 7, 7, IC_WH
  .long 0xffff, 7, 7, 12545         /* v0.25: 7 = the camera's WB± picture (the WB grid row) */
- .long 0xffff, 7, 7, IC_BD         /* borders: 8 = Border (G-M's slider icon before v0.25) */
+ .long 0xffff, 7, 7, IC_BD         /* borders: 8 = Border, the camera's Frame icon (G-M's slider icon before v0.25) */
  .long 0xffff, 7, 7, IC_GL         /* v0.25: 9 = Glow / Clarity */
  .long 0xffff, 7, 7, IC_HL         /* v0.28: 10 = Halation */
  .long 0xffff, 7, 7, IC_TB         /* v0.28: 11 = Tone Balance */
@@ -5324,7 +5325,7 @@ fw_apply:
 .section .ext12,"ax"               /* v0.28: moved out of the full ext11 */
  .balign 8
 ic_pay:
- .space 17664                     /* v0.25: 14 pictures (build.py checks the fit; A-B blank; v0.28: "Halo" in Frame's place; colour menu test 7: + 256 for the pictures; borders: + 1024 for "Bdr" in G-M's place) */
+ .space 16640                     /* v0.25: 14 pictures (build.py checks the fit; A-B / G-M blank; v0.28: "Halo" in Frame's place; colour menu test 7: + 256 for the pictures) */
 ic_pend:
 .section .ext11,"ax"
 
