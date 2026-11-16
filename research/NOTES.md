@@ -5750,3 +5750,14 @@ rgb-page-counts-every-click, halation-matches-the-model). Package `test-builds/2
   "v0.30.3-dev (borders test 1: white Border row 0-5)" (51 characters), go-back v0.30.3 `60b6d954…f546` (patch.py
   --release v0.30.3), TEST-STEPS (rows, aspects, RAW+JPEG, bursts, Glow + Halation + Grain together, Image Review,
   video, playback, old Frame values). New camera pictures for the owner's OK: the title "Border", the icon "Bdr".
+- **b1b (owner, 2026-11-16: "can you not use the frame effect icon that already exists in camera?"):** the Border row's
+  left icon is now the camera's own Frame picture, **stock id 832** (82 x 62): item 867 is the Art Effect (values 0..9,
+  value 3 = Frame, string 767), its left-column cells 829..833 (82 x 62) and strip icons 822..826 (100 x 76); sizes from
+  the picture table at *(0x60379740) + 4 id in om-emu. ic_list entry 8 = 832 (`IC_BD`), as the WB row's stock WB±
+  12545; our "Bdr" picture dropped (mkicons PICTURES[3] blank again, ic_pay back to 16640 B), so the build adds no
+  camera picture of ours (the title "Border" is camera-font text). om-emu: 832 and 825 both draw beside the value in
+  the left column ("[frame] +3*"); 832 is the cell the camera itself uses for Frame there and sits a little smaller.
+  VERSION "v0.30.3-dev (borders test 1b: the camera's Frame icon)".
+- b1b suite (build of ecca6b7, out-bd4): **28 of 28 pass**. ext12 254,032 B (8,112 B left), ext11 63,120 B, block
+  6,132 B. Package `test-builds/2026-11-16-borders-test1b` (private folder): E1479999.BIN `14372929…2028`, go-back
+  v0.30.3 `60b6d954…f546`; it replaces test 1 (`2e6e86fc…`, never flashed).
