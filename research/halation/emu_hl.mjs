@@ -1,7 +1,8 @@
 // Runs the firmware's halation pass (editor.s `hl_run`) directly in om-emu on test frames, for the bit-exact check
 // against research/halation/model.py and the instruction counts (our script; emu_check.py drives it).
 //   OM_EMU_MODEL=E147 node emu_hl.mjs EMU_DIR MAIN.BIN CARD.omsd SPEC.json OUT.json
-// SPEC: {hl_run, flush, lock, unlock, cases: [{name, in, out, W, H, pitch, level}]} (addresses as numbers). Each case:
+// SPEC: {hl_run, flush, lock, unlock, cases: [{name, in, out, W, H, pitch, level}]} (addresses as numbers; optional fn and
+// frame: another pass with the same record and level, called `call fn,[d2,d3,a2,a3],frame`: research/border). Each case:
 // the frame (raw 4:2:2, H x pitch bytes) is written to DRAM at FRAME (uncached view, so hl_open uses it directly, no
 // bus window), a guard pattern after it, a buffer record {bus, 0, format 0x0c02, memHw, W, H}; then a stub
 // `call hl_run,[d2,d3,a2,a3],124` runs single-stepped (no interrupts) until it returns. FLUSH (0x60070e69) polls a cache
@@ -38,8 +39,9 @@ const SP = ((saved[8] - 0x800) & ~3) >>> 0;
 const STUB = 0xa7f00000, REC = STUB + 0x100, FRAME = 0xa8000000, GUARD = 0x1000;   // uncached DRAM, unused in om-emu
 // (checked: every byte there reads 0 before a case; 0xb2000000 and up are not DRAM in om-emu's E147)
 dd.write(spec.flush, Uint8Array.from([0xdf, 0xc0, 0x10]));                       // ret [d2,d3],16
-const rel = (spec.hl_run - STUB) | 0;
-dd.write(STUB, Uint8Array.from([0xdd, ...u32b(rel), 0xf0, 0x7c, 0xcb, 0xcb]));   // call hl_run,[d2,d3,a2,a3],124
+const FN = spec.fn ?? spec.hl_run, FRM = spec.frame ?? 124;
+const rel = (FN - STUB) | 0;
+dd.write(STUB, Uint8Array.from([0xdd, ...u32b(rel), 0xf0, FRM, 0xcb, 0xcb]));   // call hl_run,[d2,d3,a2,a3],124 (or fn, frame)
 const RET = STUB + 7;
 const limit0 = CPU.limit; CPU.limit = 0;   // no insn limit while the cases run (restored after)
 const out = [];

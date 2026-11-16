@@ -7,6 +7,7 @@
  .set XB_SHG, 0                   /* film test 11's Shading check before the camera grain (1: on; rebooted on the camera) */
  .set XB_H0, 0                    /* v0.28 halation probe h0 (camera-tested 2026-11-12): off */
  .set XB_HL, 1                    /* v0.28: the Halation row (slot +30, 1..5) on our looks' stills (editor.s hl_run) */
+ .set XB_BD, 1                    /* borders: the Border row (slot +50, 1..5; Frame's old byte) on our looks' stills (editor.s bd_run) */
 /* Caduceus for OM-3 v0.20 test 5: the Extras code block (appended to GUIDES.BIN, our own code).
  *
  * Runs from its heap buffer (uncached pool, as the camera's malloc returns), relocated in place by entry 0. Linked at
@@ -151,6 +152,12 @@ xb_cap:
  bne 2f                           /* Glow / Clarity: the Soft Focus passes (+ CPU grain if Grain) */
  .if XB_HL
  movbu (30,a1),d0                 /* v0.28: the Halation row alone -> the Soft Focus passes too (xb_wt: w 1024, no glow) */
+ extb d0
+ cmp 0,d0
+ bgt 2f
+ .endif
+ .if XB_BD
+ movbu (50,a1),d0                 /* borders: the Border row alone -> the Soft Focus passes too (w 1024: xb_gs draws it) */
  extb d0
  cmp 0,d0
  bgt 2f
@@ -528,10 +535,11 @@ xb_rec:                           /* `call xb_rec,[d2,d3],12`, a0 = job -> a1 = 
  .set P_LPTR, 708
 xb_gs:                            /* `calls` (0,sp) = return, a0 = job */
  movm [d2,d3,a2,a3],(sp)
- add -20,sp                       /* (0) call slot, (4) job, (8) level, (12) result, (16) halation 0..5 */
+ add -24,sp                       /* (0) call slot, (4) job, (8) level, (12) result, (16) halation 0..5, (20) border 0..5 */
  mov a0,(4,sp)
  clr d0
  mov d0,(16,sp)
+ mov d0,(20,sp)
  call xb_slot,[d2,d3],12
  cmp 0,a1
  beq 90f
@@ -546,6 +554,18 @@ xb_gs:                            /* `calls` (0,sp) = return, a0 = job */
 7:
  mov d0,(16,sp)
 6:
+ .endif
+ .if XB_BD
+ movbu (50,a1),d0                 /* borders: the Border row 1..5 (slot +50; 0 and below: none) */
+ extb d0
+ cmp 0,d0
+ ble 16f
+ cmp 5,d0
+ bls 17f
+ mov 5,d0
+17:
+ mov d0,(20,sp)
+16:
  .endif
  movbu (53,a1),d0                 /* Grain 1..3 (older 4, 5 -> 3) */
  cmp 0,d0
@@ -562,16 +582,20 @@ xb_gs:                            /* `calls` (0,sp) = return, a0 = job */
  clr d0                           /* h0: still the setup, then the probe (level 0 = no grain) */
  bra 10f
  .endif
+ clr d0                           /* level 0 = no CPU grain */
  .if XB_HL
- mov (16,sp),d1                   /* h1: halation -> the setup, then the pass (level 0 = no CPU grain) */
+ mov (16,sp),d1                   /* h1: halation -> the setup, then the pass */
  cmp 0,d1
- beq 90f
- clr d0
- bra 10f
+ bne 10f
+ .endif
+ .if XB_BD
+ mov (20,sp),d1                   /* borders: a border -> the setup, then bd_run */
+ cmp 0,d1
+ bne 10f
  .endif
 90:                               /* no grain: the stock setup, as if called directly */
  mov (4,sp),a0
- add 20,sp
+ add 24,sp
  movm (sp),[d2,d3,a2,a3]
  jmp SF_ENT
 10:
@@ -615,9 +639,21 @@ xb_gs:                            /* `calls` (0,sp) = return, a0 = job */
  mov a1,a0
  call xb_h0,[d2,d3,a2,a3],48
  .endif
+ .if XB_BD
+ mov (20,sp),d0                   /* borders: last, so no glow, halo or grain on the border */
+ cmp 0,d0
+ beq 20f
+ mov (4,sp),a0
+ call xb_rec,[d2,d3],12
+ cmp 0,a1
+ beq 20f
+ mov a1,a0
+ mov (20,sp),d0
+ call BD_RUN,[d2,d3,a2,a3],88
+ .endif
 20:
  mov (12,sp),d0
- ret [d2,d3,a2,a3],36
+ ret [d2,d3,a2,a3],40
 
  .if XB_H0
 /* xb_h0 (v0.28 halation probe h0, experiment): which odd byte of buffer 0x1000 is Cb and which Cr, and whether chroma

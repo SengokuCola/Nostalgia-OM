@@ -128,6 +128,12 @@ for (const t of SCRIPT.split(/\s+/).filter(Boolean)) {
     const got = Buffer.from(rd(at >>> 0, hex.length / 2)).toString('hex');
     if (got !== hex.toLowerCase()) { console.error(`expect:mem ${where}: ${got}, not ${hex}`); process.exit(1); }
   }
+  else if (t.startsWith('expect:p:')) {
+    // expect:p:OFF=HEX: as expect:mem at P + OFF (OFF decimal, as pokep:), e.g. expect:p:82=03 = COLOR 1's slot +50
+    const [o, hex] = t.slice(9).split('='), at = (POOL + u16(STATE) - 1 + parseInt(o, 10)) >>> 0;
+    const got = Buffer.from(rd(at, hex.length / 2)).toString('hex');
+    if (got !== hex.toLowerCase()) { console.error(`expect:p ${o}: ${got}, not ${hex}`); process.exit(1); }
+  }
   else if (t.startsWith('expect:isdef:')) {
     // expect:isdef:FN:ID=V ends the run with exit 1 unless FN (hex, an "is at default" entered as the stock one,
     // `call FN,[d2,d3,a2],24`, d0 id -> d0 1 default) answers V (0 or 1) for ID (hex): a row's '*' is V = 0.

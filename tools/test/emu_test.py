@@ -32,6 +32,10 @@ AUDIT = 'patch-audit'
 HALATION = 'halation-matches-the-model'
 HALATION_CASES = ['fade3', 'odd2', 'small5', 'min5', 'w68', 'odd131', 'clamp5', 'random3', 'day5', 'dark5']
 HALATION_CHECK = REPO / 'research/halation/emu_check.py'
+# borders (2026-11-16): the border pass (editor.s bd_run) called directly on test frames must give every byte of
+# research/border/model.py (research/border/emu_check.py). Small frames, a few seconds.
+BORDER = 'border-matches-the-model'
+BORDER_CHECK = REPO / 'research/border/emu_check.py'
 ENGINE = 'look-tables-match-the-model'
 DIAL = 'rgb-page-counts-every-click'
 REAR_DIAL = 0x9032                               # the rear dial's event (cv_ev); a1 its signed clicks
@@ -167,6 +171,8 @@ FIXTURES = {
 }
 # From the shooting screen: the RGB row (the third in Picture Mode), the rear dial once on Red's first point, out.
 OPEN_RGB = 'ok wait ok wait down wait down wait'
+# borders: Picture Mode's Border row, the 17th (pm_list: after Film Grain); COLOR 1's slot +50 is P + 82
+OPEN_BORDER = 'ok wait ok wait' + ' down wait' * 16
 EDIT_RGB = f'{OPEN_RGB} main+1 wait menu wait wait'
 
 
@@ -236,6 +242,14 @@ TESTS = {
     'live-dial-turn-holds-the-label': [
         Boot(BOOT1_ASSIGN_C1),
         Boot(LIVE_TURN_HOLDS_THE_LABEL, expect=[P_FILM_LINE], mode_dial=MODE_DIAL_M),
+    ],
+    # borders: the Border row steps 0..5 (right / left; no step past either end) into COLOR 1's slot +50, and the
+    # value is kept over a power-off (saved at the half-press).
+    'border-row-0-to-5-kept': [
+        Boot(f's1 wait wait {OPEN_BORDER}' + ' right wait' * 7 + ' expect:p:82=05 left wait left wait expect:p:82=03'
+             ' menu wait wait s1 wait wait poweroff'),
+        Boot(f'wait wait s1 wait wait expect:p:82=03 {OPEN_BORDER}' + ' left wait' * 4 + ' expect:p:82=00'
+             ' menu wait wait s1 wait wait poweroff'),
     ],
     'curves-file-kept-in-camera': [
         Boot(f's1 wait wait {PICK_FILM_2} s1 wait wait poweroff', card={'CURVES.BIN': 'CURVES_A'},
@@ -496,6 +510,19 @@ def run_halation(emu, build, out, card):
     if r.returncode == 0:
         return HALATION, []
     return HALATION, [l for l in r.stdout.splitlines() if l.startswith('DIFF')] or [f'emu_check.py exit {r.returncode} (check.log)']
+
+
+def run_border(emu, build, out, card):
+    """bd_run on research/border/emu_check.py's default cases in om-emu: bit-exact with the model, registers and sp
+    back, nothing past the frame, levels 0 and 6 untouched."""
+    d = out / BORDER
+    r = subprocess.run([sys.executable, BORDER_CHECK, build, '--out', d, '--card', card], capture_output=True,
+                       text=True, timeout=BOOT_TIMEOUT_S, env={**os.environ, 'OM3_EMU': emu})
+    d.mkdir(parents=True, exist_ok=True)
+    (d / 'check.log').write_text(r.stdout + r.stderr)
+    if r.returncode == 0:
+        return BORDER, []
+    return BORDER, [l for l in r.stdout.splitlines() if l.startswith('DIFF')] or [f'emu_check.py exit {r.returncode} (check.log)']
 def tone_strength(code):
     """a stored strength code -5..5 -> strength 0..10 (st_run; research/splittone/model.py strength)"""
     return 2 * code if code >= 0 else -2 * code - 1
@@ -620,7 +647,7 @@ def newest_looks():
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('build', type=pathlib.Path)
-    ap.add_argument('--only', nargs='+', choices=sorted([*TESTS, AUDIT, HALATION, ENGINE, DIAL, *STATIC]))
+    ap.add_argument('--only', nargs='+', choices=sorted([*TESTS, AUDIT, HALATION, BORDER, ENGINE, DIAL, *STATIC]))
     ap.add_argument('--jobs', type=lambda v: max(1, int(v)), default=DEFAULT_JOBS)
     ap.add_argument('--out', type=pathlib.Path)
     ap.add_argument('--looks', type=pathlib.Path)
@@ -643,7 +670,7 @@ def main():
     looks = (a.looks or newest_looks()).resolve()
     make_card(emu, build, looks, card0)
     fixtures = make_fixtures(out, looks)
-    names = a.only or sorted([*TESTS, AUDIT, HALATION, ENGINE, DIAL, *STATIC])
+    names = a.only or sorted([*TESTS, AUDIT, HALATION, BORDER, ENGINE, DIAL, *STATIC])
     stock = static_check.find_stock(a.stock) if any(n in STATIC for n in names) else None
     runs = [(n, k) for n in names for k in range(1, a.repeat + 1)]
     print(f'{len(names)} tests{f" x {a.repeat}" if a.repeat > 1 else ""} on {build}, results in {out}')
@@ -666,6 +693,8 @@ def main():
                 return run_audit(emu, build, d)
             if n == HALATION:
                 return run_halation(emu, build, d, card0)
+            if n == BORDER:
+                return run_border(emu, build, d, card0)
             if n == ENGINE:
                 return run_engine(emu, build, d, card0)
             if n == DIAL:
