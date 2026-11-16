@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|.*create_pull_request",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/tools/test/pr_gate.py\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

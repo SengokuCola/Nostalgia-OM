@@ -4,6 +4,7 @@
 // Glow / Clarity or Art Effects: those stay the user's choice.
 import filmsJson from './data/om3films.json';
 import { blankLook, type Look } from './pack';
+import type { RgbCurves } from './curves';
 
 export interface Film {
   name: string; group: FilmGroup; film: string; desc: string;
@@ -12,6 +13,8 @@ export interface Film {
   sharp: number;   // firmware v0.22 Sharp, the camera's numbers (0 = its normal)
   split?: { sh_color: number; sh: number; hl_color: number; hl: number };   // v0.26 split toning
   matched?: boolean;   // colour matched: graded against film scans of a colour chart (else hand-tuned from descriptions)
+  rgb?: RgbCurves;     // the camera's 20 (2026-11-15): RGB curves and colour mix of the regrade (test firmware; not in LOOKS.BIN)
+  mix?: number[];
 }
 export type FilmGroup = 'fuji' | 'slide' | 'neg' | 'instant' | 'print';
 export const FILM_GROUPS: [FilmGroup, string][] = [
@@ -45,6 +48,8 @@ export function filmLook(f: Film): Look {
   l.advice = { contrast: f.contrast, sharpness: f.sharp ?? 0 };
   l.wb = f.wb ? { ...f.wb } : null;
   if (f.split) l.split = { ...f.split };
+  if (f.rgb) l.rgb = { r: [...f.rgb.r], g: [...f.rgb.g], b: [...f.rgb.b] };
+  if (f.mix) l.mix = [...f.mix];
   l.notes = f.desc;
   return l;
 }

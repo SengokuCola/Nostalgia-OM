@@ -7,6 +7,7 @@
  .set XB_SHG, 0                   /* film test 11's Shading check before the camera grain (1: on; rebooted on the camera) */
  .set XB_H0, 0                    /* v0.28 halation probe h0 (camera-tested 2026-11-12): off */
  .set XB_HL, 1                    /* v0.28: the Halation row (slot +30, 1..5) on our looks' stills (editor.s hl_run) */
+ .set XB_BD, 1                    /* borders: the Border row (slot +50, 1..5; Frame's old byte) on our looks' stills (editor.s bd_run) */
 /* Caduceus for OM-3 v0.20 test 5: the Extras code block (appended to GUIDES.BIN, our own code).
  *
  * Runs from its heap buffer (uncached pool, as the camera's malloc returns), relocated in place by entry 0. Linked at
@@ -155,6 +156,12 @@ xb_cap:
  cmp 0,d0
  bgt 2f
  .endif
+ .if XB_BD
+ movbu (50,a1),d0                 /* borders: the Border row alone -> the Soft Focus passes too (w 1024: xb_gs draws it) */
+ extb d0
+ cmp 0,d0
+ bgt 2f
+ .endif
  .if XB_FX
  ARTB d0
  .else
@@ -205,12 +212,49 @@ xb_cap:
  bne 6f
  call xb_art,[],0
 6:
+ call xb_rv,[d2,d3],12            /* #65: not on a shot's small extra pictures (Image Review) */
  mov d1,(a2)
  jmp fx_tail
 7:
  clr d0
 8:
  jmp fx_back
+
+/* xb_rv (#65, 2026-11-17): `call xb_rv,[d2,d3],12` from xb_cap before it stores the flags, d1 = the COLOR job's
+ * flags, a2 = params+12 -> d1. The camera strips its multi-pass effect flags (0x40 Star Light, 0x80 Soft Focus, ...)
+ * from Art Filter jobs whose type is 0x1xx or 0x4x: the extra small developments of a shot (types 0x110 / 0x120 for
+ * capture kinds 0x2001 / 0x2006, e.g. the Image Review picture), not the saved photo (type 0x1000). That strip never
+ * runs for COLOR (key 11), so our Glow / Halation flag 0x80 reached them: the review picture came out black, and the
+ * next switch to a standard picture mode froze live view (#65, #27). Here the same rule for our COLOR jobs. The job
+ * type comes from the camera's own mapper 0x60555b58 (a0 = the source request at params+4, `call ..,[d2,a2],12`, as
+ * the request builders 0x6054f71d.. / 0x60553ae4 call it right after this converter). Found by Caduceus for the
+ * E-P7 (cakelesscoder/caduceus-ep7, v0.31 "Rec View fix", patches/recview), ported here in our own code.
+ * Keeps a2, a3 and MDR; uses d0, a0, a1. */
+xb_rv:
+ mov d1,d2
+ mov mdr,d0
+ mov d0,d3
+ mov d2,d0
+ and 0xc0,d0
+ beq 9f
+ mov (-8,a2),a0                   /* the source request (params+4) */
+ cmp 0,a0
+ beq 9f
+ call TYPEMAP,[d2,a2],12          /* d0 = the job type */
+ mov d0,d1
+ and 0xf00,d1
+ cmp 0x100,d1
+ beq 8f
+ and 0xf0,d0
+ cmp 0x40,d0
+ bne 9f
+8:
+ and 0xffffff3f,d2                /* 0x40 and 0x80 off, as the camera does for Art Filter jobs */
+9:
+ mov d3,d0
+ mov d0,mdr
+ mov d2,d1
+ ret [d2,d3],12
 
 /* live view / movie (record -> development request 0x6046b86c, COLOR, the stock Art Effect gates passed):
  * a2 = request (+12 flags), a3 = record+248, d3 live. Glow only (Clarity is invisible on combiner 12, as Caduceus). */
@@ -491,10 +535,11 @@ xb_rec:                           /* `call xb_rec,[d2,d3],12`, a0 = job -> a1 = 
  .set P_LPTR, 708
 xb_gs:                            /* `calls` (0,sp) = return, a0 = job */
  movm [d2,d3,a2,a3],(sp)
- add -20,sp                       /* (0) call slot, (4) job, (8) level, (12) result, (16) halation 0..5 */
+ add -24,sp                       /* (0) call slot, (4) job, (8) level, (12) result, (16) halation 0..5, (20) border 0..5 */
  mov a0,(4,sp)
  clr d0
  mov d0,(16,sp)
+ mov d0,(20,sp)
  call xb_slot,[d2,d3],12
  cmp 0,a1
  beq 90f
@@ -509,6 +554,18 @@ xb_gs:                            /* `calls` (0,sp) = return, a0 = job */
 7:
  mov d0,(16,sp)
 6:
+ .endif
+ .if XB_BD
+ movbu (50,a1),d0                 /* borders: the Border row 1..5 (slot +50; 0 and below: none) */
+ extb d0
+ cmp 0,d0
+ ble 16f
+ cmp 5,d0
+ bls 17f
+ mov 5,d0
+17:
+ mov d0,(20,sp)
+16:
  .endif
  movbu (53,a1),d0                 /* Grain 1..3 (older 4, 5 -> 3) */
  cmp 0,d0
@@ -525,16 +582,20 @@ xb_gs:                            /* `calls` (0,sp) = return, a0 = job */
  clr d0                           /* h0: still the setup, then the probe (level 0 = no grain) */
  bra 10f
  .endif
+ clr d0                           /* level 0 = no CPU grain */
  .if XB_HL
- mov (16,sp),d1                   /* h1: halation -> the setup, then the pass (level 0 = no CPU grain) */
+ mov (16,sp),d1                   /* h1: halation -> the setup, then the pass */
  cmp 0,d1
- beq 90f
- clr d0
- bra 10f
+ bne 10f
+ .endif
+ .if XB_BD
+ mov (20,sp),d1                   /* borders: a border -> the setup, then bd_run */
+ cmp 0,d1
+ bne 10f
  .endif
 90:                               /* no grain: the stock setup, as if called directly */
  mov (4,sp),a0
- add 20,sp
+ add 24,sp
  movm (sp),[d2,d3,a2,a3]
  jmp SF_ENT
 10:
@@ -578,9 +639,21 @@ xb_gs:                            /* `calls` (0,sp) = return, a0 = job */
  mov a1,a0
  call xb_h0,[d2,d3,a2,a3],48
  .endif
+ .if XB_BD
+ mov (20,sp),d0                   /* borders: last, so no glow, halo or grain on the border */
+ cmp 0,d0
+ beq 20f
+ mov (4,sp),a0
+ call xb_rec,[d2,d3],12
+ cmp 0,a1
+ beq 20f
+ mov a1,a0
+ mov (20,sp),d0
+ call BD_RUN,[d2,d3,a2,a3],88
+ .endif
 20:
  mov (12,sp),d0
- ret [d2,d3,a2,a3],36
+ ret [d2,d3,a2,a3],40
 
  .if XB_H0
 /* xb_h0 (v0.28 halation probe h0, experiment): which odd byte of buffer 0x1000 is Cb and which Cr, and whether chroma

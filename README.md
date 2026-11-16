@@ -1,5 +1,6 @@
-> **Branch `feature/better-grain`: on hold (owner, 2026-11-15).** Our own colour grain picture (test build g1),
-> emulator only, not camera-tested; see `research/NOTES.md`, "Better grain g1". The released firmware is on `main`.
+> **Branch `feature/better-grain`: camera test (2026-11-16).** Our own colour grain picture (g1) on top of the Border
+> row (`feature/image-borders`), emulator only, not camera-tested; see `research/NOTES.md`, "Better grain g1". The
+> released firmware is on `main`.
 
 <h1 align="center">Caduceus for OM-3</h1>
 
@@ -15,11 +16,12 @@
   <a href="https://androidfanman.github.io/caduceus-om3/looklab/"><b>LookLab</b></a> &nbsp;·&nbsp;
   <a href="https://androidfanman.github.io/caduceus-om3/pages/faq/"><b>FAQ</b></a> &nbsp;·&nbsp;
   <a href="https://androidfanman.github.io/caduceus-om3/pages/roadmap/"><b>Roadmap</b></a> &nbsp;·&nbsp;
-  <a href="https://github.com/androidfanman/caduceus-om3/tree/main/devkit/photo-code"><b>Developers</b></a>
+  <a href="https://github.com/androidfanman/caduceus-om3/tree/main/devkit/photo-code"><b>Developers</b></a> &nbsp;·&nbsp;
+  <a href="https://discord.gg/fKpcKGsNPY"><b>Discord</b></a>
 </p>
 
 <p align="center">
-  Latest: <b>v0.29.5</b> (2026-11-15)
+  Latest: <b>v0.30.3</b> (2026-11-17)
 </p>
 
 ## What it does
@@ -27,8 +29,8 @@
 **[Take the tour](https://androidfanman.github.io/caduceus-om3/)**: the films and every setting on the camera's own screens, with before / after photos.
 
 - **Your films in Picture Mode:** FILM 1–20 appear after COLOR 1–4, each with its own name. 20 film sims come with it.
-- **A colour editor on the camera:** hue, saturation and brightness for 12 colours, split toning, Blacks and Whites,
-  WB shift, Sharpness, Noise Filter, Shading, Glow / Clarity and Color Grain.
+- **A colour editor on the camera:** Color Mix, RGB curves, hue, saturation and brightness for 12 colours, split
+  toning, Blacks and Whites, WB shift, Sharpness, Noise Filter, Shading, Glow / Clarity, Halation and Color Grain.
 - **Make films on your computer** in the [LookLab](https://androidfanman.github.io/caduceus-om3/looklab/), with a preview, then copy one file (`LOOKS.BIN`) to the card: the camera takes films it never had.
 - **Your films live in the camera:** the films, your changes to them and the Extras settings are kept in the camera's
   own memory (from v0.29), so any SD card works, even a blank one, or none at all (v0.29.1).
@@ -152,6 +154,39 @@ Coming next: see the [roadmap](https://androidfanman.github.io/caduceus-om3/page
 - Keep the restore file the launcher makes (`restore/E1479999.BIN`): flashing it puts the camera back to stock 1.1.
 - If something misbehaves, copy the card's `OM3MOD` folder to your computer, delete it from the card and try again (from
   v0.29 your films are in the camera, so this doesn't lose them). If that doesn't help, flash the restore file.
+
+## Other cameras
+
+Caduceus for OM-3 works only on the **OM-3 with firmware 1.1**. I get asked about other cameras a lot, so here is
+why that's hard, and why it isn't something I can do.
+
+- **Every camera and every firmware version is different inside.** Caduceus changes the OM-3's firmware at several
+  hundred exact places: where the menus are drawn, where the colour settings are read, where the photo is developed.
+  None of those places are the same on another model, or even on another firmware version of the OM-3. A port to
+  another camera means finding all of them again, from scratch.
+- **It starts from OM's own firmware update.** The launcher takes the official update file that OM SYSTEM
+  publishes, adds Caduceus's changes and makes a new update for the card. A camera that has never had a firmware
+  update has no such file to start from.
+- **It has to be tested on the real camera.** Every change runs in an emulator of the OM-3 first, but nothing is
+  released until it has worked on a real OM-3. A firmware change that goes wrong can freeze a camera or stop it
+  starting. I only own an OM-3, so I can't test, or safely release, anything for other cameras.
+- **It's a lot of work.** The OM-3 version took many rounds of test builds on the camera for each feature, and every
+  model would need the same again.
+
+**The new OM SYSTEM PEN (2026):** it has the same name and look as the PEN line, but inside it is a different camera
+from both the OM-3 and the older PEN E-P7 (a different image processor, TruePic IX instead of the OM-3's TruePic X).
+As far as we know, OM SYSTEM hasn't published a firmware update for it yet, so there is no firmware file to start a
+port from. Even when one comes out, it would be a new port, done by someone who owns the camera.
+
+**Other options:**
+- **PEN E-P7:** there's a sister project, [Caduceus for the E-P7](https://github.com/cakelesscoder/caduceus-ep7), by
+  cakelesscoder. Caduceus for OM-3 grew out of it.
+- **Want to port it yourself?** If you own another OM SYSTEM or Olympus camera and are comfortable with low-level
+  work, the research notes ([`research/NOTES.md`](research/NOTES.md)), the tools and the emulator set-up here are a
+  good starting point. Say hello on [Discord](https://discord.gg/fKpcKGsNPY) or in a GitHub issue.
+
+Please don't flash an OM-3 file on any other camera: the launcher refuses other firmware files, and a wrong file can
+stop a camera from starting.
 
 ## For developers
 

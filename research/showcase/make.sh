@@ -1,12 +1,14 @@
 #!/bin/bash
 # Every picture of the show-and-tell page (pages/showcase/img/), from scratch, in about three minutes:
-#   1. the standard 20 films (LookLab's, webapp/src/data/om3films.json) as LOOKS.BIN on a blank card;
+#   1. the standard 20 films (LookLab's, webapp/src/data/om3films.json) as LOOKS.BIN + CURVES.BIN on a blank card;
 #   2. the camera screens: emulator runs on that card (shoot.sh), the HSL wheels drawn in (wheel.py), quantized;
 #   3. the photos: each film and each setting on CC0 / public-domain samples with LookLab's own preview
 #      (films.ts, demos.ts); Noise Filter and Vignette Correction as illustrations (illus.py).
 # Needs the workspace (`. ~/om3-work/env.sh`) and `cd webapp && npm install`. The firmware is IMG (default: the
-# build research/setup.sh checks, i.e. the latest release (v0.29.3 for the Delete row); the page shows v0.29's behaviour, films kept in the camera
-# with nothing else on the card). Work files go to SHOWCASE_WORK (default $OM3_WORK/showcase).
+# build research/setup.sh checks, i.e. the latest release; v0.30's rows need a v0.30 build: IMG=$OM3_WORK/out-NAME/main.bin).
+# The page shows the films kept in the camera with nothing else on the card. v0.30's Picture Mode order (colour menu
+# test 7): Film, Color Mix, RGB, Color wheel (HSL), Split Tone Balance, WB, Highlight & Shadow, Blacks / Whites,
+# Contrast, Sharpness, Noise Filter, Vignette Correction, Shading, Glow, Halation, Film Grain. Work files go to SHOWCASE_WORK (default $OM3_WORK/showcase).
 set -e
 H="$(cd "$(dirname "$0")" && pwd)"
 : "${OM3_REPO:?load ~/om3-work/env.sh first}"
@@ -17,30 +19,36 @@ r() { local s=""; for i in $(seq 1 $2); do s="$s $1"; done; echo $s; }
 
 # 1. the standard 20 on a blank card (+ img/films/films.js for the page)
 (cd "$OM3_REPO/webapp" && npx vite-node ../research/showcase/mklooks.ts -- "$W" "$OUT" > /dev/null)
-python3 "$OM3_REPO/tools/emulator/card_add_file.py" "$OM3_WORK/card-blank.omsd" "$W/card.omsd" "$W/LOOKS.BIN" OM3MOD LOOKS.BIN > /dev/null
+python3 "$OM3_REPO/tools/emulator/card_add_file.py" "$OM3_WORK/card-blank.omsd" "$W/card1.omsd" "$W/LOOKS.BIN" OM3MOD LOOKS.BIN > /dev/null
+python3 "$OM3_REPO/tools/emulator/card_add_file.py" "$W/card1.omsd" "$W/card.omsd" "$W/CURVES.BIN" OM3MOD CURVES.BIN > /dev/null   # v0.30: the films' curves + mix
 
 # 2. camera screens. Keys: s1 ok ok = Picture Mode on COLOR 1; right = next COLOR / FILM; down = next row; on the
-# wheel, info = next page, sub-1 = next colour clockwise from Yellow, one main+1 / main-1 per step.
+# wheel, info = next page, sub-1 = next colour clockwise from Yellow, one main+1 / main-1 per step. On Mix and RGB, info =
+# next colour (shared by the two pages, from Red); Mix: main = Sat, sub-1 = Hue +1; RGB: sub-1 = next point, main = Level.
 L='s1 ok ok right right right right shot:f01.png'; for i in $(seq -w 2 20); do L="$L right shot:f$i.png"; done
 "$H/shoot.sh" list "$L" > /dev/null
 # the five wheel pages on COLOR 1, one change each (Color: Blue + Blue-cyan -5; Hue: Yellow +5; Luminance: the three
 # blues -5; Shadows: Blue 10; Highlights: Orange 10)
-"$H/shoot.sh" wheels "s1 ok ok down $(r sub-1 7) $(r main-1 5) sub+1 $(r main-1 5) shot:w1.png info info $(r sub+1 6) $(r main+1 5) shot:w2.png info $(r sub-1 6) $(r main-1 5) sub-1 $(r main-1 5) sub-1 $(r main-1 5) sub+1 sub+1 shot:w3.png info $(r main+1 10) shot:w4.png info $(r sub+1 5) $(r main+1 10) shot:w5.png" > /dev/null
-# the other rows on COLOR 1 at each demo's "after" value (Vignette Correction: its default On, no dial)
-"$H/shoot.sh" rows "s1 ok ok down down $(r main-1 5) shot:bal.png down $(r main+1 2) shot:con.png down $(r main+1 7) $(r sub+1 7) shot:curve.png down down down $(r main+1 2) shot:sharp.png down main+1 shot:noise.png down main+1 shot:vigoff.png down $(r main-1 5) shot:shade.png down $(r main-1 5) shot:glow.png down $(r main-1 5) shot:halo.png down $(r main+1 3) shot:grain.png" > /dev/null
-"$H/shoot.sh" vig "s1 ok ok $(r down 9) shot:vig.png" > /dev/null
-"$H/shoot.sh" bwgrid "s1 ok ok $(r down 5) ok $(r right 7) shot:bw.png" > /dev/null
-"$H/shoot.sh" wbgrid "s1 ok ok $(r down 6) ok $(r right 7) shot:wb.png" > /dev/null
+"$H/shoot.sh" wheels "s1 ok ok down down down $(r sub-1 7) $(r main-1 5) sub+1 $(r main-1 5) shot:w1.png info info $(r sub+1 6) $(r main+1 5) shot:w2.png info $(r sub-1 6) $(r main-1 5) sub-1 $(r main-1 5) sub-1 $(r main-1 5) sub+1 sub+1 shot:w3.png info $(r main+1 10) shot:w4.png info $(r sub+1 5) $(r main+1 10) shot:w5.png" > /dev/null
+# the other rows on COLOR 1 at each demo's "after" value (Vignette Correction: its default On, no dial). Mix: Red Sat +3,
+# Hue +4; RGB: Blue point 2 +5, point 4 -4.
+"$H/shoot.sh" rows "s1 ok ok down $(r main+1 3) $(r sub-1 4) shot:mix.png down info info sub-1 $(r main+1 5) sub-1 sub-1 $(r main-1 4) shot:rgb.png down down $(r main-1 5) shot:bal.png down down $(r main+1 7) $(r sub+1 7) shot:curve.png down down $(r main+1 2) shot:con.png down $(r main+1 2) shot:sharp.png down main+1 shot:noise.png down main+1 shot:vigoff.png down $(r main-1 5) shot:shade.png down $(r main-1 5) shot:glow.png down $(r main-1 5) shot:halo.png down $(r main+1 3) shot:grain.png" > /dev/null
+"$H/shoot.sh" vig "s1 ok ok $(r down 11) shot:vig.png" > /dev/null
+"$H/shoot.sh" bwgrid "s1 ok ok $(r down 7) ok $(r right 7) shot:bw.png" > /dev/null
+"$H/shoot.sh" wbgrid "s1 ok ok $(r down 5) ok $(r right 7) shot:wb.png" > /dev/null
 # FILM 1 changed on the camera: the stars, then the shooting screen and the super control panel
-"$H/shoot.sh" kept "s1 ok ok right right right right down down main+2 down main+1 down main+1 sub+1 shot:star.png ok shot:lv.png ok shot:scp.png" > /dev/null
+# (Mix Sat +2 and Split Tone Balance +2 on FILM 1, then back up to Mix: page 1 shows FILM 1* and the starred rows)
+"$H/shoot.sh" kept "s1 ok ok right right right right down main+2 down down down $(r main-1 2) up up up shot:star.png ok shot:lv.png ok shot:scp.png" > /dev/null
 # Button Function (MENU, five pages left to the Custom menu's Operations, OK on Button Settings, OK on Button Function;
 # the cursor starts on Fn): the arrow pad to Direct Function, the ▲ row and its options; then the CRT dial row set to COLOR
+# (six rows down from ▲ since v0.29.3's Delete row)
 M='s1 menu left left left left left ok ok'
-"$H/shoot.sh" buttons "$M down down down down down ok right right ok down shot:up.png ok shot:uppick.png menu down down down down down ok right right right shot:dialpick.png ok shot:dial.png" > /dev/null
+"$H/shoot.sh" buttons "$M down down down down down ok right right ok down shot:up.png ok shot:uppick.png menu down down down down down down ok right right right shot:dialpick.png ok shot:dial.png" > /dev/null
 # v0.29.3: the Delete row (trash icon, right after ▼) set to the Digital Tele-converter, and its options
 "$H/shoot.sh" delete "$M down down down down down ok right right ok down down down down down ok down down down down down down shot:delpick.png ok shot:del.png" > /dev/null
 rm -f "$D"/*.png
 for i in $(seq -w 1 20); do cp "$S/list/f$i.png" "$D/film-$i.png"; done
+cp "$S/rows/mix.png" "$D/row-mix.png"; cp "$S/rows/rgb.png" "$D/row-rgb.png"
 cp "$S/rows/bal.png" "$D/row-tone-balance.png"; cp "$S/rows/con.png" "$D/row-contrast.png"; cp "$S/rows/curve.png" "$D/row-curve.png"
 cp "$S/rows/sharp.png" "$D/row-sharpness.png"; cp "$S/rows/noise.png" "$D/row-noise.png"; cp "$S/vig/vig.png" "$D/row-vignette.png"
 cp "$S/rows/shade.png" "$D/row-shading.png"; cp "$S/rows/glow.png" "$D/row-glow.png"; cp "$S/rows/halo.png" "$D/row-halation.png"

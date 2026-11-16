@@ -5,11 +5,16 @@
 import fs from 'node:fs';
 import { CAMERA_FILMS, filmLook } from '../../webapp/src/om3films';
 import { profilesBin, emptyBank, PER } from '../../webapp/src/om3';
+import { curvesBin } from '../../webapp/src/curvesbin';
 const [work, img] = process.argv.slice(-2);
+// v0.30: each film also has its RGB curves + colour mix regrade, which the camera takes from CURVES.BIN (owner: the tour
+// shows the new grades): the looks keep them, and CURVES.BIN goes on the emulator card with LOOKS.BIN.
 const looks = CAMERA_FILMS.map((f) => filmLook(f));
 const bank = emptyBank();
 looks.forEach((l, i) => { bank[Math.floor(i / PER)][i % PER] = l; });
-fs.writeFileSync(`${work}/LOOKS.BIN`, profilesBin(bank, 28));
+const lb = profilesBin(bank, 28);
+fs.writeFileSync(`${work}/LOOKS.BIN`, lb);
+fs.writeFileSync(`${work}/CURVES.BIN`, curvesBin(lb, bank));
 fs.writeFileSync(`${work}/looks-std.json`, JSON.stringify(looks, null, 1));
 const meta = CAMERA_FILMS.map((f) => ({ name: f.name, film: f.film, desc: f.desc, group: f.group, matched: !!f.matched }));
 fs.writeFileSync(`${img}/films/films.js`, '// The standard 20 films (webapp/src/data/om3films.json CAMERA, FILM 1-20 order); made by research/showcase/mklooks.ts\nwindow.FILMS = ' + JSON.stringify(meta, null, 0) + ';\n');

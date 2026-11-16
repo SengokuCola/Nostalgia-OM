@@ -1,8 +1,9 @@
 Caduceus for OM-3: debug log switch (optional, v0.27 and later)
 
 While this file is in the OM3MOD folder on the card, the camera writes a plain-text report,
-OM3MOD/CADLOG.TXT, at each shutter-button event: the firmware build, which card files loaded and
-whether they match the firmware, the picture mode and film, the last save result and the last 32 events.
+OM3MOD/CADLOG.TXT, at each shutter-button event: a summary, how the camera started (films,
+card files), the shooting mode, exposure, white balance and film, the camera's other settings,
+buttons and dials, the saves, the custom modes and the last 32 events. It only reads settings.
 Attach CADLOG.TXT to a bug report if you are asked for it.
 
 To turn the log off, delete this file from the card. Its contents do not matter.

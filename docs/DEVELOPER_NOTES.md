@@ -394,6 +394,62 @@ Stock: OLY_E_147_1100_0000_0000_3.BIN sha 8c133084…696d, main 5e8d376e…7d59.
 - The looks are only as good as the preview model (`src/preview.ts`) is of the camera; check a film on the camera
   before trusting it for anything critical.
 
+## v0.30.3 release (try/v0.30.3 = main v0.30.2 + feature/faster-halation h7 / h8 + PR #69 + the debug log change; test 3, camera-tested 2026-11-17)
+
+- Halation h7 (`hl_run`, bit-exact with v0.30.2 in om-emu, 54-64 % fewer instructions on night frames; ideas from Caduceus
+  for the E-P7's h6) and h8 (a wide layer, the broad one blurred HL_BLUR3 more times, added at HL_WIDE / 256: a longer,
+  even tail; the bright-frame count unchanged). `research/halation/model.py` and LookLab's preview follow h8;
+  `halation-matches-the-model` checks the camera code against the model.
+- PR #69 (crombach): `cv_ev` / `mx_ev` take the event's whole click count (clamped); `cv_draw` scans each row's column
+  range per curve; `st_all` computes the split toning / curve basis once per table entry; `sd_crc` a nibble at a time
+  (`sd_nib`). No hook. Tests `look-tables-match-the-model`, `rgb-page-counts-every-click`.
+- Debug log: `lg_pr` notes the shutter handler's event byte (18,sp) (0x0100 half-press, 0x0101 release); `lg_due` writes
+  the report only at a release and not at a burst's release (2+ photos since the half-press). Test
+  `debug-log-written-at-releases-only`.
+- `firmware/VERSION` "v0.30.3 (faster halation + PR #69, camera-tested t3)", 52 characters as test 3's: main.bin differs
+  only in that string, the code-block tag and the built-in GUIDES CRC (53 bytes). E1479999.BIN 60b6d954…f546; `patch.py`
+  makes it by default; `--release v0.30.2` still makes 7fbd3957…. Extras as v0.30.2 (CURVES.BIN by hand).
+
+## v0.30.2 release (feature/fix-65-review on main 91ca69d; test 1, camera-tested 2026-11-17)
+
+v0.30.1 plus the #65 fix: `xb_rv` (xblock), called by `xb_cap` before it stores the COLOR job's flags, asks the camera's
+job-type mapper 0x60555b58 (a0 = the source request at params+4) and clears 0x40 / 0x80 for types 0x1xx / 0x4x, the
+shot's small extra developments (0x110 / 0x120 for capture kinds 0x2001 / 0x2006; the saved photo is 0x1000), as the
+camera does for Art Filter jobs (E-P7 strip 0x60353b15; idea from Caduceus for the E-P7 v0.31 `patches/recview`). No new
+hook; the block grew by xb_rv. The review picture and the playback preview show the film without Glow / Halation.
+- `firmware/VERSION` "v0.30.2 (Image Review fix for #65, camera-tested t1)", 52 characters as test 1's: main.bin differs
+  only in that string, the code-block tag and the built-in GUIDES CRC (51 bytes). E1479999.BIN 7fbd3957…445b;
+  `patch.py` makes it by default; `--release v0.30.1` still makes c2b583fd…. Extras as v0.30 (CURVES.BIN by hand).
+
+## v0.30.1 release (try/v0.30.1 = main 89b3520 with PR #67; test 1, camera-tested 2026-11-17)
+
+v0.30 plus PR #67 (crombach, #66): `.hook_pe` at 0x611d059c, the end of the Picture Mode update (stock `mov (12,sp),d0;
+cmp 0,d0; bne 0x611d05b2`, replayed by `gr_end` through pe_back 0x611d05a2 / pe_ret 0x611d05b2), gives the bottom bar's
+holder its own scene back after the update publishes the new row's values; `gr_upd` only clears `gr_flag`. Test
+`grid-row-gives-the-bottom-bar-back`; the flash itself is camera-only ("Past regressions" in `research/TESTING.md`).
+- `firmware/VERSION` "v0.30.1 (menu flash fix, crombach, camera-tested t1)", 52 characters as test 1's: main.bin differs
+  only in that string, the code-block tag and the built-in GUIDES CRC (53 bytes). E1479999.BIN c2b583fd…4bc5;
+  `patch.py` makes it by default; `--release v0.30` still makes 481f3678…. Extras as v0.30 (CURVES.BIN uploaded by hand).
+
+## v0.30 release (try/v0.30-dl9 with main and feature/tour-v030 merged; test 13, camera-tested 2026-11-16)
+
+v0.29.5 plus: RGB curves (`firmware/src/rgbcurves.inc`: the engine in st_run, record 'OM3R' at M+0x3B100, the RGB row
+and page) and Color Mix (the per-film 3 x 3 matrix `mx_go` at the camera's own colour-matrix call, the Mix row and its
+ring page), both photos only (`mx_photo`); the colour menu (pm_list order, cell pictures, titles, R / G / B headers);
+CURVES.BIN v1 (`docs/FORMATS.md`, `card/mkcurves.py`, `firmware/src/curvesfile.inc`: the file's copy at M+0x3BE20, read
+from the card at the first shutter event, each entry checked against its LOOKS record's CRC-32); the debug log dl9;
+PRs #55 (#53: no film work in video / S&Q), #56 (early load from M at the GUI's first state change, no card read), #57 /
+#58 / #63 (the emulator suite, om-emu pin) and #59 (#54: `rc_go` waits for the mode's code, B counts as a mode, the
+label held blank during the wait, data item 38 written back to redraw it); `vf_def` answers the Noise Filter rows' default
+with the camera's own Noise Filter. Details: `research/NOTES.md` ("RGB curves", "Colour mix", "Colour menu", "v0.30 test 8"
+to "v0.30 test 13", "Debug log dl8" / "dl9").
+- `firmware/VERSION` "v0.30 (colour mix and RGB curves, camera-tested t13)", the same length as test 13's: main.bin
+  differs only in that string, the code-block tag and the built-in GUIDES copy's CRC (53 bytes). E1479999.BIN
+  481f3678…7a54; `patch.py` makes it by default. Suite on the release build: all pass.
+- Release extras: `CURVES.BIN` 4c009f9c…2291 (test 9's sample: LookLab's 20 against v0.29.5's LOOKS.BIN, camera-tested
+  from test 9 on), uploaded to the GitHub release by hand (`.github/workflows/releases.yml` attaches only the older
+  extras; changing it needs a token with the `workflow` scope); `LOOKS.BIN`, `DEBUG.TXT` and the photo code kit as v0.29.5.
+
 ## v0.29.5 release (feature/per-mode-settings-2; builds p1 and p2, camera-tested 2026-11-15)
 
 v0.29.4 plus per-mode settings: record 'OM3S' at M+0x3D000 holds one set per C1..C5 and one for P / A / S / M / B (our

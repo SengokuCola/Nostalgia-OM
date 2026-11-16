@@ -120,6 +120,9 @@ Next: [how to use it](USING.md).
 
 Do steps 1–5 again with the new version. On the card:
 
+- **To v0.30 (from v0.29 or later):** copy `DCOLYMP`, and for the 20 films regraded with Color Mix and RGB curves put
+  `CURVES.BIN` in `OM3MOD`. The camera takes it at the next half-press and keeps it (you can delete it afterwards);
+  curves or a mix you changed yourself on a film stay. Your films, changes and custom modes stay in the camera.
 - **From v0.29 to v0.29.1:** copy only `DCOLYMP`. Your films stay in the camera.
 - **From v0.28 or older to v0.29 or v0.29.1:** copy only `DCOLYMP`. **Keep** `LOOKS.BIN`, `EDITS.BIN` and `BUNDLES.BIN` in
   `OM3MOD` for the first start: at the first half-press the camera copies your films and your changes into its own

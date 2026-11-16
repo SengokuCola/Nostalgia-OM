@@ -10,6 +10,7 @@ import { History } from './history';
 import { fromLibrary, libraryOrigin, resetLook } from './reset';
 import { lastHalation, renderLook } from './preview';
 import { makeZip } from './zip';
+import { curvesBin } from './curvesbin';
 import { rrpreset } from './rapidraw';
 import { previewToneLut } from './tone';
 import {
@@ -18,6 +19,7 @@ import {
 } from './om3';
 import { namesBin } from './om3names';
 import { SPLIT_COLOURS, SPLIT_STEPS, fromSteps, toSteps, type Split } from './split';
+import { CHANNELS, CURVE_MAX, CURVE_STEP, MIX_MAX, curveDelta, flatCurves, flatMix, hasCurves, hasMix, type Channel } from './curves';
 import { CAMERA_FILMS, FILMS, FILM_GROUPS, filmLook, filmOf, type Film, type FilmGroup } from './om3films';
 import { parseLook } from './pack';
 import { cubeApply, fitLook, lightroomExtras, lightroomTransform, looksLikeLog, parseCube, parseLightroom, type RGB, type Transform } from './convert';
@@ -39,6 +41,7 @@ let libNotice = '';
 const S = {
   tab: 'sat' as Tab,
   sector: 0,            // the wheel's selected colour (the camera's front dial)
+  rgb: 'r' as Channel,  // the RGB curves' colour (the camera's INFO on the RGB row)
   image: 'frames',
   cut: 50,
 };
@@ -335,6 +338,47 @@ function toneCurve(tone: Tone): { svg: SVGSVGElement; draw: () => void; X: (v: n
 
 // ---------------------------------------------------------------- the camera's Picture Mode screen, as panels
 const SVG_NS = 'http://www.w3.org/2000/svg';
+/** The camera's row pictures (colour menu spec, test 7), small, for the headings. */
+const PIE = ['#f2c400', '#f39a00', '#ee6a1c', '#de2f2f', '#d23fa6', '#8650d6', '#3b5fe0', '#2f8fe6', '#22bfd3', '#1fb486', '#3aac45', '#a3c52a'];
+let pmIds = 0;
+function pmIcon(kind: 'mix' | 'rgb' | 'wheel' | 'tb' | 'bw' | 'glow' | 'halo'): SVGSVGElement {
+  const s = svgEl('svg', { viewBox: '0 0 24 24', width: 18, height: 18, class: 'pm-ic', 'aria-hidden': 'true' });
+  const add = <K extends keyof SVGElementTagNameMap>(t: K, a: Record<string, string | number>, to: Element = s) => { const e = svgEl(t, a); to.append(e); return e; };
+  const grad = (t: 'linearGradient' | 'radialGradient', stops: [number, string, number][]) => {
+    const id = `pmg${++pmIds}`, defs = add('defs', {}), g = add(t, { id }, defs);
+    for (const [o, c, a] of stops) add('stop', { offset: o, 'stop-color': c, 'stop-opacity': a }, g);
+    return `url(#${id})`;
+  };
+  if (kind === 'mix') {
+    add('circle', { cx: 12, cy: 12, r: 8.5, fill: 'none', stroke: 'currentColor', 'stroke-opacity': 0.45, 'stroke-width': 1.2 });
+    for (const [x, y, c, r] of [[12, 3.5, '#f0603a', 2.8], [19.4, 16.3, '#30a46c', 2.2], [4.6, 16.3, '#3e8ef7', 2.2]] as [number, number, string, number][]) {
+      add('line', { x1: 12, y1: 12, x2: x, y2: y, stroke: c, 'stroke-width': 1 }); add('circle', { cx: x, cy: y, r, fill: c });
+    }
+  } else if (kind === 'rgb') {
+    add('rect', { x: 3, y: 3, width: 18, height: 18, fill: 'none', stroke: 'currentColor', 'stroke-width': 1.3 });
+    add('path', { d: 'M3 21Q7 7 21 3', fill: 'none', stroke: '#f0603a', 'stroke-width': 1.6 });
+    add('path', { d: 'M3 21L21 3', fill: 'none', stroke: '#30a46c', 'stroke-width': 1.6 });
+    add('path', { d: 'M3 21Q17 17 21 3', fill: 'none', stroke: '#3e8ef7', 'stroke-width': 1.6 });
+  } else if (kind === 'wheel') {         // the colour pie: the wheel's 12 colours, Yellow at 12 o'clock, clockwise
+    const pt = (a: number) => `${(12 + 10 * Math.cos((a * Math.PI) / 180)).toFixed(2)} ${(12 + 10 * Math.sin((a * Math.PI) / 180)).toFixed(2)}`;
+    PIE.forEach((c, k) => { const a0 = -105 + 30 * k; add('path', { d: `M12 12L${pt(a0)}A10 10 0 0 1 ${pt(a0 + 30)}Z`, fill: c }); });
+    add('circle', { cx: 12, cy: 12, r: 10, fill: 'none', stroke: '#fff', 'stroke-width': 0.8 });
+  } else if (kind === 'tb') {            // Split Tone Balance: a dark-to-light bar with a small triangle under its middle
+    add('rect', { x: 2, y: 5, width: 20, height: 8, fill: grad('linearGradient', [[0, '#111', 1], [1, '#eee', 1]]), stroke: 'currentColor', 'stroke-width': 1 });
+    add('path', { d: 'M12 15L9.5 20H14.5Z', fill: 'currentColor' });
+  } else if (kind === 'bw') {            // Blacks / Whites: a black and a white square
+    add('rect', { x: 2.5, y: 7, width: 8.5, height: 8.5, fill: '#111', stroke: '#aaa', 'stroke-width': 1 });
+    add('rect', { x: 13, y: 7, width: 8.5, height: 8.5, fill: '#fff', stroke: '#888', 'stroke-width': 1 });
+  } else if (kind === 'glow') {          // Glow Effect: a dot with a soft glow round it
+    add('circle', { cx: 12, cy: 12, r: 10.5, fill: grad('radialGradient', [[0, 'currentColor', 0.6], [1, 'currentColor', 0]]) });
+    add('circle', { cx: 12, cy: 12, r: 3.6, fill: 'currentColor' });
+  } else {                               // Halation Effect: a dot in a red-orange ring
+    add('circle', { cx: 12, cy: 12, r: 7.6, fill: 'none', stroke: '#f0603a', 'stroke-width': 2.6, 'stroke-opacity': 0.85 });
+    add('circle', { cx: 12, cy: 12, r: 3.6, fill: 'currentColor' });
+  }
+  return s;
+}
+
 function svgEl<K extends keyof SVGElementTagNameMap>(t: K, a: Record<string, string | number> = {}): SVGElementTagNameMap[K] {
   const e = document.createElementNS(SVG_NS, t);
   for (const [k, v] of Object.entries(a)) e.setAttribute(k, String(v));
@@ -464,7 +508,7 @@ function hslPanel(l: Look, changed: () => void): HTMLElement {
     : tab === 'hue' ? 'Turns a colour toward its clockwise neighbour (+: Yellow → Orange).'
       : tab === 'light' ? 'Darker or brighter, per colour.' : 'Saturation, per colour.';
   return h('div', { class: 'group cam' },
-    h('div', { class: 'cam-head' }, h('span', { class: 'lbl' }, 'HSL'),
+    h('div', { class: 'cam-head' }, h('span', { class: 'lbl' }, pmIcon('wheel'), 'Color wheel (HSL)'),
       h('button', { class: 'link', onclick: () => { if (split) { if (l.split) { const s = { ...l.split, [tab]: 0 } as Split; if (s.sh || s.hl) l.split = s; else delete l.split; } } else l[tab as 'sat'].fill(0); renderEditor(); changed(); } }, 'Reset page')),
     h('div', { class: 'tabs cam-tabs', role: 'tablist' }, ...(['sat', 'hue', 'light', 'sh', 'hl'] as Tab[]).map((t) => h('button', {
       role: 'tab', 'aria-selected': String(t === tab), class: t === tab ? 'on' : '',
@@ -550,6 +594,189 @@ function tonePanel(l: Look, changed: () => void): HTMLElement {
     h('p', { class: 'help' }, 'Drag Sh, Mid and Hi on the curve up or down; double-click one to zero it. The curve shows the camera\'s normal → this look; its two ends follow Blacks / Whites (their own grid below).'));
 }
 
+/** RGB curves (the camera's RGB row under Highlight & Shadow; feature/rgb-curves, camera-tested 2026-11-15): a curve
+ *  each for red, green and blue with 5 points at 0 / 25 / 50 / 75 / 100 %, −7..+7 each (1.2 % of full scale a step).
+ *  On the camera INFO picks the colour, the front dial the point, the rear dial up / down. Here: R / G / B, then drag
+ *  a point up or down (or ↑ ↓; double-click = 0) or use its slider. Preview only: not in LOOKS.BIN yet. */
+const RGB_NAME: Record<Channel, string> = { r: 'Red', g: 'Green', b: 'Blue' };
+const RGB_PT: [string, string][] = [['Black', '0 %'], ['Shadows', '25 %'], ['Mid', '50 %'], ['Highlights', '75 %'], ['White', '100 %']];
+function rgbPanel(l: Look, changed: () => void): HTMLElement {
+  const S0 = 200, P = 8, W = S0 - 2 * P;
+  const X = (v: number) => P + v * W, Y = (v: number) => P + (1 - v) * W;
+  const ch = () => S.rgb;
+  const get = (c: Channel, i: number) => l.rgb?.[c][i] ?? 0;
+  const set = (c: Channel, i: number, v: number) => {
+    v = Math.max(-CURVE_MAX, Math.min(CURVE_MAX, v));
+    if (v === get(c, i)) return false;
+    (l.rgb ??= flatCurves())[c][i] = v;
+    if (!hasCurves(l)) delete l.rgb;
+    return true;
+  };
+  const svg = svgEl('svg', { viewBox: `0 0 ${S0} ${S0}`, width: S0, height: S0, class: 'tone-curve rgb-curve cam-screen', role: 'img', 'aria-label': 'RGB curves: stock input to look output, per colour' });
+  svg.append(svgEl('rect', { x: P, y: P, width: W, height: W, class: 'tc-frame' }));
+  for (const q of [0.25, 0.5, 0.75]) {          // the camera page's quarter lines (the points sit on them)
+    svg.append(svgEl('line', { x1: X(q), y1: Y(0), x2: X(q), y2: Y(1), class: 'tc-grid' }));
+    svg.append(svgEl('line', { x1: X(0), y1: Y(q), x2: X(1), y2: Y(q), class: 'tc-grid' }));
+  }
+  svg.append(svgEl('line', { x1: X(0), y1: Y(0), x2: X(1), y2: Y(1), class: 'tc-ident' }));
+  const paths = Object.fromEntries(CHANNELS.map((c) => [c, svgEl('path', { class: `rc-curve rc-${c}`, d: '' })])) as Record<Channel, SVGPathElement>;
+  CHANNELS.forEach((c) => svg.append(paths[c]));
+  const STEP = 9;   // px of drag per step
+  const knobs = RGB_PT.map(([name, at], i) => {
+    const g = svgEl('g', { class: 'tc-knob', tabindex: 0, role: 'slider', 'aria-valuemin': -CURVE_MAX, 'aria-valuemax': CURVE_MAX });
+    g.append(svgEl('circle', { r: 10, class: 'hit' }), svgEl('circle', { r: 4, class: 'pip' }));
+    let d: { id: number; y: number; v0: number } | null = null;
+    g.addEventListener('pointerdown', (e) => { if (e.button) return; d = { id: e.pointerId, y: e.clientY, v0: get(ch(), i) }; g.setPointerCapture(e.pointerId); e.preventDefault(); e.stopPropagation(); });
+    g.addEventListener('pointermove', (e) => {
+      if (!d || e.pointerId !== d.id) return;
+      const scale = svg.viewBox.baseVal.height / svg.getBoundingClientRect().height;
+      if (set(ch(), i, d.v0 + Math.round(((d.y - e.clientY) * scale) / STEP))) { draw(); changed(); }
+    });
+    const end = (e: PointerEvent) => { if (d && e.pointerId === d.id) { d = null; checkpoint(); } };
+    g.addEventListener('pointerup', end); g.addEventListener('pointercancel', end);
+    g.addEventListener('keydown', (e) => {
+      const key = (e as KeyboardEvent).key;
+      if (key !== 'ArrowUp' && key !== 'ArrowDown') return;
+      if (set(ch(), i, get(ch(), i) + (key === 'ArrowUp' ? 1 : -1))) { draw(); changed(); checkpoint(); }
+      e.preventDefault();
+    });
+    g.addEventListener('dblclick', () => { if (set(ch(), i, 0)) { draw(); changed(); checkpoint(); } });
+    g.setAttribute('aria-label', `${name} (${at}): drag up or down`);
+    svg.append(g);
+    return g;
+  });
+  const top = h('div', { class: 'tc-top' });
+  const chips = h('div', { class: 'seg rgb-ch', role: 'radiogroup', 'aria-label': 'Curve colour' });
+  const rowsBox = h('div', {});
+  // what the photo gets: t -> t + D(t), clamped, kept rising (as the camera's st_run)
+  const out = (c: Channel) => {
+    const D = curveDelta(l.rgb?.[c] ?? [0, 0, 0, 0, 0]), o: number[] = []; let mx = 0;
+    for (let i = 0; i <= 128; i++) { const t = (i / 128) * 4095; mx = Math.max(mx, Math.min(4095, Math.max(0, t + D(t)))); o.push(mx / 4095); }
+    return o;
+  };
+  const syncs: (() => void)[] = [];
+  function draw() {
+    for (const c of CHANNELS) {
+      const o = out(c);
+      paths[c].setAttribute('d', o.map((v, i) => `${i ? 'L' : 'M'}${X(i / 128).toFixed(1)},${Y(v).toFixed(1)}`).join(''));
+      paths[c].classList.toggle('sel', c === ch());
+    }
+    svg.append(paths[ch()], ...knobs);         // the chosen colour on top, its points over it
+    RGB_PT.forEach((_, i) => {
+      const v = get(ch(), i), t = i * 1024 - (i === 4 ? 1 : 0);
+      knobs[i].setAttribute('transform', `translate(${X(i / 4).toFixed(1)},${Y(Math.max(0, Math.min(4095, t + v * CURVE_STEP)) / 4095).toFixed(1)})`);
+      knobs[i].setAttribute('class', `tc-knob rc-k-${ch()}${v ? ' on' : ''}`);
+      knobs[i].setAttribute('aria-valuenow', String(v));
+    });
+    top.replaceChildren(h('span', { class: `on rgb-letter rc-${ch()}`, title: RGB_NAME[ch()] }, ch().toUpperCase()), ...RGB_PT.map((_, i) => h('span', { class: get(ch(), i) ? 'on' : '' }, get(ch(), i) ? signed(get(ch(), i)) : '±0')));
+    chips.replaceChildren(...CHANNELS.map((c) => h('button', {
+      role: 'radio', 'aria-checked': String(c === ch()), class: `rc-chip rc-${c}${c === ch() ? ' on' : ''}`, title: `${RGB_NAME[c]} curve${l.rgb && l.rgb[c].some((x) => x) ? ' (changed)' : ''}`,
+      onclick: () => { S.rgb = c; buildRows(); draw(); },
+    }, c.toUpperCase(), l.rgb && l.rgb[c].some((x) => x) ? '*' : '')));
+    syncs.forEach((f) => f());
+  }
+  function buildRows() {
+    syncs.length = 0;
+    rowsBox.replaceChildren(...RGB_PT.map(([name, at], i) => {
+      const { inp, out: o } = slider(-CURVE_MAX, CURVE_MAX, get(ch(), i), (v) => { if (set(ch(), i, v)) { draw(); changed(); } }, undefined, `${RGB_NAME[ch()]} ${name}`);
+      syncs.push(() => { inp.value = String(get(ch(), i)); o.textContent = signed(get(ch(), i)); });
+      return h('div', { class: 'crow', title: `Point ${i + 1} on the camera (front dial): the ${RGB_NAME[ch()].toLowerCase()} channel at ${at} of the brightness range` }, h('span', { class: 'cname' }, `${i + 1} · ${name}`), steps(inp), o);
+    }));
+  }
+  buildRows(); draw();
+  return h('div', { class: 'group cam' },
+    h('div', { class: 'cam-head' }, h('span', { class: 'lbl' }, pmIcon('rgb'), 'RGB curves'),
+      hasCurves(l) ? h('button', { class: 'link', onclick: () => { delete l.rgb; renderEditor(); changed(); } }, 'Reset') : null),
+    chips,
+    h('div', { class: 'cam-screen-wrap' }, top, svg), rowsBox,
+    h('p', { class: 'help' }, 'A curve each for red, green and blue: raise a colour\'s points to add it (in the shadows, mids or highlights), lower them to take it away. Drag a point up or down; double-click one to zero it.'),
+    h('p', { class: 'help' }, h('b', {}, 'Firmware v0.30: '), 'saved with your looks as OM3MOD/CURVES.BIN (Export › Save to the SD card); the camera takes them at the next half-press, for each film that is still as you saved it. On the camera: Picture Mode › RGB: INFO picks R / G / B, the front dial the point (1–5), the rear dial its level.'));
+}
+
+/** Colour mix (the camera's Mix row; feature/rgb-curves, camera-tested test 6, 2026-11-15): for red, green and blue a
+ *  strength (Sat) and a hue, −7..+7 each. On the camera INFO picks the colour (shared with the RGB row), the front dial
+ *  the hue, the rear dial the strength; its page is a ring with the three colours as dots (angle = hue, distance =
+ *  strength). Here the same ring, R / G / B and two sliders. Preview only: not in LOOKS.BIN yet. */
+const MIX_TOWARD: Record<Channel, string> = { r: 'yellow', g: 'cyan', b: 'purple' };
+function mixPanel(l: Look, changed: () => void): HTMLElement {
+  const ch = () => S.rgb, j = (c: Channel) => CHANNELS.indexOf(c);
+  const get = (c: Channel, k: 0 | 1) => l.mix?.[2 * j(c) + k] ?? 0;          // k 0 = hue, 1 = strength
+  const set = (c: Channel, k: 0 | 1, v: number) => {
+    v = Math.max(-MIX_MAX, Math.min(MIX_MAX, v));
+    if (v === get(c, k)) return false;
+    (l.mix ??= flatMix())[2 * j(c) + k] = v;
+    if (!hasMix(l)) delete l.mix;
+    return true;
+  };
+  // the camera's page (firmware mx_pre / mx_line, rgbpics.py MX_ANG): a 300 x 300 box with its centre cross, a ring r 90,
+  // red at the top, green lower right, blue lower left (screen y down: -90, 30, 150 deg); each colour's dot at its start
+  // + 5 deg per Hue step (+ = clockwise, toward the next colour) and radius 90 + 4 per Sat step; start marks,
+  // spokes from the centre; the chosen dot r 13 in its bright colour on a white r 16, the others r 8, dim.
+  const S0 = 300, C = 150, R = 90, START = [-90, 30, 150];
+  const BRIGHT: Record<Channel, string> = { r: '#ff6a2a', g: '#22e83a', b: '#4d7dff' }, DIM: Record<Channel, string> = { r: '#b3470f', g: '#1f8f2a', b: '#2e4f9f' };
+  const svg = svgEl('svg', { viewBox: `0 0 ${S0} ${S0}`, width: 200, height: 200, class: 'mix-ring cam-screen', role: 'img', 'aria-label': 'Colour mix, as on the camera: each colour as a dot, turned by its hue, out or in by its saturation' });
+  svg.append(svgEl('rect', { x: 0.5, y: 0.5, width: S0 - 1, height: S0 - 1, fill: '#1e1e1e', stroke: '#8a8a8a', 'stroke-width': 1.5 }),
+    svgEl('line', { x1: C, y1: 0, x2: C, y2: S0, stroke: '#6a6a6a', 'stroke-width': 1 }),
+    svgEl('line', { x1: 0, y1: C, x2: S0, y2: C, stroke: '#6a6a6a', 'stroke-width': 1 }),
+    svgEl('circle', { cx: C, cy: C, r: R, fill: 'none', stroke: '#8a8a8a', 'stroke-width': 3 }));
+  const at = (deg: number, r: number) => [C + r * Math.cos((deg * Math.PI) / 180), C + r * Math.sin((deg * Math.PI) / 180)];
+  START.forEach((a) => { const [x1, y1] = at(a, R - 9), [x2, y2] = at(a, R + 9); svg.append(svgEl('line', { x1, y1, x2, y2, stroke: '#8a8a8a', 'stroke-width': 2 })); });
+  const spokes = CHANNELS.map((c) => svgEl('line', { x1: C, y1: C, stroke: BRIGHT[c], 'stroke-width': 1.5, 'stroke-opacity': 0.8 }));
+  spokes.forEach((sp) => svg.append(sp));
+  svg.append(svgEl('circle', { cx: C, cy: C, r: 2.5, fill: '#8a8a8a' }));
+  const dots = CHANNELS.map((c) => {
+    const g = svgEl('g', { class: 'mx-dot' });
+    const ring = svgEl('circle', { r: 16, fill: '#fff' }), pip = svgEl('circle', { r: 8, fill: DIM[c] });
+    g.append(svgEl('circle', { r: 20, fill: 'transparent' }), ring, pip);
+    g.addEventListener('click', () => { S.rgb = c; buildRows(); draw(); });
+    return { g, ring, pip };
+  });
+  const top = h('div', { class: 'tc-top mx-top' });   // the letter centred over the ring, as the camera's header (test 11)
+  const chips = h('div', { class: 'seg rgb-ch', role: 'radiogroup', 'aria-label': 'Mix colour' });
+  const rowsBox = h('div', {});
+  const syncs: (() => void)[] = [];
+  function draw() {
+    CHANNELS.forEach((c, i) => {
+      const [x, y] = at(START[i] + 5 * get(c, 0), R + 4 * get(c, 1)), sel = c === ch();
+      spokes[i].setAttribute('x2', x.toFixed(1)); spokes[i].setAttribute('y2', y.toFixed(1));
+      spokes[i].setAttribute('stroke', sel ? BRIGHT[c] : DIM[c]);
+      dots[i].g.setAttribute('transform', `translate(${x.toFixed(1)},${y.toFixed(1)})`);
+      dots[i].ring.setAttribute('visibility', sel ? 'visible' : 'hidden');
+      dots[i].pip.setAttribute('r', sel ? '13' : '8'); dots[i].pip.setAttribute('fill', sel ? BRIGHT[c] : DIM[c]);
+    });
+    svg.append(...dots.filter((_, i) => CHANNELS[i] !== ch()).map((d) => d.g), dots[j(ch())].g);
+    const val = (v: number) => (v ? signed(v) : '±0');
+    top.replaceChildren(h('span', { class: get(ch(), 1) ? 'on' : '' }, 'Sat ', val(get(ch(), 1))),
+      h('span', { class: 'on rgb-letter', style: `color:${BRIGHT[ch()]}`, title: RGB_NAME[ch()] }, ch().toUpperCase()),   // the camera's header: R / G / B (try/v0.30 7a92cd3)
+      h('span', { class: get(ch(), 0) ? 'on' : '' }, 'Hue ', val(get(ch(), 0))));
+    const changedC = (c: Channel) => !!(get(c, 0) || get(c, 1));
+    chips.replaceChildren(...CHANNELS.map((c) => h('button', {
+      role: 'radio', 'aria-checked': String(c === ch()), class: `rc-chip rc-${c}${c === ch() ? ' on' : ''}`, title: `${RGB_NAME[c]}${changedC(c) ? ' (changed)' : ''}`,
+      onclick: () => { S.rgb = c; buildRows(); draw(); },
+    }, c.toUpperCase(), changedC(c) ? '*' : '')));
+    syncs.forEach((f) => f());
+  }
+  function buildRows() {
+    syncs.length = 0;
+    const row = (k: 0 | 1, name: string, tip: string) => {
+      const { inp, out: o } = slider(-MIX_MAX, MIX_MAX, get(ch(), k), (v) => { if (set(ch(), k, v)) { draw(); changed(); } }, undefined, `${RGB_NAME[ch()]} ${name}`);
+      syncs.push(() => { inp.value = String(get(ch(), k)); o.textContent = signed(get(ch(), k)); });
+      return h('div', { class: 'crow', title: tip }, h('span', { class: 'cname' }, name), steps(inp), o);
+    };
+    rowsBox.replaceChildren(
+      row(1, 'Sat', `Rear dial on the camera (Saturation): + makes ${RGB_NAME[ch()].toLowerCase()} stronger, − weaker`),
+      row(0, 'Hue', `Front dial on the camera: + turns ${RGB_NAME[ch()].toLowerCase()} toward ${MIX_TOWARD[ch()]}, − the other way`));
+  }
+  buildRows(); draw();
+  return h('div', { class: 'group cam' },
+    h('div', { class: 'cam-head' }, h('span', { class: 'lbl' }, pmIcon('mix'), 'Color Mix'),
+      hasMix(l) ? h('button', { class: 'link', onclick: () => { delete l.mix; renderEditor(); changed(); } }, 'Reset') : null),
+    chips,
+    h('div', { class: 'cam-screen-wrap' }, top, svg), rowsBox,
+    h('p', { class: 'help' }, 'Mixes the camera\'s red, green and blue into each other, before the curves and the colour wheel: Sat (saturation) makes a colour stronger or weaker (its dot moves out or in), Hue turns it (red toward yellow, green toward cyan, blue toward purple; clockwise on the ring). Greys stay grey.'),
+    h('p', { class: 'help' }, h('b', {}, 'Firmware v0.30: '), 'saved with your looks as OM3MOD/CURVES.BIN (Export › Save to the SD card); the camera takes it at the next half-press, for each film that is still as you saved it. On the camera: Picture Mode › Mix: INFO picks R / G / B, the front dial Hue, the rear dial Sat.'));
+}
+
 /** Blacks / Whites (v0.28, as the camera's grid row): Blacks across (− left, + right), Whites up (+) and down (−),
  *  −7..+7 each. Black boxes and edges for Blacks, white ones for Whites, as on the camera. */
 function bwPanel(l: Look, changed: () => void): HTMLElement {
@@ -608,7 +835,7 @@ function bwPanel(l: Look, changed: () => void): HTMLElement {
   draw();
   const big = Math.abs(l.tone.blacks) > 5 || Math.abs(l.tone.whites) > 5;
   return h('div', { class: 'group cam' },
-    h('div', { class: 'cam-head' }, h('span', { class: 'lbl' }, 'Blacks / Whites'), read,
+    h('div', { class: 'cam-head' }, h('span', { class: 'lbl' }, pmIcon('bw'), 'Blacks / Whites'), read,
       h('button', { class: 'link', onclick: () => { set(0, 0); checkpoint(); } }, 'Reset')),
     svg,
     big ? needs28('Blacks / Whites past ±5') : null,
@@ -669,7 +896,7 @@ function wbPanel(l: Look, changed: () => void): HTMLElement {
   });
   draw();
   return h('div', { class: 'group cam' },
-    h('div', { class: 'cam-head' }, h('span', { class: 'lbl' }, 'WB'), read,
+    h('div', { class: 'cam-head' }, h('span', { class: 'lbl' }, 'WB Compensation'), read,
       h('button', { class: 'link', onclick: () => { set(0, 0); checkpoint(); } }, 'Reset')),
     wbModeRow(l, changed),
     svg,
@@ -718,7 +945,7 @@ function splitPv(l: Look): Look {
   if (fw >= 28) return l;
   const c = (v: number) => Math.max(-5, Math.min(5, v));
   const r: Look = { ...l, tone: { ...l.tone, blacks: c(l.tone.blacks), whites: c(l.tone.whites) } };
-  delete r.halation; delete r.tone_balance; delete r.film_wb;
+  delete r.halation; delete r.tone_balance; delete r.film_wb; delete r.rgb; delete r.mix;
   if (r.split) r.split = fw >= 25 ? { ...r.split, sh: Math.round(r.split.sh), hl: Math.round(r.split.hl) } : undefined;
   if (!r.split) delete r.split;
   return r;
@@ -1164,64 +1391,6 @@ function renderOm3Editor(l: Look) {
           },
         }, 'Reset look'),
         h('button', { class: 'share-btn', onclick: () => om3ShareProfile(l), title: 'Share this look as a link' }, 'Share'))),
-    hslPanel(l, changed),
-    h('div', { class: 'group cam' },
-      ...(() => {
-        const note = h('p', {});
-        const show = () => {
-          const v = l.tone_balance ?? 0;
-          note.hidden = !v || (om3Fw28() && !!l.split);
-          if (!om3Fw28()) { note.className = 'warn'; note.replaceChildren(h('b', {}, 'Needs firmware v0.28: '), 'the export is set to an older firmware, so Tone Balance is not previewed or saved. Choose "v0.28 or later" under Export › Firmware on the camera.'); }
-          else { note.className = 'help'; note.textContent = 'Tone Balance moves where the Shadows and Highlights tints meet: this film has no split tone yet (HSL › Shadows / Highlights).'; }
-        };
-        const { inp, out } = slider(-5, 5, l.tone_balance ?? 0, (x) => { if (x) l.tone_balance = x; else delete l.tone_balance; show(); changed(); }, undefined, 'Tone Balance');
-        show();
-        return [h('div', { class: 'crow', title: 'Where the Shadows and Highlights tints meet: − the shadow colour reaches further up, + the highlight colour further down' }, h('span', { class: 'cname' }, 'Tone Balance'), steps(inp), out), note];
-      })()),
-    h('div', { class: 'group cam' }, crow('Contrast', OM3.contrast, () => l.advice.contrast ?? 0, (x) => { l.advice.contrast = x; }, 'The camera\'s Contrast for this look')),
-    tonePanel(l, changed),
-    bwPanel(l, changed),
-    wbPanel(l, changed),
-    h('div', { class: 'group cam rows' },
-      (() => {
-        const { inp, out } = slider(SHARP.lo, SHARP.hi, l.advice.sharpness ?? 0, (x) => { l.advice.sharpness = x; changed(); }, sharpLabel, 'Sharpness');
-        return h('div', { class: 'crow', title: 'The camera\'s sharpening: 0 its normal, + crisper, − softer, −5 Off' }, h('span', { class: 'cname' }, 'Sharpness'), steps(inp), out);
-      })(),
-      cseg('Noise Filter', [['off', 'Menu'], ['film', 'Off'], ['fine', 'Low'], ['standard', 'Std'], ['high', 'High']], l.grain,
-        (x) => { l.grain = x as Look['grain']; renderEditor(); changed(); }, 'Noise reduction for photos with this look; Menu keeps the camera\'s menu setting'),
-      cseg('Vignette Correction', [['off', 'Off'], ['on', 'On']], l.lens_correction ? 'on' : 'off', (x) => {
-        if (x === 'on') l.lens_correction = true; else delete l.lens_correction;
-        renderEditor(); changed();
-      }, 'Off = the lens\'s natural corners; On = the camera\'s correction (not in the preview)'),
-      crow('Shading', OM3.shading, () => l.vignette, (x) => { l.vignette = x; }, 'The camera\'s Shading: − darker corners, + lighter'),
-      (() => {
-        const e = l.effect, v = !e ? 0 : e.type === 'clarity' ? -e.strength : e.strength;
-        const { inp, out } = slider(-OM3.fx, OM3.fx, v, (x) => {
-          l.effect = x === 0 ? null : x > 0 ? { type: 'bloom', strength: x } : { type: 'clarity', strength: -x };
-          fxChanged();
-        }, (x) => (x === 0 ? '0' : x > 0 ? `+${x}` : String(x)), 'Glow');
-        return h('div', { class: 'crow', title: '+ Glow (a soft glow), − Clarity (local contrast)' }, h('span', { class: 'cname' }, 'Glow'), steps(inp), out);
-      })(),
-      ...(() => {
-        const note = h('p', {});
-        const show = () => {                     // after each preview: is the glow on this photo?
-          const v = l.halation ?? 0, r = lastHalation;
-          note.hidden = !v || (om3Fw28() && r !== 'off' && r !== 'none');
-          if (!om3Fw28()) { note.className = 'warn'; note.replaceChildren(h('b', {}, 'Needs firmware v0.28: '), 'the export is set to an older firmware, so Halation is not previewed or saved. Choose "v0.28 or later" under Export › Firmware on the camera.'); }
-          else if (r === 'off') { note.className = 'help'; note.replaceChildren(h('b', {}, 'Not on this photo: '), 'like the camera, Halation fades out in bright, daylight photos. Pick a night photo with lights, such as Night street or Blue hour, to see it.'); }
-          else { note.className = 'help'; note.replaceChildren(h('b', {}, 'Not on this photo: '), 'it has no bright lights for the glow to form around.'); }
-        };
-        afterPreview = show;
-        const { inp, out } = slider(0, OM3.halation, l.halation ?? 0, (x) => { if (x) l.halation = x; else delete l.halation; changed(); }, (x) => (x ? `+${x}` : '0'), 'Halation');
-        show();
-        return [h('div', { class: 'crow', title: 'A red-orange glow around bright lights in darker scenes, as on cinema film (it fades out in bright scenes, as on the camera); works with or without Glow' }, h('span', { class: 'cname' }, 'Halation'), steps(inp), out), note];
-      })(),
-      cseg('Film Grain', [['0', 'Off'], ['1', 'Low'], ['2', 'Med'], ['3', 'High']], String(l.film_grain ?? 0), (x) => {
-        if (x === '0') delete l.film_grain; else l.film_grain = Number(x);
-        renderEditor(); changed();
-      }, 'Colour film grain, made by the camera as the photo develops'),
-      grainWarn,
-      h('p', { class: 'help' }, 'In the camera\'s Picture Mode order. Glow: + Glow, − Clarity. Halation needs firmware v0.28; saving a photo with it takes a little longer. Hover a row for what it does.')),
     h('label', { class: 'field' }, h('span', { class: 'lbl' }, 'Notes'),
       h('textarea', {
         rows: 3, maxlength: 400, placeholder: 'What the look is for…', onchange: checkpoint,
@@ -1234,6 +1403,68 @@ function renderOm3Editor(l: Look) {
         }),
       }, l.notes),
       h('span', { id: 'notes-help', class: notesBytes() > NOTE_MAX ? 'help err' : 'help' }, `${notesBytes()} / ${NOTE_MAX} bytes · kept in the looks file (not on the card)`)),
+    mixPanel(l, changed),
+    rgbPanel(l, changed),
+    hslPanel(l, changed),
+    h('div', { class: 'group cam' },
+      ...(() => {
+        const note = h('p', {});
+        const show = () => {
+          const v = l.tone_balance ?? 0;
+          note.hidden = !v || (om3Fw28() && !!l.split);
+          if (!om3Fw28()) { note.className = 'warn'; note.replaceChildren(h('b', {}, 'Needs firmware v0.28: '), 'the export is set to an older firmware, so Split Tone Balance is not previewed or saved. Choose "v0.28 or later" under Export › Firmware on the camera.'); }
+          else { note.className = 'help'; note.textContent = 'Split Tone Balance moves where the Shadows and Highlights tints meet: this film has no split tone yet (HSL › Shadows / Highlights).'; }
+        };
+        const { inp, out } = slider(-5, 5, l.tone_balance ?? 0, (x) => { if (x) l.tone_balance = x; else delete l.tone_balance; show(); changed(); }, undefined, 'Split Tone Balance');
+        show();
+        return [h('div', { class: 'crow', title: 'Where the Shadows and Highlights tints meet: − the shadow colour reaches further up, + the highlight colour further down' }, h('span', { class: 'cname' }, pmIcon('tb'), 'Split Tone Balance'), steps(inp), out), note];
+      })()),
+    wbPanel(l, changed),
+    tonePanel(l, changed),
+    bwPanel(l, changed),
+    h('div', { class: 'group cam rows' },
+      crow('Contrast', OM3.contrast, () => l.advice.contrast ?? 0, (x) => { l.advice.contrast = x; }, 'The camera\'s Contrast for this look'),
+      (() => {
+        const { inp, out } = slider(SHARP.lo, SHARP.hi, l.advice.sharpness ?? 0, (x) => { l.advice.sharpness = x; changed(); }, sharpLabel, 'Sharpness');
+        return h('div', { class: 'crow', title: 'The camera\'s sharpening: 0 its normal, + crisper, − softer, −5 Off' }, h('span', { class: 'cname' }, 'Sharpness'), steps(inp), out);
+      })()),
+    h('div', { class: 'group cam rows' },
+      cseg('Noise Filter', [['off', 'Menu'], ['film', 'Off'], ['fine', 'Low'], ['standard', 'Std'], ['high', 'High']], l.grain,
+        (x) => { l.grain = x as Look['grain']; renderEditor(); changed(); }, 'Noise reduction for photos with this look; Menu keeps the camera\'s menu setting'),
+      cseg('Vignette Correction', [['off', 'Off'], ['on', 'On']], l.lens_correction ? 'on' : 'off', (x) => {
+        if (x === 'on') l.lens_correction = true; else delete l.lens_correction;
+        renderEditor(); changed();
+      }, 'Off = the lens\'s natural corners; On = the camera\'s correction (not in the preview)'),
+      crow('Shading Effect', OM3.shading, () => l.vignette, (x) => { l.vignette = x; }, 'The camera\'s Shading: − darker corners, + lighter'),
+      (() => {
+        const e = l.effect, v = !e ? 0 : e.type === 'clarity' ? -e.strength : e.strength;
+        const { inp, out } = slider(-OM3.fx, OM3.fx, v, (x) => {
+          l.effect = x === 0 ? null : x > 0 ? { type: 'bloom', strength: x } : { type: 'clarity', strength: -x };
+          fxChanged();
+        }, (x) => (x === 0 ? '0' : x > 0 ? `+${x}` : String(x)), 'Glow Effect');
+        return h('div', { class: 'crow', title: '+ Glow (a soft glow), − Clarity (local contrast)' }, h('span', { class: 'cname' }, pmIcon('glow'), 'Glow Effect'), steps(inp), out);
+      })(),
+      ...(() => {
+        const note = h('p', {});
+        const show = () => {                     // after each preview: is the glow on this photo?
+          const v = l.halation ?? 0, r = lastHalation;
+          note.hidden = !v || (om3Fw28() && r !== 'off' && r !== 'none');
+          if (!om3Fw28()) { note.className = 'warn'; note.replaceChildren(h('b', {}, 'Needs firmware v0.28: '), 'the export is set to an older firmware, so Halation is not previewed or saved. Choose "v0.28 or later" under Export › Firmware on the camera.'); }
+          else if (r === 'off') { note.className = 'help'; note.replaceChildren(h('b', {}, 'Not on this photo: '), 'like the camera, Halation fades out in bright, daylight photos. Pick a night photo with lights, such as Night street or Blue hour, to see it.'); }
+          else { note.className = 'help'; note.replaceChildren(h('b', {}, 'Not on this photo: '), 'it has no bright lights for the glow to form around.'); }
+        };
+        afterPreview = show;
+        const { inp, out } = slider(0, OM3.halation, l.halation ?? 0, (x) => { if (x) l.halation = x; else delete l.halation; changed(); }, (x) => (x ? `+${x}` : '0'), 'Halation Effect');
+        show();
+        return [h('div', { class: 'crow', title: 'A red-orange glow around bright lights in darker scenes, as on cinema film (it fades out in bright scenes, as on the camera); works with or without Glow' }, h('span', { class: 'cname' }, pmIcon('halo'), 'Halation Effect'), steps(inp), out), note];
+      })(),
+      h('p', { class: 'help' }, 'Glow Effect: + Glow, − Clarity. Halation Effect needs firmware v0.28; saving a photo with it takes a little longer. Hover a row for what it does.')),
+    h('div', { class: 'group cam rows' },
+      cseg('Film Grain Effect', [['0', 'Off'], ['1', 'Low'], ['2', 'Med'], ['3', 'High']], String(l.film_grain ?? 0), (x) => {
+        if (x === '0') delete l.film_grain; else l.film_grain = Number(x);
+        renderEditor(); changed();
+      }, 'Colour film grain, made by the camera as the photo develops'),
+      grainWarn),
     h('div', { id: 'problems' }));
   refreshProblems();
 }
@@ -1503,7 +1734,7 @@ async function om3ToCard(files: { name: string; data: Uint8Array }[]) {
       const w = await (await om3.getFileHandle(f.name, { create: true })).createWritable();
       await w.write(f.data as BlobPart); await w.close();
     }
-    toast(`Saved ${files.map((f) => f.name).join(' and ')} to ${dir.name === om3.name ? dir.name : `${dir.name}/OM3MOD`}. Put the card in the camera and half-press.`);
+    toast(`Saved ${files.map((f) => f.name).join(', ')} to ${dir.name === om3.name ? dir.name : `${dir.name}/OM3MOD`}. Put the card in the camera and half-press.`);
   } catch (e) { toast(`Could not write to the card: ${(e as Error).message}`, 'err'); }
 }
 
@@ -1530,7 +1761,12 @@ function om3ExportDialog() {
       ...(new28 ? [h('b', {}, 'v0.28 settings left out: '), `${v28.join('; ')}. Older firmware refuses a LOOKS.BIN with them, so this export saves these looks without them (Blacks / Whites as ±5, split toning in whole v0.26 steps). Choose "v0.28 or later" if the camera has v0.28.`] : []));
   };
   wbNote();
-  const cardFiles = async () => [{ name: 'LOOKS.BIN', data: looksBin() }, { name: 'NAMES.BIN', data: await namesBin(O.bank) as Uint8Array }];
+  // v0.30: CURVES.BIN (the films' RGB curves and colour mix) goes with LOOKS.BIN, made from the same bytes; older firmware never reads it
+  const cardFiles = async () => {
+    const lb = looksBin();
+    return [{ name: 'LOOKS.BIN', data: lb }, { name: 'NAMES.BIN', data: await namesBin(O.bank) as Uint8Array },
+      ...(fw >= 28 ? [{ name: 'CURVES.BIN', data: curvesBin(lb, O.bank) }] : [])];
+  };
   const busy = async (b: HTMLButtonElement, f: () => Promise<void>) => { b.disabled = true; try { await f(); } catch (e) { toast((e as Error).message, 'err'); } finally { b.disabled = probs.length > 0; } };
   const looks = O.bank.flat().filter(Boolean) as Look[];
   const rrAll = () => makeZip(looks.map((l, i) => ({ name: `${String(i + 1).padStart(2, '0')}-${rrName(l.name)}.rrpreset`, data: new TextEncoder().encode(rrpreset(bankPack(looks), i)) })));
@@ -1553,15 +1789,16 @@ function om3ExportDialog() {
       fwSel),
     wbBox,
     h('div', { class: 'ex-row' },
-      h('div', {}, h('b', {}, 'Save to the SD card'), h('p', { class: 'help' }, 'Pick the card (or its OM3MOD folder): writes OM3MOD/LOOKS.BIN and NAMES.BIN. Up to v0.28 this replaces the looks on the card, including ones made on the camera: Open… the card\'s LOOKS.BIN first to keep those. From v0.29 the camera keeps its own films and changes in its memory and takes this file only if it never had these films. Chrome / Edge.')),
+      h('div', {}, h('b', {}, 'Save to the SD card'), h('p', { class: 'help' }, 'Pick the card (or its OM3MOD folder): writes OM3MOD/LOOKS.BIN and NAMES.BIN, and for v0.28 or later CURVES.BIN (from v0.30 the camera reads each film\'s RGB curves and colour mix from it). Up to v0.28 this replaces the looks on the card, including ones made on the camera: Open… the card\'s LOOKS.BIN first to keep those. From v0.29 the camera keeps its own films and changes in its memory and takes this file only if it never had these films. Chrome / Edge.')),
       toCard),
     h('div', { class: 'ex-row' },
-      h('div', {}, h('b', {}, 'Card folder (.zip)'), h('p', { class: 'help' }, 'OM3MOD/LOOKS.BIN, OM3MOD/NAMES.BIN and the looks file. Unzip at the card root (never into DCOLYMP/).')),
+      h('div', {}, h('b', {}, 'Card folder (.zip)'), h('p', { class: 'help' }, 'OM3MOD/LOOKS.BIN, OM3MOD/NAMES.BIN, OM3MOD/CURVES.BIN (v0.28 or later) and the looks file. Unzip at the card root (never into DCOLYMP/).')),
       zip),
     h('div', { class: 'ex-row' },
-      h('div', {}, h('b', {}, 'Single files'), h('p', { class: 'help' }, 'LOOKS.BIN: the 20 looks. NAMES.BIN: their names as the camera shows them under the wheel ("Empty" for unused numbers). Both go in OM3MOD/. Still on firmware v0.17–v0.18? It reads the same looks as PROFILES.BIN.')),
+      h('div', {}, h('b', {}, 'Single files'), h('p', { class: 'help' }, 'LOOKS.BIN: the 20 looks. NAMES.BIN: their names as the camera shows them under the wheel ("Empty" for unused numbers). CURVES.BIN (v0.30): each film\'s RGB curves and colour mix, made for this LOOKS.BIN: save them together. All go in OM3MOD/. Still on firmware v0.17–v0.18? It reads the same looks as PROFILES.BIN.')),
       h('div', { class: 'ex-btns' },
         h('button', { disabled: probs.length > 0, onclick: () => download('LOOKS.BIN', looksBin()) }, 'LOOKS.BIN'),
+        h('button', { disabled: probs.length > 0 || fw < 28, title: 'Firmware v0.30: the films\' RGB curves and colour mix, for the LOOKS.BIN above', onclick: () => download('CURVES.BIN', curvesBin(looksBin(), O.bank)) }, 'CURVES.BIN'),
         h('button', { disabled: probs.length > 0, title: 'For firmware v0.17–v0.18', onclick: () => download('PROFILES.BIN', profilesBin(O.bank, 20)) }, 'PROFILES.BIN'),
         names)),
     h('div', { class: 'ex-row' },

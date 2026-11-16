@@ -8,6 +8,10 @@ What changed in each version of Caduceus for OM-3, newest first. To install or u
 
 | Version | Released | What's new |
 |---|---|---|
+| [v0.30.3](#v0303) | 2026-11-17 | Faster halation with a smoother fade; every dial click counted on the RGB / Mix pages, faster looks and saves (#69); a debug log that doesn't slow the shutter |
+| [v0.30.2](#v0302) | 2026-11-17 | Fix: with Image Review on, Glow / Clarity / Halation photos no longer give a black review or freeze live view at the switch to a standard picture mode |
+| [v0.30.1](#v0301) | 2026-11-17 | Fix: no more one-frame flash when leaving the B/W or WB Compensation row in Picture Mode |
+| [v0.30](#v030) | 2026-11-16 | Color Mix and RGB curves on the camera; the 20 films regraded with them (CURVES.BIN); a new Picture Mode order; films ready at switch-on; fixes for live dial turns, a video freeze and Noise Filter's "*" |
 | [v0.29.5](#v0295) | 2026-11-15 | Custom modes keep their own copy of everything: films, all their changes and the picture settings |
 | [v0.29.4](#v0294) | 2026-11-15 | Fixes: Picture Mode stars and saving on leaving it; a film's Custom WB Kelvin kept in the WB screen |
 | [v0.29.3](#v0293) | 2026-11-14 | The Delete button takes a function while shooting (photo and video) |
@@ -36,6 +40,77 @@ What changed in each version of Caduceus for OM-3, newest first. To install or u
 
 Versions are named v0.N from v0.18 on. Earlier builds were called "test N" while they were tried on the camera; the
 same number is used here (test 17 = v0.17).
+
+## v0.30.3
+v0.30.2 plus faster halation, one pull request by [crombach](https://github.com/crombach) and a debug log fix. Firmware
+camera-tested (2026-11-17, test 3; only its name was changed).
+
+- **Faster halation:** a Halation photo saves much quicker (about half the work; the same photo as before in the
+  emulator, until the fade below). Idea from Caduceus for the E-P7 (cakelesscoder).
+- **A smoother halo:** at higher strengths the halo fades out gradually over about twice the distance instead of
+  stopping; near the light it looks as before. LookLab's preview follows.
+- **Every dial click counts on the RGB and Mix pages** ([#69](https://github.com/androidfanman/caduceus-om3/pull/69)):
+  fast turns no longer skip values; the curve picture redraws about three times faster; split toning / RGB curves
+  and saving films and curves run faster with the same results.
+- **Fix: the debug log slowed the shutter:** with `DEBUG.TXT` on, the log is now written when you let go of the shutter
+  (not at the half-press, and not right after a burst), so the shutter fires on time and bursts stop when you let go.
+  Reported by flrvr.
+  Details: [release notes](releases/v0.30.3/NOTES.md).
+
+## v0.30.2
+v0.30.1 plus one fix. Firmware camera-tested (2026-11-17, test 1; only its name was changed).
+
+- **Fix: black review picture, then a frozen live view** ([#65](https://github.com/androidfanman/caduceus-om3/issues/65),
+  probably [#27](https://github.com/androidfanman/caduceus-om3/issues/27)): with Image Review on, a photo with Glow,
+  Clarity or Halation showed a black review picture, and the Creative Dial to a standard picture mode then froze
+  live view. Our effect route no longer reaches a shot's small extra pictures (the review picture among them), as the
+  camera does for its own effects. The photo keeps its Glow / Clarity / Halation; the review and the playback screen
+  show the film without them. Trigger found by flrvr; the cause found first by Caduceus for the E-P7 (cakelesscoder,
+  its "Rec View fix").
+  Details: [release notes](releases/v0.30.2/NOTES.md).
+
+## v0.30.1
+v0.30 plus one fix. Firmware camera-tested (2026-11-17, test 1; only its name was changed).
+
+- **Fix: the menu flash in Picture Mode** ([#66](https://github.com/androidfanman/caduceus-om3/issues/66),
+  [#67](https://github.com/androidfanman/caduceus-om3/pull/67), by [crombach](https://github.com/crombach)): leaving
+  the B/W row or the WB Compensation row showed the old row's title and a box with its icon for one frame. The bottom
+  bar now comes back only after the next row's values are on screen.
+  Details: [release notes](releases/v0.30.1/NOTES.md).
+
+## v0.30
+v0.29.5 plus two new colour tools, the 20 films regraded with them, and four pull requests by
+[crombach](https://github.com/crombach). Firmware camera-tested (2026-11-16, test 13; only its name was changed).
+
+- **Color Mix:** a new Picture Mode row. Make red, green or blue stronger or weaker, or turn it toward its neighbour:
+  each colour is a dot on a ring, the front dial turns it (Hue), the rear dial moves it out or in (Sat), INFO picks the
+  colour. Greys stay grey. Photos only.
+- **RGB curves:** a new row with a tone curve for each of red, green and blue, five points from black to white, −7 to +7
+  each. INFO picks the channel. Photos only.
+- **The 20 films regraded** with Color Mix and RGB curves against scans of the real films, in a new optional card file,
+  `CURVES.BIN`: put it in `OM3MOD` and the camera takes it once at a half-press. Curves or a mix you changed on a film
+  stay yours.
+- **A new Picture Mode layout:** rows in the order the camera works on a photo, five a page, each with its own picture,
+  and clearer names (Split Tone Balance, WB Compensation, Glow Effect, Halation Effect).
+- **Films ready at switch-on** ([#56](https://github.com/androidfanman/caduceus-om3/pull/56)): the films and your
+  changes load from the camera's memory as it starts, in every mode; card files are still read at the first
+  half-press.
+- **Fix: live mode-dial turns** ([#54](https://github.com/androidfanman/caduceus-om3/issues/54),
+  [#59](https://github.com/androidfanman/caduceus-om3/pull/59)): turning between a custom mode and P / A / S / M no
+  longer changes your COLOR profiles or puts a "*" on them; each mode keeps its own film, B counts as a mode, and the
+  shooting screen no longer flashes "COLOR1*" during a turn.
+- **Fix: video freeze** ([#53](https://github.com/androidfanman/caduceus-om3/issues/53),
+  [#55](https://github.com/androidfanman/caduceus-om3/pull/55)): a half-press soon after switching on in video could
+  freeze the live image; video and S&Q now do no film work.
+- **Fix: Noise Filter's "*"** on a COLOR without a film now follows the camera's own Noise Filter setting, as the
+  COLOR's own "*" does (with the camera on Off, Off starred the row and Standard the COLOR).
+- **Debug log:** `CADLOG.TXT` is a clear, complete report (what loaded, each COLOR's film, each custom mode, the
+  camera's own settings, the last 32 shutter presses).
+- **LookLab** edits Color Mix and RGB curves with the camera's maths, follows the new menu order and saves `CURVES.BIN`;
+  the tour shows the new rows. For developers: an emulator test suite run before every pull request
+  ([#57](https://github.com/androidfanman/caduceus-om3/pull/57), [#58](https://github.com/androidfanman/caduceus-om3/pull/58),
+  [#63](https://github.com/androidfanman/caduceus-om3/pull/63)).
+  Details: [release notes](releases/v0.30/NOTES.md).
 
 ## v0.29.5
 v0.29.4 plus one change. Firmware camera-tested (2026-11-15, builds p1 and p2; only its name was changed).

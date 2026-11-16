@@ -11,6 +11,8 @@ Only the **OM SYSTEM OM-3 on firmware 1.1**. To check, open *Setup › Firmware*
 E-P7 there's a sister project, [Caduceus for the E-P7](https://github.com/cakelesscoder/caduceus-ep7). Other cameras
 aren't supported.
 
+Why not other cameras, including the new OM SYSTEM PEN? See [Other cameras](../README.md#other-cameras).
+
 ### Is it safe for my camera?
 
 It's experimental, so there's some risk: it can crash or freeze the camera, and you use it at your own risk. Every
@@ -102,8 +104,11 @@ the films as built. Assign your custom modes once after updating to v0.29.5.
 
 ### Do I still need to half-press after switching on?
 
-Yes, once. From v0.27.1 your films load at the first half-press after switching on. v0.26.2 and v0.27 loaded them by
-themselves, but that could rarely freeze the camera at start-up, so v0.27.1 went back to the half-press.
+No, from v0.30. Your films and changes load from the camera's own memory as it starts, in every mode, so the right film
+is there straight away ([#56](https://github.com/androidfanman/caduceus-om3/pull/56), by crombach). New card files (a
+`LOOKS.BIN` or `CURVES.BIN`) are still read at the first half-press. v0.27.1 to v0.29.5 loaded everything at the first
+half-press, because an earlier automatic load could rarely freeze the camera at start-up; v0.30's load reads only the
+camera's memory, not the card.
 
 ## Problems
 
