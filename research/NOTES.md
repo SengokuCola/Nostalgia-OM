@@ -5854,3 +5854,22 @@ rgb-page-counts-every-click, halation-matches-the-model). Package `test-builds/2
   box-filtered twice at half resolution (2 / 3 / 3) with the chroma gain about 0.18 (about 184 / 1024) instead of
   448. Estimate: 2-3x tg_fill's work. To pick up again: camera-test g1 first (the image processor takes a 0x0c02
   tile, brightness / tint, time per tile), then the film-like tile and the Strength / Size rows.
+- **Back on (owner, 2026-11-16, via the main chat: "lets now try the new grain settings as well", after border test
+  1c passed): g1 on top of the Border row.** `feature/image-borders` (v0.30.3 + Border, camera-tested test 1c) merged
+  into `feature/better-grain` (2ba7211). Conflicts: VERSION, build.py (make_xblock: BD_RUN and TG_OWN / TG_BAD),
+  editor.s (v0.30.3 rebuilt the debug log: the "Grain tiles" line is now in `lg_sum`'s SUMMARY after the log writes),
+  NOTES (both kept). xb_gs untouched: the texture grain is in the development, `bd_run` after it on the finished
+  picture, so no grain on the border; XB_ART 0 keeps the Border byte (+50) out of xb_tex's Frame test.
+- Hooks reviewed against the start-up rule and added to `tools/test/hooks.json` by hand (not `--write-hooks`):
+  `hook_trs` 0x604cf156 (7 B) and `hook_trl` 0x604cf1a4 (5 B), both in the texture builder 0x604cf0b9 (TXGET's
+  miss path). With `tg_own` 0 they run the stock calls with the same frames; only `xb_tex` sets `tg_own`, around its
+  TXGET for a COLOR still with Grain at the shot. Nothing of ours at start-up.
+- Build (2ba7211): ext12 255,880 B (6,264 B left), ext11 63,120 B, block 6,192 B. Settings: as g1 (Film Grain Low /
+  Med / High = size 1 / 2 / 3 at one strength); the Strength / Size rows need a new per-film byte and row pictures,
+  so they wait for this camera result. Suite (OM3_EMU = the newer om-emu with `bin/card.mjs`): **28 of 28 pass**
+  (pass recorded on 2ba7211). `tg_fill` on this build (ncall at tr_ld2's call, FLUSH stubbed): full tiles, sizes 1
+  and 3, **equal the model byte for byte** (66.3 M / 66.4 M instructions).
+- Package `test-builds/2026-11-16-grain-borders-g1` (private folder): E1479999.BIN `4c026642…555f`, VERSION
+  "v0.30.3-dev (grain g1 + borders 1c)"; go-backs v0.30.3 `60b6d954…f546` (patch.py --release v0.30.3) and border
+  test 1c `d8ce3d89…3db3`. It replaces `2026-11-15-grain-g1` (never flashed). Camera questions as g1, plus Grain +
+  Border 3 (no grain on the white), Halation 5 + grain, bursts with a border, Image Review, video.
