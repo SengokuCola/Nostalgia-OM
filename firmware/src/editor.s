@@ -8452,10 +8452,14 @@ tg_fill:
  mov (44,sp),d0
  cmp 0,d0
  bne 90f
- mov (USCLK),d0
- mov (40,sp),d1
+ mov (40,sp),d0                   /* g1b: the start; 0x98900284 counts DOWN (NOTES, timing 2026-11-14), so the time */
+ mov (USCLK),d1                   /* is start - end (g1 logged end - start: 2^22 - 380 on the camera, 2026-11-16) */
  sub d1,d0
- lsr 10,d0
+ and 0x7fffffff,d0                /* a 31-bit counter (the firmware's clock = 0x7fffffff - it) */
+ lsr 4,d0
+ mov 1049,d1
+ mul d1,d0                        /* (us / 16) x 1049 / 65536 = us / 999.6: milliseconds (to 65 s) */
+ lsr 16,d0
  mov d0,(tg_ms)
  mov (tg_n),d0
  inc d0
@@ -8756,7 +8760,7 @@ tg_n:                             /* tiles made this power-on */
  .long 0
 tg_nb:                            /* tiles that failed */
  .long 0
-tg_ms:                            /* the last tile's time, 1/1024 s */
+tg_ms:                            /* the last tile's time in ms (g1b; g1 logged end - start >> 10, wrong way round) */
  .long 0
 tg_own:                           /* set by the code block's xb_tex around TXGET: our tile's size 1..5, 0 = stock */
  .byte 0

@@ -5873,3 +5873,25 @@ rgb-page-counts-every-click, halation-matches-the-model). Package `test-builds/2
   "v0.30.3-dev (grain g1 + borders 1c)"; go-backs v0.30.3 `60b6d954…f546` (patch.py --release v0.30.3) and border
   test 1c `d8ce3d89…3db3`. It replaces `2026-11-15-grain-g1` (never flashed). Camera questions as g1, plus Grain +
   Border 3 (no grain on the white), Halation 5 + grain, bursts with a border, Image Review, video.
+- **First camera result (owner's OM-3, 2026-11-16; emulator + first camera photos, owner's verdict pending).** Package
+  `4c026642…555f`; files in the private card backups (CADLOG, PB162953..956, never in the repo). RAW+JPEG 5184 x 3888,
+  COLOR 1 with its own settings (no film), Border 0: 953 grain Off, 954 / 955 / 956 Low / Med / High (size 1 / 2 / 3).
+  - **No freeze or reboot** (4 photos, 20 shutter events, saves fine, log "nothing unusual"): **the image processor
+    takes our 0x0c02 colour tile** (camera-tested).
+  - The main chat's measurements (high-pass std of the centre 1024 x 1024, 9 x 9 box): Off Y 10.6, Cb 1.9, Cr 1.3;
+    grain on Y 17.3..17.9, Cb 5.6..5.9, Cr 5.1..5.4. Mean Y / Cb / Cr the same as Off within 1 (102 / 128 / 129.5):
+    **no brightening, no tint** (camera-tested), so the blend adds texture Y as it is (the -192 Y offset is right) and
+    the chroma inputs are centred. Sizes fine -> medium -> coarse by eye. The colour speckle is strong: on a blue box
+    at High it reads like digital colour noise (as the preview reading said).
+  - Log: "made 2, failed 0, last size 3, last time (ms) 4193924". **The time was measured the wrong way round:**
+    0x98900284 counts down (timing section, 2026-11-14), and g1 logged (end - start) >> 10, which wrapped:
+    2^22 - 4193924 = 380, so start - end = about 380 x 1024 us = **0.39 s for the last finished tile** (analysis;
+    66 M instructions -> about 170 M per second). **"made 2" with three grain photos:** `tg_w` is set when a tile
+    starts and `tg_n` when it ends; the log was written at event 20, the half-press / release after the 4th photo,
+    and all three grain photos carry our colour speckle (Cb 5.6..5.9 against 1.9), so the size-3 tile was most likely
+    still being made at that write (analysis). That fits the tile being built during the development, after the
+    photo is counted, with a half-press coming while it runs: no harm seen.
+  - **g1b (firmware only; not packaged: the owner's verdict on size, speckle and speed first):** `tg_ms` = ((start -
+    end) & 0x7fffffff) >> 4 x 1049 >> 16 = milliseconds (to 65 s). om-emu: the size-2 full tile still equals the
+    model byte for byte, time 0 (g1 gave 4194303 there: the same wrap). VERSION "v0.30.3-dev (grain g1b + borders
+    1c)". The time is camera-only (om-emu's counter barely moves), so no suite test for it.
