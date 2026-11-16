@@ -18,7 +18,7 @@ W, H = 46, 46                      # slider-row icon
 CW, CH = 100, 76                   # choice-row cell picture
 # (lines, width, height): one line = (text, cap height px, baseline row)
 PICTURES = [
-    ([('Blk', 18, 30), ('Wht', 18, 60)], CW, CH), ([], 8, 2), ([], 8, 2), ([], 8, 2),  # v0.28 the Blacks / Whites grid row's left cell before it is drawn with its values (was the Blk / Wht slider icons); A-B / G-M unused (the WB grid row shows the camera's WB± picture; the Border row the camera's Frame picture)
+    ([('Blk', 18, 30), ('Wht', 18, 60)], CW, CH), ([], 8, 2), ([], 8, 2), ([], W, H),  # v0.28 the Blacks / Whites grid row's left cell before it is drawn with its values (was the Blk / Wht slider icons); A-B unused (the WB grid row shows the camera's WB± picture); borders b1c: the Border row's icon in G-M's place (border_icon)
     ([('Vignette', 15, 30), ('Off', 18, 60)], CW, CH), ([('Vignette', 15, 30), ('On', 18, 60)], CW, CH),
     ([('Noise', 15, 30), ('Off', 18, 60)], CW, CH), ([('Noise', 15, 30), ('Low', 18, 60)], CW, CH),
     ([('Noise', 15, 30), ('Std', 18, 60)], CW, CH), ([('Noise', 15, 30), ('High', 18, 60)], CW, CH),
@@ -530,7 +530,25 @@ def bal_icon():
     return px
 
 
-CUSTOM = {10: hsl_pie, 11: glow_icon, 12: halo_icon, 13: bal_icon}
+def border_icon():
+    """Border (46 x 46, borders b1c; owner: the camera's own Frame picture is too big for this slot): a small photo
+    with a white border, the same width all round: white frame 4 px, a grey picture inside (light sky, a darker hill),
+    a 1 px dark line between them and a 2 px dark edge round the outside, as the other icons"""
+    px = np.zeros((46, 46), dtype=np.uint8)
+    x0, x1, y0, y1 = 6, 40, 10, 36                 # the print: 34 x 26
+    px[y0:y1, x0:x1] = 10
+    ix0, ix1, iy0, iy1 = x0 + 4, x1 - 4, y0 + 4, y1 - 4
+    px[iy0 - 1:iy1 + 1, ix0 - 1:ix1 + 1] = 7       # the line round the picture
+    px[iy0:iy1, ix0:ix1] = _grey(147)              # sky
+    for x in range(ix0, ix1):                      # a hill: rises from the left, falls to the right
+        top = iy0 + 7 + abs(x - (ix0 + 16)) // 3
+        px[top:iy1, x] = _grey(77)
+    ring = ndimage.binary_dilation(px > 0, structure=np.ones((3, 3)), iterations=2) & (px == 0)
+    px[ring] = 7
+    return px
+
+
+CUSTOM = {3: border_icon, 10: hsl_pie, 11: glow_icon, 12: halo_icon, 13: bal_icon}
 
 
 def streams():
