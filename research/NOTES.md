@@ -5772,3 +5772,5 @@ rgb-page-counts-every-click, halation-matches-the-model). Package `test-builds/2
   VERSION "v0.30.3-dev (borders test 1c: own small Border icon)". Suite on c268419: **28 of 28 pass** (pass recorded).
   ext12 254,544 B (7,600 B left). Package `test-builds/2026-11-16-borders-test1c`: E1479999.BIN `d8ce3d89…3db3`,
   go-back v0.30.3 `60b6d954…f546`; tests 1 / 1b never flashed (folders moved to the Trash).
+- **Owner approved the Border icon (2026-11-16: "Yes, use it").** Test 1c (`d8ce3d89…3db3`) is ready for the owner's
+  camera test; nothing changed in the firmware.
