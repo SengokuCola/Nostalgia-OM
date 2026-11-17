@@ -6523,8 +6523,13 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
 ## Crop round 3: the AF target reproduced in om-emu, its cause (2026-11-17; emulator + analysis, work in progress)
 - **Camera, round 2 (owner, 2026-11-17):** "still no focus point when moving it. also after taking the pictures it
   still displays 16:9 instead of the actual crop. the grids look good". Grid lines in the strip: **camera-tested**.
-  The display / AF grid rows of round 2 did not bring the target back. Review after a shot: label or shape, open
-  (a phone photo asked for).
+  The display / AF grid rows of round 2 did not bring the target back. **Review after a shot: only the label is
+  wrong** (owner: "just the label is wrong. the format is the xpan strip").
+- Card read (main chat, card-backups 2026-11-17-crop-round-2-tested): CROP MODES "tag at the first half-press
+  00000000, Image Aspect then 0, set to 0, after 0, now 6; **display 3, 900 x 506**": the live view display set-up's
+  last run used 16:9's row (it may run only at start-up and mode changes, before XPan was picked that power-on), so
+  round 2's rows were not read. Photos 21:9 x 2 (5184 x 2224, EXIF 6:5), XPan (5184 x 1920, EXIF 7:6), S-AF, EXIF
+  AFAreas all the centre.
 - **The pinned om-emu (0819080) reproduces the missing target** at XPan, 21:9 and 5:4 (no target, no area outline;
   16:9 normal), with every round so far. The earlier "om-emu draws it" came from the older om-emu in
   ~/om3-work/om-emu (96bf756), which shoot.sh used by default (OM3_EMU). Use the pinned one for this screen.
