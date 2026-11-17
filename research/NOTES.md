@@ -6678,3 +6678,29 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   `1cd2f94c…6c41`): **47 pass** (border-matches-the-model with the crop cases), **2 FAIL**: `static:hook-list` (five
   crop hooks for the owner's OK: hook_crs, hook_crb, hook_crg, hook_crh, and hook_crp 0x6057fb1b, the playback info
   diagnosis, playback only) and `static:changed-bytes`.
+
+## Crop round 7: the boot loop (2026-11-17; camera, analysis)
+- **Camera (owner, round 7, 1cd2f94c…): "it went into a bootloop and never could even load the camera".** The owner
+  went back to border preview 1 (main chat). The package is renamed `...-BOOTLOOP-do-not-flash`.
+- **Round 6 -> 7, the firmware's changes:** (1) `.hook_crp` at **0x6057fb1b** (the play app's copy of the photo
+  info's ratio code) -> cr_pbi in .ext12; (2) bd_run -> cr_bdc (runs on a finished photo, from the code block's xb_gs
+  at capture); (3) the log writer's cr_txt7 (shutter events); (4) cr_ic back to round 5's code (round 6's playback
+  branch removed). Only (1) can run outside a capture or a shutter event.
+- **Cause (analysis, the only start-up-capable change):** 0x6057fb1b is in **firmware section 2** (0x6031f000 ..
+  0x60718800); cr_pbi is in section 6's extension (.ext12, 0x60f59800..). The loader copies the sections 1..10 in order
+  while the camera starts (0x60045ed5 sets bit id - 1 of SECBITS 0xa32de590; the films' early load waits for 0x3ff
+  for this reason), and code in a section already copied can run before later ones arrive. If the play app fills a
+  photo's info during start-up (e.g. for the newest photo when the card mounts; its function 0x6057f9ed is called from
+  0x6057b73d / 0x6057b766) before section 6 is in, the jump lands in memory not yet loaded: a crash at every start.
+- Every other hook in sections 1..5 that jumps into section 6's extension runs only while a photo is taken or saved:
+  hook_crs / hook_crb (section 1: the settings store's write), hook_ex (EXIF), hook_su, hook_wl, hook_trs, hook_trl,
+  hook_sel2, hook_c1e, hook_mx (section 2: the image pipeline). hook_crp was the first in section 2 on a path that is
+  not the capture's. Hooks in section 6 (hook_crh 0x60dc4bb1) or later (hook_crg 0x611cb24d, the GUI) load with or
+  after .ext12.
+- om-emu cannot show it: its driver sets SECBITS to 0x3ff at the start and every section is mapped from the first
+  instruction; a boot trace (round 6 and 7 builds, WATCH 0x6057fb1b / 0x6057f9ed, boot + half-press) never reaches
+  the play app's info fill, nor does its playback.
+- **Rule for the next builds:** no hook in sections 1..5 may jump into .ext11 / .ext12 / .ext13 unless its site runs
+  only after start-up (and say why); for such a site, enter through the same section's tail with a SECBITS check, or
+  pick a site in section 6 or later. The playback label's next try will be on the GUI side (0x611509bc, section 7),
+  not in the play app. tools/test has no check for this yet (static:hook-sections only matches editor.s to build.py).
