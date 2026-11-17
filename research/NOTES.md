@@ -5992,3 +5992,12 @@ rgb-page-counts-every-click, halation-matches-the-model). Package `test-builds/2
   after the grain, so its highlights were capped too; camera-only.
 - Package `test-builds/2026-11-16-grain-g2c` (private folder): E1479999.BIN `317747e1…23a6` (VERSION "v0.30.3-dev
   (grain g2c: grain centred, highlights kept)"), go-backs v0.30.3 `60b6d954…f546` and border test 1c `d8ce3d89…3db3`.
+- **g2c camera (owner's OM-3, 2026-11-16; package 317747e1…): Halation kept with grain, highlights to white**
+  (camera-tested; the main chat's readings, the owner's view pending). Files in the private card backups (CADLOG,
+  PB163001..008, 8 kept of 11). Log: 11 photos, 56 events, "nothing unusual", no freeze; "Grain tiles: made 6, failed
+  0, last size 3, last time 393 ms"; NOW "Film Grain on COLOR 1-4: 5 Coarse, Off, Off, Off". All 8 the lamp scene with
+  Halation, 001 grain Off, 002..008 grain at several strengths / sizes (Cb high-pass 5.2..8.2): the orange halo in
+  every one (mean R - B near the lamp 74.6 Off, 67..71 with grain; g2b: -4..1 at 3..4); Y 99.9th percentile 251 with
+  grain against 244 Off (g2b: 204..218); mean brightness as Off (43.5..46.8 against 45.9, a dark scene). So +136 is
+  the texture's Y input offset and +160 its Y minimum, as read from the init (the guess held). Not covered yet: a
+  white / bright scene, Glow + grain, video, daylight Halation.
