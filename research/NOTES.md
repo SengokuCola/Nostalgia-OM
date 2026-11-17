@@ -6704,3 +6704,44 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   only after start-up (and say why); for such a site, enter through the same section's tail with a SECBITS check, or
   pick a site in section 6 or later. The playback label's next try will be on the GUI side (0x611509bc, section 7),
   not in the play app. tools/test has no check for this yet (static:hook-sections only matches editor.s to build.py).
+
+## Crop round 7b: start-up safe (2026-11-17; emulator + analysis, camera test pending)
+- **What changed from round 7:** the playback hook (0x6057fb1b) and its log line are gone; the two store-write hooks
+  (section 1) now enter through cr_g1 / cr_g2 in section 1's tail, which check the camera's own ready bit for section 6
+  first; the two lists that section-2 records point to moved out of section 6 (cr_vlist -> section 2's tail,
+  cr_rmap -> section 1's tail). The Border inside the crop (cr_bdc, round 7) stays. VERSION "crop round 7b".
+- **The camera's ready bits (analysis, stock code):** 0xa32de58c, bit id - 1 set at 0x60046064 after section id's copy
+  and its start-up step; 0x60045e39 (d0 = id) reads it. Stock section 1 waits on it before it calls section 9
+  (0x60062210: `mov 9,d0; call 0x60045e39`, a sleep loop, then `call 0x618386bf`), so the firmware itself runs early
+  code before later sections are in, and checks first. om-emu sets bits 0..6 before the settings store starts
+  (FIDELITY-NOTES, S-BOOTSTAGE). 0xa32de590 (the copied mask) is only ever OR-ed by the loader.
+- **Every crop entry, its section, who reaches it, and start-up:**
+
+  | Entry (round) | Section | Reaches | Called by | While the camera starts? |
+  |---|---|---|---|---|
+  | hook_crs 0x60061183 (1) | 1 | cr_g1 (1) -> cr_sin (6) | the settings store write (om-emu: at power-off) | Can't rule out: now gated; until section 6's bit is set it runs the stock instructions (test crop-save-waits-for-section-6) |
+  | hook_crb 0x6006120e (1) | 1 | cr_g2 (1) -> cr_sbuf (6) | the same function's buffer path (after a menu) | The same: gated |
+  | validator record 0x6061b674 (1) | 2 | cr_vlist, now section 2 | whoever reads the section-2 record | Its list is in whenever the record is |
+  | stills rule 0x605d113c (1) | 2 | cr_rmap, now section 1 | the same | The same |
+  | hook_crh 0x60dc4bb1 (5) | 6 | cr_dhm (6) | the display's Set_Histogram_CalcMode | Same section: .ext12 is copied with section 6, and stock code calls section 6 only once it is in |
+  | crop.py's six live view / playback jump tables 0x60e8..0x60eac870 (1) | 6 | cr_os6.. (6) | section 6 switches | Same section |
+  | hook_crg 0x611cb24d (3) | 7 | cr_spec (6) | the GUI's screen spec | Section 7 is copied after section 6 |
+  | GV_SITES (16 calls), the SCP strip, label and menu records, the size text (1, 2) | 7 | cr_gv, cr_gvl, cr_lst, cr_ml0..2, cr_rtab (6) | the GUI | Section 7 is after section 6 |
+  | Our own calls inside section 6 code (st_stk, ar_ic, nm_ex, lg_pr, bl_gv, bl_tail, bd_run, the log writer) | 6 | cr_str, cr_ic, cr_hp, cr_gm, cr_gx, cr_bdc, cr_txt (6) | section 6 code, or the released shutter path | Same section |
+  | hook_crp 0x6057fb1b (7) | 2 | cr_pbi (6) | the play app's photo-info fill | **Removed** (the boot loop) |
+
+  crop.py's other data in sections 1..5 holds values only (size tables, the display and AF tables, the RAW frame's
+  jump table to section-2 cases): `static:section-order` finds no other pointer there.
+- **New check `static:section-order`** (tools/test/static_check.py, research/TESTING.md): round 7's build fails it
+  (crp, crs, crb, the two lists), round 6's too (all but crp), round 7b, border preview 1 and v0.30.3 pass. It also
+  finds 21 entries of the released firmware (v0.30.x, border preview 1) in sections 1..5 that reach section 4..8 code:
+  the shutter hook (0x60415216 -> pr_gate / lg_pr / sd_load ..), the picture pipeline's hooks (ex, lv, su, wl, trs,
+  trl, wt, sel2, c1e, mx, tone, fx) and 13 menu / grain words (0x604b9288, 0x6061a33c..0x6061a580). They start
+  normally on the camera; listed in LATE_RELEASED, **not proven here** (a follow-up).
+- **Start-up proof for this build (analysis + emulator):** sections 1..5 differ from round 6 (which started normally
+  on the camera) in 135 bytes: the two hooks' jumps (now to cr_g1 / cr_g2), the gates and cr_rmap in section 1's tail,
+  cr_vlist in section 2's tail and the two record words pointing at them; every other changed byte is the same call
+  to the same function at its new address (instruction diff of .ext1 / .ext2 / .ext4 / hook_mx: hl_ok, pr_nmd,
+  st_claim, ub_save, fopen .. fclose, ub_bun, ub_pfl, mx_go). Nothing new runs at start-up.
+- Tests: `crop-save-waits-for-section-6` (poke 0xa32de58c = 0x1f before a power-off at XPan: the next start reads 6,
+  no base ratio; on round 7's build "629209c2: 03, not 06": caught) and `static:section-order` (caught on round 7).
