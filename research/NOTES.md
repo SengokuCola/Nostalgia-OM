@@ -6643,3 +6643,7 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   10931 after the first shutter event keeps the picture id, mdr and 48 stack words; the log prints the id, mdr and the
   words that look like code addresses ("CROP PLAYBACK LABEL (round 6 diagnosis): ..."). Nothing on screen changes.
   Checked by a direct call in om-emu: saved id 10930 and the stack, d2 / d3 / a1 / sp as on entry, on to ic_get.
+- **Round 6 suite** (build of 7845953 = the package `test-builds/2026-11-17-crop-round-6`, E1479999.BIN
+  `6bc684b4…7769`): **47 pass, 2 FAIL** (the same four crop hooks for the owner's OK, changed bytes). Its test steps
+  ask for one XPan photo shown in playback with its info line, then a half-press: the log then holds the picture id
+  and the code addresses that drew it, the input for the label's fix.
