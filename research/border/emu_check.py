@@ -30,7 +30,7 @@ def frame(W, H, pad, seed):
     return rng.integers(0, 256, H * pitch, dtype=np.uint8), W, H, pitch
 
 
-CASES = {   # name: (W, H, pad pixels, level)
+CASES = {   # name: (W, H, pad pixels, level[, Image Aspect: 5 / 6 / 7 = 5:4 / XPan / 21:9])
     'land5': (640, 480, 16, 5),
     'port3': (480, 640, 0, 3),
     'wide2': (1024, 576, 8, 2),
@@ -41,7 +41,13 @@ CASES = {   # name: (W, H, pad pixels, level)
     'level0': (320, 240, 0, 0),
     'level6': (320, 240, 0, 6),
     'big5': (5184, 3888, 0, 5),
+    'xpan3': (640, 480, 16, 3, 6),     # crop round 7: the border inside the crop's centred band
+    'xp169': (1024, 576, 8, 2, 6),
+    'w219': (640, 480, 0, 4, 7),
+    'c54': (640, 480, 16, 3, 5),
+    'xpcut': (640, 240, 0, 3, 6),      # a buffer already the crop's shape: as without a crop
 }
+CR_A1 = 0x629209c2                     # Image Aspect in the camera's settings image (crop.s CR_A1)
 BIG = ('big5',)   # camera-sized (20 MP): for the counts, not in the default run
 
 
@@ -61,14 +67,15 @@ def main():
     names = a.only or [n for n in CASES if n not in BIG]
     cases, expect = [], {}
     for i, n in enumerate(names):
-        W, H, pad, level = CASES[n]
+        W, H, pad, level, *crop = CASES[n]
+        crop = crop[0] if crop else 1
         buf, W, H, pitch = frame(W, H, pad, 100 + i)
         (out / f'{n}.in').write_bytes(buf.tobytes())
         e = buf.copy()
-        expect[n] = (e.tobytes() if model.border(e, W, H, pitch, level) == 'off' else e.tobytes(),
+        expect[n] = (e.tobytes() if model.border(e, W, H, pitch, level, crop) == 'off' else e.tobytes(),
                      'on' if model.ok(W, H, pitch, level) else 'off')
         cases.append({'name': n, 'in': str(out / f'{n}.in'), 'out': str(out / f'{n}.out'), 'W': W, 'H': H,
-                      'pitch': pitch, 'level': level})
+                      'pitch': pitch, 'level': level, 'pokes': [[CR_A1, f'{crop:02x}']]})
     syms = elf_symbols(build / 'p.elf')
     spec = out / 'spec.json'
     spec.write_text(json.dumps({'fn': syms['bd_run'], 'frame': FRAME, 'flush': syms['FLUSH'], 'lock': syms['LOCK'],
@@ -90,7 +97,8 @@ def main():
         good = o['done'] and o['regsBack'] and o['guard'] and diff.size == 0
         bad += not good
         where = '' if not diff.size else f' first at row {diff[0] // cs["pitch"]} byte {diff[0] % cs["pitch"]}'
-        B = model.widths(cs['W'], cs['H'], cs['level'])[0] if status == 'on' else 0
+        cw, ch = model.crop_area(cs['W'], cs['H'], int(cs['pokes'][0][1], 16))[2:]
+        B = model.widths(cw, ch, cs['level'])[0] if status == 'on' else 0
         print(f'{"exact" if good else "DIFF":<6}{cs["name"]:<8} {cs["W"]}x{cs["H"]} L{cs["level"]} {status:<3} B {B:>3} '
               f'{changed:>8} B changed  steps {o["steps"]:>10,}  locks {o["locks"]:>4}  flushes {o["flushes"]:>3}  '
               f'max under lock {o["maxLock"]:>7,}' + ('' if good else f'  [{diff.size} bytes differ{where}; done '

@@ -346,11 +346,7 @@ cr_ic:                            /* d0 = the id, d1 = its exthu (ar_ic); a0 <- 
  beq 9f
  movbu (a0),d1
  cmp 5,d1
- bcs 11f
- cmp 8,d1
  bcc 9f
- jmp cr_pbd                       /* round 6: playback (class 5..7), the label diagnosis */
-11:
  cmp 3,d1
  beq 9f
  movbu (CR_A1),d1
@@ -534,7 +530,7 @@ cr_dst:
 cr_daf:
  .long 0
 cr_t1:
- .asciz "\r\n\r\nCROP MODES (crop round 6): tag at the first half-press "
+ .asciz "\r\n\r\nCROP MODES (crop round 7): tag at the first half-press "
 cr_t2:
  .asciz ", Image Aspect then "
 cr_t3:
@@ -593,7 +589,7 @@ cr_txt:                           /* `call cr_txt,[d2,d3,a2,a3],24` */
  LGS cr_t16
  mov (cr_hn),d0
  LGD
- call cr_txt6,[d2,d3,a2,a3],24    /* round 6: the playback label diagnosis */
+ call cr_txt7,[d2,d3,a2,a3],24    /* round 7: the playback info diagnosis */
  ret [d2,d3,a2,a3],24
 
 /* ---- Grid lines inside the strip (crop round 2; camera c5: "the gridlines/guides do not match the framing"). The
@@ -913,93 +909,165 @@ cr_trim:                          /* `call cr_trim,[],0`, a1 -> {x, y, w, h} (u1
  .byte 0xcb
 .section .ext12,"ax"
 
-/* ---- Crop round 6: the playback label, a diagnosis (camera, rounds 2..5: playback labels a crop photo 16:9, or 4:3 at
- * 5:4; the picture itself is right). Playback draws the ratio label as picture 10930 ("16:9") / 10931 ("4:3") from a
- * generic picture widget (0x610db0df, its index at +132, chosen by code om-emu does not run: its playback shows no
- * photo details). cr_pbd: in playback, the first time either picture is asked after the first shutter event, keep the
- * picture id, mdr and 48 words of the stack (the callers' return addresses), for the log. Nothing on screen changes. */
+/* (Round 6's playback stack diagnosis found the label's widget path: 0x611509bc reads the photo info's ratio code
+ * (+78) and shows entry code - 1 of the 5-entry list; research/NOTES.md. Removed in round 7.) */
+
+/* ---- Crop round 7: the Border inside the crop (camera, round 6: "the borders get cropped off on the new crop
+ * sizes"). bd_run (editor.s) paints the border on the finished buffer, which at a crop is larger than the photo the
+ * camera keeps (the crop is cut from it afterwards), so its top / bottom (XPan, 21:9) or sides (5:4) fell outside.
+ * cr_bdc: `call cr_bdc,[d2,d3,a2,a3],28` from bd_run after its checks, d0 = W, a0 -> bd_run's locals ((8) P pairs,
+ * (12) H, (16) pitch, (20) bus) -> d0 = the W to use. With Image Aspect 6 / 7 the crop is the full width and
+ * Hc = round16(W 24 / 65) or round16(W 9 / 21) rows, centred (y0 even); with 5 the full height and Wc = round16(H 5 / 4),
+ * centred; a buffer no larger than that is left as it is. The width B then follows the crop's short side, as the live
+ * view frame line (round 2). research/border/model.py crop_area is the exact model. */
+cr_bdc:
+ mov a0,a3
+ mov d0,a2                        /* W */
+ movbu (CR_A1),d1
+ cmp 5,d1
+ beq 5f
+ cmp 6,d1
+ beq 6f
+ cmp 7,d1
+ bne 9f
+ mov 9,d2
+ mov 21,d3
+ bra 7f
+6:
+ mov 24,d2
+ mov 65,d3
+7:
+ mov a2,d0                        /* Hc = (W num + 8 den) / (16 den) x 16 */
+ mul d2,d0
+ mov d3,d1
+ asl 3,d1
+ add d1,d0
+ add d1,d1
+ clr d2
+ mov d2,mdr
+ divu d1,d0
+ asl 4,d0
+ mov (12,a3),d1                   /* H */
+ cmp d1,d0
+ bcc 9f
+ mov d0,(12,a3)                   /* H = Hc */
+ sub d0,d1
+ lsr 1,d1
+ and 0xfffffffe,d1                /* y0, even */
+ mov (16,a3),d0
+ mul d0,d1
+ mov (20,a3),d0
+ add d1,d0
+ mov d0,(20,a3)                   /* bus + y0 pitch */
+ bra 9f
+5:
+ mov (12,a3),d0                   /* Wc = (5 H + 32) / 64 x 16 */
+ mov 5,d1
+ mul d1,d0
+ add 32,d0
+ lsr 6,d0
+ asl 4,d0
+ mov a2,d1                        /* W */
+ cmp d1,d0
+ bcc 9f
+ mov d0,a2                        /* W = Wc */
+ sub d0,d1                        /* W - Wc = the left offset in bytes ((W - Wc) / 2 px, 2 bytes each) */
+ mov (20,a3),d2
+ add d1,d2
+ mov d2,(20,a3)
+ lsr 1,d0
+ mov d0,(8,a3)                    /* P = Wc / 2 */
+9:
+ mov a2,d0
+ ret [d2,d3,a2,a3],28
+
+/* ---- Crop round 7: the playback label, a second diagnosis. The label shows entry (code - 1) of a 5-entry picture list
+ * (4:3, 3:2, 3:4, 16:9, 1:1) for the photo info's ratio code (GUI item 197, +144 +78), which the play app copies at
+ * 0x6057fb1b from its photo info (p + 132 + 22; p = (4,sp), a2 = the GUI's info being filled). Where that code is made
+ * (from the photo's size?) is not found. cr_pbi: the stock copy, then once per power-on (after the first shutter
+ * event) keep the code and 56 words: p + 0..127, p + 132..163, the GUI info + 32..95, for the log. */
  .balign 4
-cr_psi:                           /* the picture asked, mdr then */
- .long 0
-cr_psm:
- .long 0
-cr_pss:                           /* 48 stack words */
- .space 192
-cr_psn:
+cr_pib:                           /* the snapshot: code, then 56 words */
+ .space 4 + 224
+cr_pin:
  .byte 0
  .balign 2
-cr_pbd:                           /* jmp from cr_ic (d0 = the id; a0 free; must leave as cr_ic's 9:) */
- mov d0,d1
- exthu d1
- cmp 10930,d1
- beq 1f
- cmp 10931,d1
+cr_pbi:                           /* jmp from 0x6057fb1b (d2 = p + 132, a2 = the GUI info, (4,sp) = p) */
+ movbu (a0),d0                    /* the stock: movbu (a0),d0; mov d2,a0; movbu d0,(78,a2) */
+ mov d2,a0
+ movbu d0,(78,a2)
+ movbu (cr_on),d0
+ cmp 0,d0
+ beq 9f
+ movbu (cr_pin),d0
+ cmp 0,d0
  bne 9f
+ mov 1,d0
+ movbu d0,(cr_pin)
+ add -8,sp
+ mov d1,(0,sp)
+ mov a1,(4,sp)
+ movbu (78,a2),d0
+ mov d0,(cr_pib)
+ mov (12,sp),a0                   /* p (the function's (4,sp)) */
+ mov cr_pib + 4,a1
+ clr d1
 1:
- movbu (cr_psn),d1
- cmp 0,d1
- bne 9f
- mov 1,d1
- movbu d1,(cr_psn)
- add -12,sp
- mov d2,(0,sp)
- mov d3,(4,sp)
- mov a1,(8,sp)
- mov d0,d2
- exthu d2
- mov d2,(cr_psi)
- mov mdr,d2
- mov d2,(cr_psm)
- mov sp,a1
- add 12,a1                        /* the stack as at entry */
- mov cr_pss,a0
- clr d3
+ mov (d1,a0),d0                   /* p + 0..127 */
+ mov d0,(d1,a1)
+ add 4,d1
+ cmp 128,d1
+ bcs 1b
+ mov d2,a0                        /* p + 132..163 */
+ add 128,a1
+ clr d1
 2:
- mov (d3,a1),d2
- mov d2,(d3,a0)
- add 4,d3
- cmp 192,d3
+ mov (d1,a0),d0
+ mov d0,(d1,a1)
+ add 4,d1
+ cmp 32,d1
  bcs 2b
- mov (0,sp),d2
- mov (4,sp),d3
- mov (8,sp),a1
- add 12,sp
+ mov a2,a0                        /* the GUI info + 32..95 */
+ add 32,a0
+ add 32,a1
+ clr d1
+3:
+ mov (d1,a0),d0
+ mov d0,(d1,a1)
+ add 4,d1
+ cmp 64,d1
+ bcs 3b
+ mov (0,sp),d1
+ mov (4,sp),a1
+ add 8,sp
+ mov d2,a0                        /* as the stock left it */
 9:
- mov d0,d1                        /* as ar_ic left it */
- exthu d1
- jmp ic_get
+ jmp cr_pbi_back                  /* 0x6057fb22 */
+.section .hook_crp,"ax"
+ jmp cr_pbi                       /* stock 0x6057fb1b: movbu (a0),d0; mov d2,a0; movbu d0,(78,a2) */
+ .byte 0xcb, 0xcb
+.section .ext12,"ax"
 
-cr_t17:
- .asciz "\r\nCROP PLAYBACK LABEL (round 6 diagnosis): picture "
-cr_t18:
- .asciz ", mdr "
-cr_t19:
- .asciz ", code words on the stack:"
-cr_t20:
+cr_t21:
+ .asciz "\r\nCROP PLAYBACK INFO (round 7 diagnosis): code "
+cr_t22:
+ .asciz ", p / p+132 / info+32:"
+cr_t23:
  .asciz " "
  .balign 2
-cr_txt6:                          /* `call cr_txt6,[d2,d3,a2,a3],24` from cr_txt */
- LGS cr_t17
- mov (cr_psi),d0
+cr_txt7:                          /* `call cr_txt7,[d2,d3,a2,a3],24` from cr_txt */
+ LGS cr_t21
+ mov (cr_pib),d0
  LGD
- LGS cr_t18
- mov (cr_psm),d0
- call lg_h,[],0
- LGS cr_t19
+ LGS cr_t22
  clr d2
- mov cr_pss,a2
+ mov cr_pib + 4,a2
 1:
- mov (a2),d0
- cmp 0x60000000,d0
- bcs 2f
- cmp 0x62000000,d0
- bcc 2f
- LGS cr_t20
+ LGS cr_t23
  mov (a2),d0
  call lg_h,[],0
-2:
  add 4,a2
  inc d2
- cmp 48,d2
+ cmp 56,d2
  bcs 1b
  ret [d2,d3,a2,a3],24

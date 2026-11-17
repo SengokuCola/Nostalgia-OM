@@ -6652,3 +6652,25 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   610DB128 610D9AE5 610C9630 610DB2A6 6128AE33 615E7128 615E7128 6128B4AC 610CD504 610D807C 610C8FF9 611509BC
   610CD723 611504C8 6115047D" (the first label asked in playback was 4:3's). New: a film's Border is cut off on the
   crops (the border drawn on the uncropped frame, its top / bottom outside the XPan / 21:9 band, its sides outside 5:4).
+
+## Crop round 7: the Border inside the crop; the playback label's code (2026-11-17; emulator, camera test pending)
+- **The playback label, found (from round 6's trace):** the playback screen (0x61150638.., the screen object a2 with
+  GUI item 197 = the photo's info, 416 B, copied to +1024 by 0x610cd5ac) takes its item 34 (the label widget) at
+  0x61150991 and the info's byte at +144 +78 (the ratio code): 0 hides the label, else 0x6128abe0 sets the widget's
+  index to code - 1 of its 5-entry list (1 4:3 10931, 2 3:2 10932, 3 3:4 10933, 4 16:9 10930, 5 1:1 10934). It draws
+  once before setting it (round 6 saw 10931 first). So an XPan photo's code is 4 (16:9), a 5:4 photo's 1 (4:3).
+  The play app copies the code at **0x6057fb1b** from its photo info (p + 132 + 22, p = its (4,sp); a2 = the GUI info
+  being filled; 0x6057fd15 writes a constant 4 on another path). Upstream (where the code is made, probably from the
+  photo's size) not found: copies at 0x6057ef01, 0x60570883, 0x60565096 carry it along; no ratio-id -> code table.
+  A fix needs a code per crop (6..8) and those three pictures in an 8-entry list (the element's 0x502 -> 0x802, list
+  -> ours), and a signal that the photo is a crop at the copy.
+- **Round 7, diagnosis:** `.hook_crp` 0x6057fb1b -> cr_pbi: the stock copy, then once per power-on keep the code and
+  p + 0..127, p + 132..163, the GUI info + 32..95 ("CROP PLAYBACK INFO (round 7 diagnosis)" in the log): with an
+  XPan photo the size (5184 x 1920) or the raw ratio (6) should show where to read it. Direct call in om-emu: the
+  stock store, the snapshot and every register as expected. Round 6's stack diagnosis removed.
+- **Round 7, the Border inside the crop:** bd_run calls `cr_bdc` after its checks: with Image Aspect 6 / 7 the crop is
+  the full width and Hc = (W num + 8 den) / (16 den) x 16 rows (num / den 24 / 65, 9 / 21), centred (y0 even); with 5
+  the full height and Wc = (5 H + 32) / 64 x 16, centred; a buffer no larger is left as it is. bd_run's P, H and bus
+  move to that area, so B follows the crop's short side (as the live view frame line). research/border/model.py
+  `crop_area` models it; emu_check.py has five crop cases (XPan in 4:3 and 16:9 buffers, 21:9, 5:4, a buffer already
+  the crop's shape) and pokes Image Aspect per case (emu_hl.mjs `pokes`): **14 of 14 bit-exact**.

@@ -17312,6 +17312,11 @@ bd_run:
  mov d1,(12,sp)
  mov (a0),d0
  mov d0,(20,sp)                   /* bus */
+ mov a2,d0                        /* crop modes: a crop's own area of the buffer (crop.s cr_bdc) */
+ mov sp,a0
+ call cr_bdc,[d2,d3,a2,a3],28
+ mov d0,a2
+ mov (12,sp),d1
  mov a2,d0                        /* S = min(W, H) */
  cmp d1,d0
  bls 1f

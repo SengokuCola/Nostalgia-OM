@@ -21,18 +21,34 @@ def widths(W, H, level):
     return B, (B + 1) // 2
 
 
+def crop_area(W, H, crop):
+    """crop round 7 (editor.s bd_run -> crop.s cr_bdc): with Image Aspect 5 (5:4), 6 (XPan) or 7 (21:9) the photo the
+    camera keeps is a centred part of the buffer: -> (x0 pairs, y0 rows, Wc, Hc); a buffer no larger: (0, 0, W, H)."""
+    if crop in (6, 7):
+        num, den = (24, 65) if crop == 6 else (9, 21)
+        Hc = (W * num + den * 8) // (den * 16) * 16
+        if Hc < H:
+            return 0, ((H - Hc) // 2) & ~1, W, Hc
+    elif crop == 5:
+        Wc = (H * 5 + 32) // 64 * 16
+        if Wc < W:
+            return (W - Wc) // 4, 0, Wc, H
+    return 0, 0, W, H
+
+
 def ok(W, H, pitch, level):
     return 1 <= level <= 5 and 64 <= W <= 8192 and W % 4 == 0 and H >= 64 and pitch >= 2 * W
 
 
-def border(buf, W, H, pitch, level):
-    """buf (uint8, H x pitch bytes) changed in place as bd_run does; returns 'on' or 'off'."""
+def border(buf, W, H, pitch, level, crop=0):
+    """buf (uint8, H x pitch bytes) changed in place as bd_run does; returns 'on' or 'off'. crop: Image Aspect now."""
     if not ok(W, H, pitch, level):
         return 'off'
+    x0, y0, W, H = crop_area(W, H, crop)
     B, Bp = widths(W, H, level)
     P = W // 2
-    rows = buf.reshape(H, pitch)
-    pairs = rows[:, :4 * P].reshape(H, P, 4)
+    rows = buf.reshape(-1, pitch)[y0:y0 + H]
+    pairs = rows[:, 4 * x0:4 * (x0 + P)].reshape(H, P, 4)
     pairs[:B] = WORD
     pairs[H - B:] = WORD
     pairs[B:H - B, :Bp] = WORD

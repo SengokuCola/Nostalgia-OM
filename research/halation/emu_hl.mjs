@@ -55,6 +55,8 @@ for (const cs of spec.cases) {
   const rec = new Uint8Array(24); rec.set(u32b(FRAME), 0);
   rec.set([0x02, 0x0c, (cs.pitch >> 1) & 255, cs.pitch >> 9, cs.W & 255, cs.W >> 8, cs.H & 255, cs.H >> 8], 16);
   dd.write(REC, rec);
+  const pokes = (cs.pokes || []).map(([a, hex]) => [a, rd(a, hex.length / 2)]);   // crop round 7: e.g. Image Aspect
+  for (const [a, hex] of cs.pokes || []) dd.write(a, Uint8Array.from(Buffer.from(hex, 'hex')));
   const r = saved.slice(); r[14] = 0;
   r[0] = cs.level; r[1] = 0x11111111; r[2] = 0x22222222; r[3] = 0x33333333; r[4] = REC; r[5] = 0x55555555;
   r[6] = 0x66666666; r[7] = 0x77777777; r[8] = SP; r[9] = STUB; r[11] = 0x12345678;
@@ -79,6 +81,7 @@ for (const cs of spec.cases) {
   fs.writeFileSync(cs.out, rd(FRAME, frame.length));
   if (prof) o.profile = Object.fromEntries([...prof].map(([k, v]) => [k.toString(16), v]));
   dd.write(FRAME, before);
+  for (const [a, old] of pokes) dd.write(a, old);
   out.push(o);
   console.log(JSON.stringify({ ...o, profile: undefined }));
 }
