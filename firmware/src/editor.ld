@@ -264,3 +264,4 @@ cr_rc_j       = 0x60c0d35f;         /* ratioToConvertSize: mov d0,(4,a1); retf [
 cr_oa_j       = 0x60c14b95;         /* getOutputAspect: mov d0,(16,sp) */
 cr_afp_back   = 0x60882add;         /* crop round 3: after the AF driver's pair copy */
 cr_spec_back  = 0x611cb253;         /* crop round 3: after the screen spec's ratio byte */
+cr_hset       = 0x60bcd668;         /* crop round 4: app_background_set_histogram_main_area */

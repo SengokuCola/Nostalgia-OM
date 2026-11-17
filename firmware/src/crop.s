@@ -530,7 +530,7 @@ cr_dst:
 cr_daf:
  .long 0
 cr_t1:
- .asciz "\r\n\r\nCROP MODES (crop round 3): tag at the first half-press "
+ .asciz "\r\n\r\nCROP MODES (crop round 4): tag at the first half-press "
 cr_t2:
  .asciz ", Image Aspect then "
 cr_t3:
@@ -553,6 +553,10 @@ cr_t11:
  .asciz ", mapped "
 cr_t14:
  .asciz ", screen specs mapped "
+cr_t15:
+ .asciz "; histogram area "
+cr_t16:
+ .asciz ", trimmed "
  .balign 2
 cr_txt:                           /* `call cr_txt,[d2,d3,a2,a3],24` */
  LGS cr_t1
@@ -590,6 +594,15 @@ cr_txt:                           /* `call cr_txt,[d2,d3,a2,a3],24` */
  LGD
  LGS cr_t14
  mov (cr_spn),d0
+ LGD
+ LGS cr_t15                       /* round 4: the histogram area asked (w x h), areas trimmed */
+ mov (cr_hw),d0
+ LGD
+ LGS cr_t8
+ mov (cr_hh),d0
+ LGD
+ LGS cr_t16
+ mov (cr_hn),d0
  LGD
  ret [d2,d3,a2,a3],24
 
@@ -887,3 +900,75 @@ cr_spn:                           /* specs mapped this power-on (the log) */
  jmp cr_spec                      /* stock 0x611cb24d: mov (8,sp),a0; mov (a0),d0; movbu d0,(9,a3) */
  .byte 0xcb
 .section .ext12,"ax"
+
+/* ---- Crop round 4: the live histogram (camera, round 3: at XPan "one tall spike at black above a low curve": the
+ * dark bands above and below the strip counted). The live view's histogram main area {x, y, w, h} is set at
+ * 0x60c772c0 (`call 0x60bcd668,[a2],28`, app_background_set_histogram_main_area; the rect at the callee's (32,sp)),
+ * from the live view's own geometry (camera-only, not run by om-emu). That call -> cr_hist: with a crop set (after
+ * the first shutter event), the area is trimmed to the crop's shape, centred (XPan / 21:9: full width; 5:4: full
+ * height) when it is larger, then the camera's own setter runs (jmp, same frame). The log keeps the area asked. */
+ .balign 4
+cr_hw:                            /* the last area asked (w, h), areas trimmed this power-on */
+ .long 0
+cr_hh:
+ .long 0
+cr_hn:
+ .long 0
+cr_hist:                          /* `call cr_hist,[a2],28`; d0, d1, a1, mdr free (the setter returns through the stack) */
+ movhu (36,sp),d0
+ mov d0,(cr_hw)
+ movhu (38,sp),d0
+ mov d0,(cr_hh)
+ movbu (cr_on),d0
+ cmp 0,d0
+ beq 9f
+ movbu (CR_A1),d0
+ cmp 5,d0
+ beq 5f
+ cmp 6,d0
+ beq 6f
+ cmp 7,d0
+ bne 9f
+ mov 9,d1                         /* 21:9: h' = w x 9 / 21 */
+ mov 21,a1
+ bra 7f
+6:
+ mov 24,d1                        /* XPan: h' = w x 24 / 65 */
+ mov 65,a1
+7:
+ movhu (36,sp),d0
+ mul d1,d0
+ clr d1
+ mov d1,mdr
+ mov a1,d1
+ divu d1,d0                       /* d0 = h' */
+ movhu (38,sp),d1                 /* h */
+ cmp d1,d0
+ bcc 9f                           /* not larger than the crop: as it is */
+ movhu d0,(38,sp)
+ sub d0,d1
+ lsr 1,d1
+ movhu (34,sp),d0
+ add d1,d0
+ movhu d0,(34,sp)                 /* y + (h - h') / 2 */
+ bra 8f
+5:
+ movhu (38,sp),d0                 /* 5:4: w' = h x 5 / 4 */
+ mov 5,d1
+ mul d1,d0
+ lsr 2,d0
+ movhu (36,sp),d1
+ cmp d1,d0
+ bcc 9f
+ movhu d0,(36,sp)
+ sub d0,d1
+ lsr 1,d1
+ movhu (32,sp),d0
+ add d1,d0
+ movhu d0,(32,sp)                 /* x + (w - w') / 2 */
+8:
+ mov (cr_hn),d0
+ inc d0
+ mov d0,(cr_hn)
+9:
+ jmp cr_hset                      /* 0x60bcd668 */

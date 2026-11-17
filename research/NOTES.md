@@ -6569,3 +6569,27 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   hooks waiting for the owner's OK: hook_crs 0x60061183 8 B, hook_crb 0x6006120e 6 B (round 1, save time only),
   hook_cra 0x60882acd 16 B, hook_crg 0x611cb24d 6 B (round 3: the stock copy plus one byte read before the first
   shutter event)) and `static:changed-bytes` (crop.py's data patches).
+
+## Crop round 4: the live histogram (2026-11-17; analysis + a direct-call test, camera test pending)
+- **Camera, round 3 (owner, 2026-11-17): "Ok! The focus point works."** (camera-tested at XPan: the target shows and
+  moves; the main chat's phone photo also shows the thirds in the strip). Two things: "The histogram is super weird
+  now with line shooting up" (phone photo: at XPan one tall spike at the far left, black, above a low flat curve), and
+  playback still labels the XPan photo 16:9 (the picture itself is the strip).
+- **The histogram (analysis):** the live histogram's main area {x, y, w, h} is set at 0x60c772c0 (`call 0x60bcd668,
+  [a2],28`, app_background_set_histogram_main_area -> app + 3452) from a rect in the live view's context ((0x6036bb78)
+  + 16, converted by 0x60c72400); om-emu leaves that context pointer 0 (live view not run), so it cannot show the area.
+  A spike at black = the area includes the dark bands above and below the strip: the live view's display window stays
+  16:9 at XPan (round 2's log: display set-up id 3, 900 x 506; its rows for 5..7 were never read). Likely there since
+  round 1 (nothing in rounds 2 / 3 touches that area), not yet confirmed.
+- **Round 4 (commit after this note): 0x60c772c0 -> `cr_hist`:** with a crop set (after the first shutter event), an
+  area larger than the crop is trimmed to it, centred (XPan / 21:9: full width, height w x 24 / 65 or 9 / 21; 5:4:
+  full height, width h x 5 / 4), then `jmp` the camera's setter in the same frame (it returns through the stack, so
+  mdr and d0 / d1 / a1 are free). An area already the crop's shape is kept as it is. The log line adds "histogram area
+  w x h, trimmed n" (the area asked).
+- Test `crop-histogram-area-trimmed` (emu_test.py, a direct call on a scratch app object, as grain-mix): 640 x 360 at
+  XPan -> (0, 62, 640, 236), at 21:9 -> (0, 43, 640, 274); 640 x 480 at 5:4 -> (20, 0, 600, 480); at 16:9 as it is.
+- **Playback label (lead, not in round 4):** om-emu's playback shows no photo details (shutter 1/125, size 0x0) even
+  with the owner's XPan / 21:9 photos on its card, so the label's choice runs only on the camera. The label is a
+  picture widget (0x610db0df, index at +132) over 5-entry lists; the five writers of +132 in the GUI belong to other
+  widgets. 16:9 for XPan and 21:9 but 4:3 for 5:4 suggests the label is picked by the photo's shape (nearest stock
+  ratio). Next: a camera log of the index's writer, or our own label pictures in that list.

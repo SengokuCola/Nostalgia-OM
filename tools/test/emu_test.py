@@ -48,6 +48,16 @@ PHOTO_MODE = 0x01                                # P's mode code, so the photo p
 # Y mean (48 x 4) comes off on the texture's own input (+136, its Y clamp minimum +160 opened to -512), not as an
 # output offset (+180): g1 / g2 put it there, after the clamp, and capped the highlights (camera, 2026-11-16).
 GRAINMIX = 'grain-mix-keeps-the-highlights'
+# crop round 4: cr_hist (the live histogram's main area, set at 0x60c772c0) called directly with a crop set: the area
+# is trimmed to the crop's shape, centred, before the camera's own setter keeps it (app + 3452). om-emu does not run
+# the live view, so the call is made on a scratch app object.
+CROPHIST = 'crop-histogram-area-trimmed'
+CROPHIST_CASES = {   # name: (Image Aspect, area x, y, w, h asked, area kept)
+    'xpan': (6, (0, 0, 640, 360), (0, 62, 640, 236)),
+    '21-9': (7, (0, 0, 640, 360), (0, 43, 640, 274)),
+    '5-4': (5, (0, 0, 640, 480), (20, 0, 600, 480)),
+    '16-9-as-it-is': (3, (0, 0, 640, 360), (0, 0, 640, 360)),
+}
 GRAIN_GAINS = {1: (400, 175), 3: (1024, 448), 5: (1536, 672)}   # strength -> texture Y gain, Cb / Cr gain (xblock.s)
 REAR_DIAL = 0x9032                               # the rear dial's event (cv_ev); a1 its signed clicks
 # (name, a1): first no clicks (the value as it is), then a fast turn of 3, then one past the range.
@@ -775,6 +785,34 @@ def run_grainmix(emu, build, out, card0):
     return GRAINMIX, errors
 
 
+def run_crophist(emu, build, out, card0):
+    """cr_hist for each CROPHIST_CASES entry: `call cr_hist,[a2],28` with the area at the caller's (4,sp)."""
+    d = out / CROPHIST
+    d.mkdir(parents=True, exist_ok=True)
+    sym = elf_symbols(build / 'p.elf')
+    hw = lambda v: b''.join(x.to_bytes(2, 'little') for x in v).hex()
+    def case(name, aspect, area):
+        mem = [['B', 'dd'], ['B+1', f"={sym['cr_hist']:#x}-B"], ['B+5', '201c'], ['SP+4', hw(area)],
+               ['B+0x400', '00' * 0xe00], ['0x629209c2', f'{aspect:02x}'], [f"{sym['cr_on']:#x}", '01']]
+        return {'name': name, 'pc': 'B', 'stop': ['B+7'], 'max': 20000, 'mem': mem, 'regs': {'a0': 'B+0x400'},
+                'read': [['B+0x400+3452', 8]], 'restore': [[f"{sym['cr_on']:#x}", '00']]}
+    spec = [case(n, a, area) for n, (a, area, _) in CROPHIST_CASES.items()]
+    res = run_ncall(emu, build, d, card0, 's1 wait wait ncall', spec)
+    if isinstance(res, str):
+        return CROPHIST, [res]
+    errors = []
+    for n, (_, _, want) in CROPHIST_CASES.items():
+        r = res[n]
+        if r['steps'] >= 20000:
+            errors.append(f'{n}: cr_hist did not return (out.json)')
+            continue
+        got = bytes.fromhex(r['mem'][0])
+        got = tuple(int.from_bytes(got[2 * i:2 * i + 2], 'little') for i in range(4))
+        if got != want:
+            errors.append(f'{n}: area kept {got}, not {want}')
+    return CROPHIST, errors
+
+
 def run_dial(emu, build, out, card0):
     """The RGB page open: one rear-dial event carrying several clicks (a fast turn on the camera) moves the selected
     value by all of them, clamped to -7..+7. om-emu's dial tokens send one click an event, so the test calls cv_ev."""
@@ -895,7 +933,7 @@ def newest_looks():
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('build', type=pathlib.Path)
-    ap.add_argument('--only', nargs='+', choices=sorted([*TESTS, AUDIT, HALATION, BORDER, ENGINE, DIAL, VIDEO, GRAINMIX, *STATIC]))
+    ap.add_argument('--only', nargs='+', choices=sorted([*TESTS, AUDIT, HALATION, BORDER, ENGINE, DIAL, VIDEO, GRAINMIX, CROPHIST, *STATIC]))
     ap.add_argument('--jobs', type=lambda v: max(1, int(v)), default=DEFAULT_JOBS)
     ap.add_argument('--out', type=pathlib.Path)
     ap.add_argument('--looks', type=pathlib.Path)
@@ -918,7 +956,7 @@ def main():
     looks = (a.looks or newest_looks()).resolve()
     make_card(emu, build, looks, card0)
     fixtures = make_fixtures(out, looks)
-    names = a.only or sorted([*TESTS, AUDIT, HALATION, BORDER, ENGINE, DIAL, VIDEO, GRAINMIX, *STATIC])
+    names = a.only or sorted([*TESTS, AUDIT, HALATION, BORDER, ENGINE, DIAL, VIDEO, GRAINMIX, CROPHIST, *STATIC])
     stock = static_check.find_stock(a.stock) if any(n in STATIC for n in names) else None
     runs = [(n, k) for n in names for k in range(1, a.repeat + 1)]
     print(f'{len(names)} tests{f" x {a.repeat}" if a.repeat > 1 else ""} on {build}, results in {out}')
@@ -951,6 +989,8 @@ def main():
                 return run_video(emu, build, d, card0)
             if n == GRAINMIX:
                 return run_grainmix(emu, build, d, card0)
+            if n == CROPHIST:
+                return run_crophist(emu, build, d, card0)
             first = shared.get((k, boot_key(TESTS[n][0])))
             return run_test(n, TESTS[n], emu, build, card0, d, first and first.result(), fixtures)
         except static_check.Skip as e:
