@@ -5851,6 +5851,12 @@ rgb-page-counts-every-click, halation-matches-the-model). Package `test-builds/2
   call.
 - **Camera-tested (owner, 2026-11-17): v0.30.4 test 4 (`0e5708ea…`): no reboot after 3 minutes; "looks good".** Debug
   log: nothing unusual. Next (owner): a test merge of PR #70 and PR #73 with this fix before pushing.
+- **v0.30.4 test 5 (try/v0.30.4 086a0a2, `2b62b341…`): test 4 + PR #70 (c430a40) + PR #73 (d9cc857)**, merged as
+  written; conflicts only where both sides added lines (NOTES, emu_test.py, session_ed1.mjs: kept both). om-emu: 32 /
+  35. FAIL: PR #70's `color-wheel-dial-label-follows-the-page`, `color-wheel-saturation-guide-names-the-page`,
+  `color-wheel-tone-readout-keeps-the-callers-a2` (label stream sizes: e.g. Lum 1108 here, 1092 expected; the guide
+  4124, 4132 expected). Also on PR #70 alone. A build of PR #70 with Pillow **without raqm** passes all three: its
+  expected sizes come from a build without raqm text layout; release builds use raqm (`research/setup.sh`).
 
 ## Issue #64: the wheel's dial label names the page (2026-11-16; feature/dial-label-per-page; camera-tested)
 - Owner on #64: "I like these changes, if you make a pr with them, I'll merge". This replaces the sp1 request (2026-11-09)
