@@ -6782,3 +6782,40 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   crop-playback-info-kept (direct calls: info X kept as A, X again not kept, a different Y kept as B; cr_pmr's
   stock instructions, d1 / a1 kept, the read kept), and **2 FAIL** as before: static:hook-list (now crs, crb, crg,
   crh, crl, crm) and static:changed-bytes. Package `test-builds/2026-11-17-crop-round-8`.
+- **Camera, round 8 (owner, 2026-11-17, 37a0a294…): "No dice. Still says 16:9. Interestingly enough, the lsf+raw
+  also disappears".** Phone photos (main chat): 100-3207 (16:9) shows "16:9" and "LSF+RAW"; 100-3208 (XPan) shows
+  the strip, "16:9" and no quality label. Card (card-backups/2026-11-17-crop-round-8-tested): PB173207..210 =
+  16:9 5184 x 2920 (AspectRatio 3 3), XPan 5184 x 1920 (6 6), 5:4 4864 x 3888 (5 5), 21:9 5184 x 2224 (7 7).
+  **The diagnosis line: events 0, no read, no label update, none kept**: neither 0x611509bc nor 0x618dfd0f ran
+  (the screen shown has its label at 0x611525b9, item 61; the AspectRatio read is not on playback's path).
+
+## Crop round 9: the playback labels, ratio and quality (2026-11-17; analysis + direct calls, camera test pending)
+- **Cause (analysis, reproduced by direct calls of the stock code in om-emu):** playback sorts a photo **by its
+  shape**, r = w x 10000 / h against fixed thresholds (8750, 11667, 14166, 16389), into the five stock ratios, in
+  two places. (1) The GUI's label code, 0x61101381 (d0 w, d1 h -> 3 3:4, 5 1:1, 1 4:3, 2 3:2, else 4 16:9; callers
+  0x61113417 -> item 197 + 78, and 0x612c90da), shown as index code - 1 of 4:3, 3:2, 3:4, 16:9, 1:1 (the label
+  widget's element in three layouts, 0x613f8d08 / 0x613fe9cc / 0x6147d568: {2, count 5, list start, end},
+  16-B states {0xffff, 7, 7, picture}; its count goes to widget + 131, 0x610dae1e takes an index below it).
+  (2) The play component (Cmp_PlayComponentBase, section 6) classes the shape the same way (0x60c79521,
+  0x60c82c93) for its record-mode code 0x60c7c18a: the class's table of {k, w, h, 0, code} (4:3 0x60ead048, 36;
+  16:9 0x60ead1f8, 28; ...) by exact size, a miss is 57: no quality label. So XPan (27000) and 21:9 (23309) are
+  16:9 by shape and miss its size table; 5:4 (12510) is 4:3 and misses too. Direct calls on round 7b's build give
+  exactly the camera's results: codes 4 / 4 / 1 and 57.
+- **Round 9:** `.hook_crk` 0x61101393 (section 7) -> cr_pbc: r > 25156 XPan (7), > 20625 21:9 (8), 11667 < r <=
+  12917 5:4 (6), the rest as stock; the three label elements get 8 states (crop.py; cr_pll: the stock five, then the
+  top bar's pictures CR_IC0 + 3..5, which are drawn as 10930 / 10931). `.hook_crq` 0x60c7c18a (section 6) -> cr_pq:
+  class 16:9 and w > 2.0625 h: the height of the 16:9 entry of the same width; class 4:3 and w <= 1.28 h: the width
+  of the 4:3 entry of the same height; then the stock lookup (its retf uses mdr: cr_pq has no mul, div or call).
+  Round 8's diagnosis (crl, crm, cr_txt8) removed.
+- **Behaviour beyond the crops (for the owner):** any photo of those shapes (e.g. an in-camera trim, another camera's
+  picture) is now labelled 5:4 / XPan / 21:9 instead of the nearest stock ratio, and a wide or 5:4-shaped photo
+  whose width (height) is a 16:9 (4:3) size gets that size's quality label instead of none.
+- **Start-up:** sections 1..5 byte-identical to round 7b (camera: normal start-ups); changes: .ext12, 5 B at
+  0x60c7c18a (section 6), 6 B at 0x61101393 and the three elements (section 7). static:section-order passes.
+- Test `crop-playback-label-and-quality`: the label code for the three crops, a smaller XPan, the five stock
+  ratios and h 0; the record-mode code for 16:9 / XPan / 21:9 / 5:4 / 4:3 at L (two compressions) and M, and a miss
+  (57); the elements and the states. On round 7b's build (`--without`): caught (codes 4 / 4 / 1, 57, 5 states).
+- **Suite** (out-cr9, E1479999.BIN 772cc5dc…e5fd, commit d306337): **50 pass** (crop-playback-label-and-quality
+  among them), **2 FAIL** as before: static:hook-list (crs, crb, crg, crh, crk, crq for the owner's OK) and
+  static:changed-bytes. Package `test-builds/2026-11-17-crop-round-9`. om-emu cannot show the labels on screen
+  (its playback gives photos no size): the owner's camera test.
