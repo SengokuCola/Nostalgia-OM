@@ -5283,6 +5283,18 @@ Owner: "yes, build the noise filter fix" (the row's '*' follows the camera's own
   log counts 83 photos this power-on but PB173036 (the first after switch-on) is not on the card; and the last mode
   tried (code 0, events 49-54) counted no photo and wrote none. The reporter's exact combination (code 32 at about
   1/2 s) is still untested.
+- Drive code 0 = Single + anti-shock (PB173134 below).
+- **Owner's camera with the default 20 films (2026-11-17, test 5; the v0.30.3 LOOKS.BIN made new to the camera by one
+  byte after FILM 20's name, CURVES.BIN of v0.30.3, NAMES.BIN off the card):** the camera took the set ("from the card
+  (films the camera never had)", CURVES "taken", matches 20). FILM 1 Portra 400 with grain changed, A, f/4, ISO 200,
+  1/1.3 s, C-AF, face / eye [6]: drive 11 (Sequential + anti-shock) 6 single presses and a 9-shot burst, then drive 0:
+  16 photos PB173119..134, 16 counted, all saved. Not reproduced. Code 32 (plain Sequential) at a slow shutter is
+  still not tried.
+- **Side finding (analysis, to look at):** right after taking the new set the log lists films with changes 1, 2, 3, 4,
+  5, 7, 8, 9, 10, 12..19 (all but 6, 11, 20). Before the swap the owner's set had changes on 1, 6, 11 only (FILM 20 is
+  Natura 1600 in both sets). USING.md says a film changed by a new set starts again as built and the others keep
+  their changes, so a fresh set should show no '*' (except FILM 1's grain): this looks inverted (films that had changes
+  reset, the others keep the old film's values). Not checked in om-emu yet.
 
 
 ## LookLab: RGB curves and colour mix (2026-11-15; feature/looklab-rgb-curves; browser-checked, not live)
