@@ -6617,3 +6617,8 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   only when the histogram starts, it needs a restart at XPan (INFO, a menu): the test steps ask for it; the log shows
   the area seen ("histogram area w x h, trimmed n").
 - Test `crop-histogram-area-trimmed` now calls cr_trim (same cases and results).
+- **Round 5 suite** (build of d92c8d4 = the package `test-builds/2026-11-17-crop-round-5`, E1479999.BIN
+  `52731083…7fa9`, om-emu 0819080): **47 pass, 2 FAIL**: `static:hook-list` (four crop hooks for the owner's OK:
+  hook_crs 0x60061183, hook_crb 0x6006120e (save time only), hook_crg 0x611cb24d (the screen spec), hook_crh
+  0x60dc4bb1 (the histogram area: before the first shutter event the stock entry plus two stores of our own log
+  values and one byte read)) and `static:changed-bytes`.
