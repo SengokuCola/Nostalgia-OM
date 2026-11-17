@@ -1,6 +1,6 @@
 # Using Caduceus for OM-3
 
-This page is for **v0.30.3**, the latest version. Not installed yet? Start with [Install](INSTALL.md).
+This page is for **v0.30.4**, the latest version. Not installed yet? Start with [Install](INSTALL.md).
 
 > [!NOTE]
 > Caduceus works on the **COLOR** profiles (COLOR 1–4) and your **films** (FILM 1–20). The Monochrome profiles keep
@@ -66,7 +66,9 @@ curves once the camera has taken `CURVES.BIN` (from v0.30); changing them on a f
 1. Go to the **HSL** row and press **INFO**.
 2. Press **INFO** again to move through the pages: **Color** (saturation of one colour) → **Color All** → **Hue** →
    **Luminance** → **Shadows** → **Highlights** → back to Color.
-3. On each page the **front dial** picks the colour and the **rear dial** sets the value.
+3. On each page the **front dial** picks the colour and the **rear dial** sets the value. The label under the wheel
+   names the page (Sat, Hue, Lum or Tint). Off the Color page the front dial goes round the 12 colours without
+   stopping on Color All.
 
 The 12 colours run clockwise from Yellow at 12 o'clock: Yellow, Orange, Orange-red, Red, Magenta, Violet, Blue,
 Blue-cyan, Cyan, Green-cyan, Green, Yellow-green.

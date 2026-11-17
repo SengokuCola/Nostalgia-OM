@@ -331,6 +331,8 @@ ed_trig:
  movbu d0,(AXIS,a2)               /* leaving for the shutter: other screens read Saturation again */
  mov -1,d0                        /* film test 8: -1 = the stock pictures (gd_sel puts "Color" back too) */
  call gd_set,[d2,a2],8
+ mov -1,d2                        /* #64: the camera's dial label back for the other screens (the wheel puts Sat */
+ call vl_s,[d2,d3,a2,a3],20       /* in when it opens) */
 1:
  movbu (DIRTY,a2),d0
  cmp 1,d0
@@ -364,14 +366,16 @@ ed_get:
  cmp 12,d2
  bcc 1f
  PVAL g_miss
- movbu (AXIS,a2),d3               /* only on the Hue / Light / Extras / Film pages: else stock, id unchanged */
+ movbu (AXIS,a2),d3               /* sector ids only on the Hue / Light / Extras / Film pages: else 5f */
  add -1,d3
  cmp 4,d3
- bcc g_miss
+ bcc 5f
  movbu (EDK,a2),d3                /* -> sector id 928 + 12k + slice of the open editor */
  cmp 4,d3
  bcc g_miss
+ add -4,sp                        /* the call's return slot: it would overwrite the saved a2 */
  call vl_s,[d2,d3,a2,a3],20       /* v0.20: the dial label ("Vivid") names the Extras slice (code block) */
+ add 4,sp
  mov d3,d0
  add d0,d0
  add d3,d0
@@ -398,7 +402,23 @@ g_put:
  mov d0,(a1)
  movm (sp),[d2,d3,a2]
  clr d0
+g_ret:                            /* emu_test: the caller's d2, d3, a2 are back here */
  rets
+5:                                /* axis 0 or 5..: the dial label names the page, then stock */
+ movbu (EDK,a2),d3
+ cmp 4,d3
+ bcc g_miss
+ mov d0,d3                        /* the entry's d0, d1 through vl_s (it keeps d2, d3): g_miss passes them on */
+ mov d1,d2
+ mov mdr,d0
+ add -8,sp                        /* (0) the call's return slot, (4) the entry's MDR, as stock_get expects it */
+ mov d0,(4,sp)
+ call vl_s,[d2,d3,a2,a3],20
+ mov (4,sp),d0
+ mov d0,mdr
+ add 8,sp
+ mov d3,d0
+ mov d2,d1
 g_miss:
  movm (sp),[d2,d3,a2]
 g_stock:
@@ -2463,7 +2483,7 @@ pf_open:                          /* v0.20: LOOKS.BIN only (a v0.17/v0.18 PROFIL
  call fopen,[],4
  ret [],4
 
-/* vl_s: `call vl_s,[d2,d3,a2,a3],20` from ed_get's readout path, d2 = slice, a2 = P; keeps d0..d1? no: keeps a0, a1
+/* vl_s: `call vl_s,[d2,d3,a2,a3],20`, d2 = slice (-1: the camera's picture), a2 = P; keeps d0..d1? no: keeps a0, a1
  * (and the frame's d2, d3, a2, a3). Code block +48 does the work; without one, nothing. */
 vl_s:
  mov a0,a3
@@ -2558,12 +2578,7 @@ xp:                               /* also Z = (a1 == 0) for the ext2 stubs (v0.2
  retf [],0
 
 s_lv:                             /* d0 = 11, a2 = request, a3 = record+248; d3 live */
- call xp,[],0
- beq 9f
- add 16,a1
- jmp (a1)
-9:
- jmp lv_skip                      /* 0x6046b94f */
+ jmp s_lv6                        /* #68: the body is in .ext11 (.ext2 is full) */
 
 s_nr:                             /* the site's `call ...,[d2,d3],12` frame; d0 key, d1, a0 as for the getter */
  mov d0,d3
@@ -2756,7 +2771,9 @@ pm_list:                          /* item ids, in the order the owner reads them
 .set SAT_SG, 8 + ((SLS + 3) & ~3)  /* the block: (0) SLS, (4) SGS, (8) the Saturation label, then the guide, the Hue */
 .set SAT_HL, SAT_SG + ((SGS + 3) & ~3)  /* label, the Luminance label, each 4-aligned (as fl_slab.. in films.inc) */
 .set SAT_LL, SAT_HL + ((HLS + 3) & ~3)
-.set SAT_LEN, SAT_LL + LLS
+.set SAT_AG, SAT_LL + ((LLS + 3) & ~3)  /* then #64's "Sat. All [INFO]" guide (SDESC), copied from fl_sagd */
+.set SAS4, (SAS + 3) & ~3
+.set SAT_LEN, SAT_AG + SAS4
 .set EOPEN, 689                   /* P+EOPEN: 1 from the wheel's init to its first INFO (film test 10) */
 .set LDESC, 0xa4cf61f8            /* the wheel's "Color" dial label, 70 x 30 */
 .set LSTOCK_P, 0xa4cf5c70
@@ -2764,6 +2781,8 @@ pm_list:                          /* item ids, in the order the owner reads them
 .set SDESC, 0xa49edf88            /* the "Color Select [INFO]" guide (shown with all colours), 180 x 50 */
 .set SSTOCK_P, 0xa49ece10
 .set SSTOCK_S, 4471
+.set SDESC_W, 180                 /* SDESC's width, the camera's picture */
+.set SAT_GW, 175                  /* our guide's width (P+SATB) */
 .set CC_SLOT, 2000
 .set CC_BLK, 264 + 8 * CC_SLOT     /* + 2 flag bytes: EDITS.BIN to save, skip one capture (film reset) */
 .set ST_N0, 0x7f30                /* ST_N0 + j: film j's cell label "FILM" over its number in the list (1, 2, ...) */
@@ -5015,6 +5034,22 @@ gx_map:
  movbu (el_pk),d1                 /* after a picture-mode change, once the first look is done: the group keeps */
  cmp 0,d1                         /* what it shows now (cm_hp, as at a shutter event), so a power-off keeps it */
  beq 03f
+ mov (8,sp),a0                    /* v0.30.4 (#72): not while the Picture Mode list (0x0418) or the super control */
+ movhu (a0),d1                    /* panel (0x0403, its dials step the films too) stays open (no state change, or */
+ cmp 0x1804,d1                    /* one between the two): at every step it changed a COLOR's film in the record */
+ beq 77f                          /* many times a second and rebooted the camera (probe J, camera: none without */
+ cmp 0x0304,d1                    /* it). It runs once as they close (OK, MENU, a half-press). */
+ bne 76f
+77:
+ mov d0,d1
+ exthu d1
+ cmp 0,d1
+ beq 03f
+ cmp 0x0418,d1
+ beq 03f
+ cmp 0x0403,d1
+ beq 03f
+76:
  movbu (cm_init),d1
  cmp 0,d1
  beq 03f
@@ -6048,6 +6083,7 @@ fl_lbl:
  * as OSD type-11 tokens, five to a 64-bit word. Heap: up to 3 blocks of FL_BLK; block 0 starts with 20 slot words
  * and 20 descriptors <6H3I>. P+TTAB = the slot words (0 = none). ic_get answers IC_FM0 + j through fl_ic. */
  .include "films.inc"             /* fl_top (100 x 40), fl_dig (10 x 20 x 36), 4 bits a pixel, low nibble first */
+ .include "wheeldef.inc"           /* WLL, XL_W0 (build.py) */
 
 /* fl_emit: `call fl_emit,[],0` from fl_mk (its frame: (24) out, (32) tokens in the word, (36) / (40) the word),
  * d0 = token. Uses d0, d1, a0. */
@@ -6438,23 +6474,19 @@ fl_mk:
  call malloc,[],4
  cmp 0,a0
  beq 90f
+ mov (52,sp),a2
+ mov a0,(SATB,a2)
  mov SLS,d0
  mov d0,(a0)
  mov SGS,d0
  mov d0,(4,a0)
- mov a0,a1
- add 8,a1
- mov fl_slab,a2
- mov SAT_LEN - 8,d1
-22:
- movbu (a2),d0
- movbu d0,(a1)
- inc a1
- inc a2
- add -1,d1
- bne 22b
- mov (52,sp),a2
- mov a0,(SATB,a2)
+ add 8,a0
+ mov fl_slab,a1
+ mov SAT_AG - 8,d1
+ call ub_cpy,[],0                 /* a0 -> the block + SAT_AG */
+ mov fl_sagd,a1                   /* #64: "Sat. All [INFO]" sits in .ext13 (no room in this section) */
+ mov SAS4,d1
+ call ub_cpy,[],0
  mov LV_BLK,d0                    /* film test 9: the shooting screen's "FILM N" block, no pictures yet */
  call malloc,[],4
  cmp 0,a0
@@ -6544,6 +6576,15 @@ fl_mk:
  mov (56,sp),a0
  mov (52,sp),a2
  mov a0,(TORG,a2)
+ mov WLL,d0                       /* #64: the wheel pages' dial labels, into the heap (a picture in flash blanked */
+ call malloc,[],4                 /* the camera menu), last: the blocks above matter more. None: wl_blk stays 0 */
+ cmp 0,a0                         /* and xb_vl draws the labels */
+ beq 99f
+ mov a0,d2
+ mov wl_tab,a1
+ mov WLL,d1
+ call ub_cpy,[],0
+ mov d2,(wl_blk)
 99:
  mov (52,sp),a2
  ret [d2,d3,a2,a3],80
@@ -7558,9 +7599,11 @@ e_sall:
  ret [d2,d3,a2,a3],44
 
 /* ed_l / ed_r <- COLOR1-4 editor records +20 / +24 (stock 0x6122471c / 0x61224c1c: left / right, events 0x9008 /
- * 0x900a, which move the colour cursor; CALLS, d0 event, d1 arg, a0 parent): on Saturation with all colours, nothing
- * (that would leave all colours for the hidden single-colour page) -> d0 1. Anything else: registers as at entry, jmp
- * stock. Frame as ed_info: (4) d1, (8) a1, (12) 2197 + k, (16) value, (20) d0, (24) a0. */
+ * 0x900a, which move the colour cursor; the front dial sends them too; CALLS, d0 event, d1 arg, a0 parent): W_SALL, on
+ * Saturation with all colours, nothing (that would leave all colours for the hidden single-colour page) -> d0 1. Else
+ * on every page but Saturation, a step that lands on all colours (between slices 1 and 12) takes one step more: all
+ * colours means nothing there. The dial reaches all colours only from slices 1 and 12, so only 2197 + k says 255. Anything else: registers as at entry, jmp stock. Frame as ed_info: (4) d1, (8) a1,
+ * (12) 2197 + k, (16) value, (20) d0, (24) a0. */
  .macro EDLR stock
  movm [d2,d3,a2,a3],(sp)
  add -28,sp
@@ -7588,6 +7631,38 @@ e_sall:
  cmp 255,d0
  bne 8f
  mov 1,d0
+ ret [d2,d3,a2,a3],44
+ .else
+ cmp 0,a0
+ beq 8f
+ movhu (96,a0),d2                 /* editor key 0x1540..0x1543 = COLOR1..4 */
+ add -0x1540,d2
+ cmp 4,d2
+ bcc 8f
+ add 2197,d2
+ mov d2,(12,sp)
+ PVAL 8f
+ movbu (AXIS,a2),d0
+ cmp 0,d0
+ beq 8f                           /* Saturation: all colours stay one step of the dial, as stock */
+ mov 2,d3                         /* steps left: on all colours, one more */
+7:
+ mov (24,sp),a0
+ mov (20,sp),d0
+ mov (4,sp),d1
+ mov (8,sp),a1
+ calls \stock                     /* keeps d2/d3/a2/a3 */
+ mov d0,d2                        /* its result */
+ add -1,d3
+ beq 9f
+ clr d0
+ mov d0,(16,sp)                   /* no value read: not all colours */
+ call k_cur,[a2],8                /* (16,sp) <- the cursor 2197 + k, 255 = all colours; keeps d2, d3 */
+ mov (16,sp),d0
+ cmp 255,d0
+ beq 7b
+9:
+ mov d2,d0
  ret [d2,d3,a2,a3],44
  .endif
 8:
@@ -7620,7 +7695,8 @@ rs_pos:
  jmp rsp_back
 
 /* gd_s0 <- jmp from gd_set's stock-guide path (its frame, `ret [d2,a2],8`), a0 = GDESC, a2 = P, d0 = page: on
- * Saturation (W_SONE: one colour, the camera's "Color All [INFO]") our "Saturation [INFO]" (P+SATB), else the camera's. */
+ * Saturation (W_SONE: one colour, the camera's "Color All [INFO]") our "Saturation [INFO]" (P+SATB), and without W_SALL
+ * our "Sat. All [INFO]" in SDESC; else the camera's. */
 gd_s0:
  .if W_SALL && W_SONE
  cmp 0,d0
@@ -7632,6 +7708,39 @@ gd_s0:
  mov d1,(16,a0)
  mov SGS,d1
  mov d1,(12,a0)
+ ret [d2,a2],8
+8:
+ .elseif !W_SALL                  /* gd_sel puts SDESC back only without W_SALL */
+ cmp 0,d0                         /* #64: "Saturation [INFO]" in this descriptor (one colour), "Sat. All [INFO]" */
+ bne 8f                           /* in SDESC (all colours, 175 wide as ours) */
+ mov (SATB,a2),d1
+ cmp 0,d1
+ beq 8f
+ mov d1,d2
+ add SAT_SG,d1
+ mov d1,(16,a0)
+ mov SGS,d1
+ mov d1,(12,a0)
+ mov SDESC,a0
+ movhu (a0),d1
+ cmp 14,d1
+ bne 7f
+ movhu (2,a0),d1
+ cmp SDESC_W,d1
+ bne 7f
+ movhu (4,a0),d1
+ cmp 50,d1
+ bne 7f
+ mov (16,a0),d1
+ cmp SSTOCK_P,d1
+ bne 7f                           /* someone else's: leave it */
+ add SAT_AG,d2
+ mov d2,(16,a0)
+ mov SAS,d1
+ mov d1,(12,a0)
+ mov SAT_GW,d1
+ movhu d1,(2,a0)
+7:
  ret [d2,a2],8
 8:
  .endif
@@ -7660,6 +7769,33 @@ gd_sel:
  mov GSTOCK_P,d2
  mov d2,(16,a0)
 13:
+ .if !W_SALL
+ mov (SATB,a2),d1                 /* #64: our pictures in either guide (gd_s0) -> the camera's, so gd_set takes the */
+ cmp 0,d1                         /* guide as stock again */
+ beq 15f
+ mov GDESC,a0
+ mov (16,a0),d2
+ sub d1,d2
+ cmp SAT_LEN,d2
+ bcc 14f
+ mov GSTOCK_S,d2
+ mov d2,(12,a0)
+ mov GSTOCK_P,d2
+ mov d2,(16,a0)
+14:
+ mov SDESC,a0
+ mov (16,a0),d2
+ sub d1,d2
+ cmp SAT_LEN,d2
+ bcc 15f
+ mov SSTOCK_S,d2
+ mov d2,(12,a0)
+ mov SSTOCK_P,d2
+ mov d2,(16,a0)
+ mov SDESC_W,d2
+ movhu d2,(2,a0)
+15:
+ .endif
  .if W_SALL
  mov (SATB,a2),a3
  cmp 0,a3
@@ -8181,6 +8317,18 @@ s_wl:
  * each entry also gets its channel's curve delta D(t); a COLOR with curves and no split toning runs with K = 0).
  * Stores: own stack frame, O+1252..O+3171, cv_pb / cv_pp. */
 .section .ext11,"ax"
+/* s_lv6: s_lv's body. #68: no Glow / Art Effect flags in video or S&Q (recording, its live view), as mx_photo. */
+s_lv6:
+ call mx_photo,[],0
+ cmp 0,d0
+ beq 9f
+ call xp,[],0
+ beq 9f
+ add 16,a1
+ jmp (a1)
+9:
+ jmp lv_skip                      /* 0x6046b94f */
+
 st_run:
  add -100,sp
  mov d0,(64,sp)
@@ -8204,6 +8352,9 @@ st_run:
  cmp 0,d0
  bne s9
 1:
+ call mx_photo,[],0               /* #68: photo modes only; video (recording, its live view) stays stock */
+ cmp 0,d0
+ beq s9
  .if ST_STILL
  movhu (14,a1),d0                 /* sp2: still development only (R+14 0x1000, column 0 of the curve rows) */
  cmp 0x1000,d0
@@ -8301,15 +8452,8 @@ st_run:
  cmp 91,d3                        /* then Highlights: slot +57 / +58 */
  bne 2b
  mov d2,(56,sp)                   /* rgb-curves: COLOR k's curves (blocks, cv_pp), as a mask */
- call mx_photo,[],0               /* colour mix test 2 (owner: "Photos only"): the curves in photo modes only, video */
- cmp 0,d0                         /* stays as it was (split toning unchanged) */
- beq 341f
  mov (96,sp),d0
  call cv_set,[d2,d3,a2,a3],20
- bra 342f
-341:
- clr d0
-342:
  mov d0,(96,sp)
  mov (56,sp),d2
  or d0,d2
@@ -8462,9 +8606,12 @@ tn_get:
  add -916,d2
  cmp 12,d2
  bcc 2f
- movbu (EDK,a2),d3                /* the readout: colour d2 of the open editor (the dial label stays the camera's, */
- cmp 4,d3                         /* "Vivid": owner, sp1) */
+ movbu (EDK,a2),d3                /* the readout: colour d2 of the open editor, the dial label the page's */
+ cmp 4,d3
  bcc 8f
+ add -4,sp                        /* the call's return slot: it would overwrite the saved a2 */
+ call vl_s,[d2,d3,a2,a3],20
+ add 4,sp
  mov d3,d0
  add d0,d0
  add d3,d0
@@ -8480,6 +8627,7 @@ tn_get:
  TONEV
  mov d0,(a1)
  movm (sp),[d2,d3,a2]
+t_ret:                            /* emu_test: the caller's d2, d3, a2 are back here */
  clr d0
  rets
 8:
@@ -19082,3 +19230,10 @@ el_tid:                           /* the GUI task's id, noted by el_go */
  .include "rgbcurves.inc"           /* rgb-curves: engine, storage */
  .include "colourmix.inc"           /* colour mix: the per-film 3 x 3 matrix (m1) */
  .include "curvesfile.inc"          /* v0.30 test 9: CURVES.BIN, each film's built-in curves and mix */
+
+.section .ext13,"ax"
+ .include "wheel.inc"             /* wl_tab (build.py): fl_mk copies it into wl_blk */
+.section .ext12,"ax"
+.balign 4
+wl_blk:                           /* the heap copy of wl_tab (fl_mk), 0 = none */
+ .long 0

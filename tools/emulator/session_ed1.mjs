@@ -76,9 +76,22 @@ if (process.env.TRACE) Debugger.attach(lab.sim, { lab }).traceExec((r) => fs.app
 if (process.env.MMIO) Debugger.attach(lab.sim, { lab }).traceMmio((r) => fs.appendFileSync(process.env.TRACE ? 'trace.jsonl' : 'mmio.jsonl', JSON.stringify({ step: curStep, name: r.name, addr: (r.addr >>> 0).toString(16), value: (r.value >>> 0).toString(16), pc: r.pc?.toString(16), insns: r.insns }) + '\n'), { dir: 'w' });
 // SHOTAT=PC,... (hex): during a frames: token, also shoot the screen as it stands when the code reaches each PC
 // (at_PC_N.png, no scene tick first), the state the camera's display can show mid-update.
-let shotArm = false, shotN = 0;
+let shotArm = false, shotN = 0; let kept = 0;   // keep: checks passed
+const counts = new Map();   // count: / expect:count: (PC -> { any, d0, n })
 if (process.env.SHOTAT) Debugger.attach(lab.sim, { lab }).traceExec((r) => { if (shotArm) shot('at_' + r.pc.toString(16) + '_' + shotN++ + '.png', false); },
   { pcs: process.env.SHOTAT.split(',').map((x) => parseInt(x, 16) >>> 0) });
+// getv(id): the camera's setting id through the getter 0x603f0111, run on a stub below the stack ('X' if it never returns).
+let gvd = null;                           // one debugger for every getv call
+function getv(id) {
+  const SG = 0x603f0111, dd = gvd ??= Debugger.attach(lab.sim, { lab }), saved = dd.m.getRegs().slice();
+  const sp = (saved[8] - 0x800) & ~3, stub = sp - 0x100, call_at = stub + 6, rel = (SG - call_at) | 0;
+  dd.write(stub, new Uint8Array([0xfc, 0xcc, id & 255, id >> 8 & 255, 0, 0, 0xdd, rel & 255, rel >> 8 & 255, rel >> 16 & 255, rel >>> 24, 0x00, 0x04, 0xcb, 0xcb]));
+  const r = saved.slice(); r[9] = stub >>> 0; r[8] = sp >>> 0; r[14] = 0; dd.m.setRegs(r);
+  let n = 0; while ((dd.m.getRegs()[9] >>> 0) !== ((call_at + 7) >>> 0) && n < 50000) { dd.m.step(); n++; }
+  const v = n >= 50000 ? 'X' : dd.m.getRegs()[0] | 0;
+  dd.m.setRegs(saved);
+  return v;
+}
 for (const t of SCRIPT.split(/\s+/).filter(Boolean)) {
   if (process.env.WFROM && t === process.env.WFROM) globalThis.__armed = true;
   curStep = t + "#" + log.length;
@@ -128,6 +141,18 @@ for (const t of SCRIPT.split(/\s+/).filter(Boolean)) {
     const got = Buffer.from(rd(at >>> 0, hex.length / 2)).toString('hex');
     if (got !== hex.toLowerCase()) { console.error(`expect:mem ${where}: ${got}, not ${hex}`); process.exit(1); }
   }
+  else if (t.startsWith('keep:')) {
+    // keep:ENTRY:EXIT:REG ends the run with exit 1 if REG at EXIT differs from REG at the last ENTRY (hex PCs): a
+    // callee-saved register the function must give back. expect:kept checks that EXIT was reached at least once.
+    const [entry, exit, reg] = t.slice(5).split(':'), E = parseInt(entry, 16) >>> 0, X = parseInt(exit, 16) >>> 0;
+    const dk = Debugger.attach(lab.sim, { lab }); let held = null;
+    dk.traceExec((r) => {
+      const v = dk.regs()[reg] >>> 0;
+      if (r.pc === E) held = v;
+      else if (held !== null) { if (v !== held) { console.error(`keep ${reg}: ${v.toString(16)} at ${exit}, not ${held.toString(16)}`); process.exit(1); } kept++; held = null; }
+    }, { pcs: [E, X] });
+  }
+  else if (t === 'expect:kept') { if (!kept) { console.error('expect:kept: no keep: check ran'); process.exit(1); } }
   else if (t.startsWith('expect:isdef:')) {
     // expect:isdef:FN:ID=V ends the run with exit 1 unless FN (hex, an "is at default" entered as the stock one,
     // `call FN,[d2,d3,a2],24`, d0 id -> d0 1 default) answers V (0 or 1) for ID (hex): a row's '*' is V = 0.
@@ -139,6 +164,18 @@ for (const t of SCRIPT.split(/\s+/).filter(Boolean)) {
     let n = 0; while ((dd.m.getRegs()[9] >>> 0) !== ((call_at + 7) >>> 0) && n < 5000000) { dd.m.step(); n++; }
     const got = n >= 5000000 ? 'X' : String(dd.m.getRegs()[0] | 0); dd.m.setRegs(saved);
     if (got !== want) { console.error(`expect:isdef ${id}: ${got}, not ${want}`); process.exit(1); }
+  }
+  else if (t.startsWith('count:')) {
+    // count:PC:D0 (v0.30.4, #72) counts, from here, how often the code reaches PC (hex) with d0 = D0 (hex; * any d0);
+    // expect:count:PC=N ends the run with exit 1 unless that count is N (decimal). count: again starts it over.
+    const [pc, d0] = t.slice(6).split(':'), PC = parseInt(pc, 16) >>> 0;
+    let c = counts.get(PC);
+    if (!c) { c = { n: 0 }; counts.set(PC, c); Debugger.attach(lab.sim, { lab }).traceExec((r) => { if (c.any || (r.d0 >>> 0) === c.d0) c.n++; }, { pcs: [PC] }); }
+    c.any = d0 === '*'; c.d0 = c.any ? 0 : parseInt(d0, 16) >>> 0; c.n = 0;
+  }
+  else if (t.startsWith('expect:count:')) {
+    const [pc, want] = t.slice(13).split('='), c = counts.get(parseInt(pc, 16) >>> 0), got = c ? String(c.n) : 'not counted';
+    if (got !== want) { console.error(`expect:count ${pc}: ${got}, not ${want}`); process.exit(1); }
   }
   else if (t === 'strpoke') {
     const dd = Debugger.attach(lab.sim, { lab });
@@ -230,20 +267,17 @@ for (const t of SCRIPT.split(/\s+/).filter(Boolean)) {
     dd.m.setRegs(saved); console.log('WBCALL', JSON.stringify(out));
   }
   else if (t === 'vals') {                // the camera's own settings of COLOR1..4 through the getter 0x603f0111
-    const SG = 0x603f0111, dd = Debugger.attach(lab.sim, { lab }), saved = dd.m.getRegs().slice(), out = [];
+    const out = [];
     const ids = (k) => [...Array(12).keys()].map((i) => 928 + 12 * k + i).concat([908 + k, 904 + k, 912 + k, 978 + 3 * k, 977 + 3 * k, 976 + 3 * k, 2197 + k, 2201 + k]);
     for (let k = 0; k < 4; k++) {
-      const row = [];
-      for (const id of ids(k)) {
-        const sp = (saved[8] - 0x800) & ~3, stub = sp - 0x100, call_at = stub + 6, rel = (SG - call_at) | 0;
-        dd.write(stub, new Uint8Array([0xfc, 0xcc, id & 255, id >> 8 & 255, 0, 0, 0xdd, rel & 255, rel >> 8 & 255, rel >> 16 & 255, rel >>> 24, 0x00, 0x04, 0xcb, 0xcb]));
-        const r = saved.slice(); r[9] = stub >>> 0; r[8] = sp >>> 0; r[14] = 0; dd.m.setRegs(r);
-        let n = 0; while ((dd.m.getRegs()[9] >>> 0) !== ((call_at + 7) >>> 0) && n < 50000) { dd.m.step(); n++; }
-        row.push(n >= 50000 ? 'X' : dd.m.getRegs()[0] | 0);
-      }
+      const row = ids(k).map(getv);
       out.push('S ' + row.slice(0, 12).join(',') + ' | C' + row[12] + ' Sh' + row[13] + ' Sd' + row[14] + ' | ' + row.slice(15).join('/'));
     }
-    dd.m.setRegs(saved); console.log('VALS ' + JSON.stringify(out));
+    console.log('VALS ' + JSON.stringify(out));
+  }
+  else if (t.startsWith('expect:val:')) {  // expect:val:ID=V ends the run with exit 1 unless setting ID reads V (decimal)
+    const [id, v] = t.slice(11).split('=').map(Number), got = getv(id);
+    if (got !== v) { console.error(`expect:val ${id}: ${got}, not ${v}`); process.exit(1); }
   }
   else if (t === 'pmod') {                // '*' per COLOR: stock "profile changed?" 0x6129ba07 (our ed_pmod), d0 = picture mode
     const SG = 0x6129ba07, dd = Debugger.attach(lab.sim, { lab }), saved = dd.m.getRegs().slice(), out = [];

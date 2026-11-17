@@ -34,6 +34,12 @@ HALATION_CASES = ['fade3', 'odd2', 'small5', 'min5', 'w68', 'odd131', 'clamp5', 
 HALATION_CHECK = REPO / 'research/halation/emu_check.py'
 ENGINE = 'look-tables-match-the-model'
 DIAL = 'rgb-page-counts-every-click'
+# #68: our looks are for photos only. A video pass after a photo pass, the same look (split toning and curves), must
+# leave the camera's tables as they are (st_run: mx_photo 0). v0.30.3 kept split toning and the photo's curves.
+VIDEO = 'video-keeps-the-stock-tables'
+VIDEO_CASE = 'split-toning-and-curves'
+VIDEO_MODE = 0x0a                                # the mode code of video and S&Q (rc_in + 24, ss_photo)
+PHOTO_MODE = 0x01                                # P's mode code, so the photo pass does not rest on the snapshot's mode
 REAR_DIAL = 0x9032                               # the rear dial's event (cv_ev); a1 its signed clicks
 # (name, a1): first no clicks (the value as it is), then a fast turn of 3, then one past the range.
 DIAL_CASES = [('as-is', 0), ('up-3', -3), ('down-20', 20)]
@@ -147,6 +153,49 @@ GRID_ROW_AND_BACK = ('s1 wait wait ok wait ok wait ' + 'down wait ' * 7 + HOLDER
 NOISE_FILTER_OFF_ROW = (f's1 wait wait {NR_ROW_STAR(False)} poke:{NF_BYTE:x}=fe wait {NR_ROW_STAR(False)} '
                         f'pokep:{NR_SLOT_COLOR2}=01 wait {NR_ROW_STAR(True)} poweroff')
 
+# The wheel's dial label (#64) names the page: Saturation -> Hue -> Luminance -> Shadows -> Highlights -> Saturation.
+# As on the camera, INFO on a single color turns ALL on, and the label stays Sat. The checks read a descriptor's
+# stream size (+12), which differs per picture (worked out below from the drawing code).
+U32 = lambda v: v.to_bytes(4, 'little').hex()
+U16 = lambda v: v.to_bytes(2, 'little').hex()
+VDESC = 0xa4cf688c                # the dial label ("Vivid"), 70 x 30
+# The label and guide sizes come from the same drawing code as build.py: with and without Pillow's raqm text layout
+# the pictures differ by a few bytes (the release builds use raqm, research/setup.sh), so they are worked out here.
+import mkicons, mklabels  # noqa: E402
+LABEL_SIZE = {t: len(mklabels.encode11(bytes(mklabels.render(mklabels.bitmap(t)).flatten()), 70, 30))
+              for t in ('Sat', 'Hue', 'Lum', 'Tint')}
+LABEL_IS = lambda name: f'expect:mem:{VDESC + 12:x}={U32(LABEL_SIZE[name])}'
+OPEN_WHEEL = 's1 ok ok down down down wait'
+WHEEL_PAGE_LABELS = (f'{OPEN_WHEEL} {LABEL_IS("Sat")} info wait {LABEL_IS("Sat")} info wait {LABEL_IS("Hue")} '
+                     f'info wait {LABEL_IS("Lum")} info wait {LABEL_IS("Tint")} info wait {LABEL_IS("Tint")} '
+                     f'info wait {LABEL_IS("Sat")} poweroff')
+# On Saturation, GDESC (a single color) reads "Saturation [INFO]" and SDESC (ALL, 175 wide while ours) "Sat. All
+# [INFO]", whether the dial or INFO turned ALL on. Off Saturation, SDESC is the camera's again.
+GDESC, SDESC = 0xa49ecdf8, 0xa49edf88
+_SAT_PICS = mkicons.sat_pictures()
+SATURATION_GUIDE, SAT_ALL_GUIDE = (len(mkicons.encode11(bytes(a.flatten().tolist()), 175, 50)) for a in _SAT_PICS[1:])
+SDESC_STOCK_SIZE = 4471
+SDESC_IS = lambda width, size: f'expect:mem:{SDESC + 2:x}={U16(width)} expect:mem:{SDESC + 12:x}={U32(size)}'
+WHEEL_SAT_GUIDES = (f'{OPEN_WHEEL} expect:mem:{GDESC + 12:x}={U32(SATURATION_GUIDE)} {SDESC_IS(175, SAT_ALL_GUIDE)} '
+                    f'sub+1 wait expect:val:2197=255 {SDESC_IS(175, SAT_ALL_GUIDE)} sub-1 wait '
+                    f'info wait {SDESC_IS(175, SAT_ALL_GUIDE)} info wait {SDESC_IS(180, SDESC_STOCK_SIZE)} poweroff')
+# On Hue, ed_get calls the label code (vl_s). Its caller gets a2 back as it was. v0.20..v0.30.3 handed back the call's
+# return address in a2: the call wrote it over ed_get's saved a2.
+WHEEL_READOUT_KEEPS_A2 = f'keep:{{ed_get}}:{{g_ret}}:a2 {OPEN_WHEEL} info wait info wait wait expect:kept poweroff'
+# The same on Shadows: tn_get calls the label code on its readout.
+TONE_READOUT_KEEPS_A2 = (f'keep:{{tn_get}}:{{t_ret}}:a2 {OPEN_WHEEL} info wait info wait info wait info wait wait '
+                         f'{LABEL_IS("Tint")} expect:kept poweroff')
+# The front dial puts all colors (cursor 255) between slices 1 and 12. On Saturation it stops there, as stock. On Hue
+# (as on Lum and Tint) it steps over: 1 -> 12 -> 1.
+CURSOR = 2197                     # COLOR 1's wheel cursor: slice 1..12, 255 = all colors
+WHEEL_DIAL_SKIPS_ALL = (f'{OPEN_WHEEL} sub+1 wait expect:val:{CURSOR}=255 sub-1 wait expect:val:{CURSOR}=1 '
+                        f'info wait info wait {LABEL_IS("Hue")} sub+1 wait expect:val:{CURSOR}=12 '
+                        f'sub-1 wait expect:val:{CURSOR}=1 poweroff')
+# Left on Hue, the half-press puts the wheel back on Saturation and the camera's "Vivid" back for the other screens.
+# The wheel opens again with Sat.
+VIVID_SIZE = 1660                 # the camera's own dial label picture
+WHEEL_RESET_LABEL = (f'{OPEN_WHEEL} info wait info wait {LABEL_IS("Hue")} menu wait menu wait s1 wait wait '
+                     f'expect:mem:{VDESC + 12:x}={U32(VIVID_SIZE)} {OPEN_WHEEL} {LABEL_IS("Sat")} poweroff')
 
 @dataclass
 class Boot:
@@ -269,6 +318,36 @@ TESTS = {
     ],
     'noise-filter-row-follows-the-camera-setting': [
         Boot(NOISE_FILTER_OFF_ROW),
+    ],
+    # #72: switching films fast in the Picture Mode list rebooted the camera; the group's record (cm_hp) was kept at
+    # every step. Now none while the list stays open (FILM 1 <-> FILM 2 and the films after), once as it closes (OK).
+    'film-list-keeps-the-record-once-as-it-closes': [
+        Boot('s1 wait wait ok wait ok wait' + ' right wait' * 5 + ' count:{cm_hp}:*' + ' left wait right wait' * 6 +
+             ' right wait' * 6 + ' expect:count:{cm_hp}=0 ok wait wait expect:count:{cm_hp}=1 menu wait wait'
+             ' s1 wait wait poweroff'),
+    ],
+    # #72: the super control panel's dials step the films too: no record keep while it stays open, one as it closes.
+    'control-panel-dial-keeps-the-record-once-as-it-closes': [
+        Boot('s1 wait wait ok wait count:{cm_hp}:*' + ' main+1 wait' * 8 + ' expect:count:{cm_hp}=0 menu wait wait'
+             ' expect:count:{cm_hp}=1 s1 wait wait poweroff'),
+    ],
+    'color-wheel-dial-label-follows-the-page': [
+        Boot(WHEEL_PAGE_LABELS),
+    ],
+    'color-wheel-dial-label-resets-with-the-page': [
+        Boot(WHEEL_RESET_LABEL),
+    ],
+    'color-wheel-readout-keeps-the-callers-a2': [
+        Boot(WHEEL_READOUT_KEEPS_A2),
+    ],
+    'color-wheel-front-dial-skips-all-colors-off-saturation': [
+        Boot(WHEEL_DIAL_SKIPS_ALL),
+    ],
+    'color-wheel-tone-readout-keeps-the-callers-a2': [
+        Boot(TONE_READOUT_KEEPS_A2),
+    ],
+    'color-wheel-saturation-guide-names-the-page': [
+        Boot(WHEEL_SAT_GUIDES),
     ],
     'video-boot-after-photo-boot': [
         Boot('s1 wait wait poweroff'),
@@ -559,12 +638,8 @@ def run_dial(emu, build, out, card0):
     return DIAL, errors
 
 
-def run_engine(emu, build, out, card0):
-    """The look engine in om-emu, called on a fake COLOR job: the camera's RGB stage, then our tone hook (st_run).
-    The tables must match look_model, and sd_crc zlib's CRC-32."""
-    d = out / ENGINE
-    d.mkdir(parents=True, exist_ok=True)
-    sym = elf_symbols(build / 'p.elf')
+def engine_job(sym):
+    """-> (the fake COLOR job's memory, its tables' read, cv_ram's live[0] address, a look's calls(name, look, mem))"""
     # The fake COLOR still of research/splittone/probe_test.py: at B the calls (stage, then tone), context C at B+0x200
     # (C+4 request R at B+0x400, C+12 output O at B+0x1000, C+48 11), R+8 its id with key 11 (COLOR), R+14 0x1000.
     job = [['B', 'dd'], ['B+1', f'={RGB_STAGE:#x}-B'], ['B+5', 'f010'],
@@ -574,13 +649,27 @@ def run_engine(emu, build, out, card0):
            ['B+0x408', '00000b00'], ['B+0x40e', '0010'], ['B+0x400+1660', '40143018' * 2]]
     tables = ['B+0x1000+1252', 3 * TABLE_BYTES]
     live0 = f'{sym["cv_ram"] + CV_LIVE:#x}'
-    spec = []
-    for name, (slot, balance, curves) in ENGINE_CASES.items():
+    def calls(name, look, extra=()):
+        slot, balance, curves = look
         cv = bytes(v & 255 for ch in curves for v in ch) + bytes(CV_SLOTS - 18)
-        mem = job + [['P+87', slot.hex()], ['P+65', f'{balance & 255:02x}'], [live0, cv.hex()]]
+        mem = job + [['P+87', slot.hex()], ['P+65', f'{balance & 255:02x}'], [live0, cv.hex()], *extra]
         base = {'pc': 'B', 'regs': {'a0': 'B+0x200', 'd3': 'B+0x200'}, 'max': 5000000, 'mem': mem, 'read': [tables]}
-        spec += [{**base, 'name': name + ':stage', 'stop': ['B+7']},
-                 {**base, 'name': name, 'stop': [hex(TONE_NEXT)], 'read': [tables, [f'{sym["st_k"]:#x}', 36]]}]
+        return [{**base, 'name': name + ':stage', 'stop': ['B+7']},
+                {**base, 'name': name, 'stop': [hex(TONE_NEXT)], 'read': [tables, [f'{sym["st_k"]:#x}', 36]]}]
+    return job, tables, live0, calls
+
+
+u16s = lambda h: list(struct.unpack(f'<{len(h) // 4}H', bytes.fromhex(h)))
+
+
+def run_engine(emu, build, out, card0):
+    """The look engine in om-emu, called on a fake COLOR job: the camera's RGB stage, then our tone hook (st_run).
+    The tables must match look_model, and sd_crc zlib's CRC-32."""
+    d = out / ENGINE
+    d.mkdir(parents=True, exist_ok=True)
+    sym = elf_symbols(build / 'p.elf')
+    job, tables, live0, calls = engine_job(sym)
+    spec = [c for name, look in ENGINE_CASES.items() for c in calls(name, look)]
     spec.append({'name': 'reset', 'pc': 'B', 'stop': ['B'], 'max': 1,
                  'mem': [['P+87', '00000000'], ['P+65', '00'], [live0, bytes(CV_SLOTS).hex()]]})
     crc_data = bytes((i * 151 + 7) & 255 for i in range(CRC_BYTES))
@@ -591,7 +680,6 @@ def run_engine(emu, build, out, card0):
     res = run_ncall(emu, build, d, card0, 's1 ncall', spec)
     if isinstance(res, str):
         return ENGINE, [res]
-    u16s = lambda h: list(struct.unpack(f'<{len(h) // 4}H', bytes.fromhex(h)))
     errors = []
     for name, (slot, balance, curves) in ENGINE_CASES.items():
         before, after = u16s(res[name + ':stage']['mem'][0]), u16s(res[name]['mem'][0])
@@ -609,6 +697,30 @@ def run_engine(emu, build, out, card0):
     return ENGINE, errors
 
 
+def run_video(emu, build, out, card0):
+    """#68: a photo pass of a look with split toning and curves, then a video pass of it (rc_in pointing at a mode
+    block with code 10). The video pass must leave the RGB stage's tables unchanged."""
+    d = out / VIDEO
+    d.mkdir(parents=True, exist_ok=True)
+    sym = elf_symbols(build / 'p.elf')
+    calls = engine_job(sym)[3]
+    look = ENGINE_CASES[VIDEO_CASE]
+    # the mode block in the free gap between context C (B+0x200, 0x100 B) and request R (B+0x400)
+    mode = lambda code: [[f'{sym["rc_in"]:#x}', '=B+0x300'], ['B+0x300', '00' * 32], ['B+0x300+24', f'{code:02x}']]
+    res = run_ncall(emu, build, d, card0, 's1 ncall',
+                    calls('photo', look, mode(PHOTO_MODE)) + calls('video', look, mode(VIDEO_MODE)))
+    if isinstance(res, str):
+        return VIDEO, [res]
+    errors = []
+    before, after = u16s(res['video:stage']['mem'][0]), u16s(res['video']['mem'][0])
+    if u16s(res['photo']['mem'][0]) == u16s(res['photo:stage']['mem'][0]):
+        errors.append('the photo pass left the tables unchanged: the look did not run (out.json)')
+    if after != before:
+        bad = next(i for i in range(len(before)) if after[i] != before[i])
+        errors.append(f'video: table entry {bad} is {after[bad]}, the camera wrote {before[bad]} (out.json)')
+    return VIDEO, errors
+
+
 def newest_looks():
     def key(d):
         n, _, pre = d.name.lstrip('v').partition('-')
@@ -620,7 +732,7 @@ def newest_looks():
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('build', type=pathlib.Path)
-    ap.add_argument('--only', nargs='+', choices=sorted([*TESTS, AUDIT, HALATION, ENGINE, DIAL, *STATIC]))
+    ap.add_argument('--only', nargs='+', choices=sorted([*TESTS, AUDIT, HALATION, ENGINE, DIAL, VIDEO, *STATIC]))
     ap.add_argument('--jobs', type=lambda v: max(1, int(v)), default=DEFAULT_JOBS)
     ap.add_argument('--out', type=pathlib.Path)
     ap.add_argument('--looks', type=pathlib.Path)
@@ -643,7 +755,7 @@ def main():
     looks = (a.looks or newest_looks()).resolve()
     make_card(emu, build, looks, card0)
     fixtures = make_fixtures(out, looks)
-    names = a.only or sorted([*TESTS, AUDIT, HALATION, ENGINE, DIAL, *STATIC])
+    names = a.only or sorted([*TESTS, AUDIT, HALATION, ENGINE, DIAL, VIDEO, *STATIC])
     stock = static_check.find_stock(a.stock) if any(n in STATIC for n in names) else None
     runs = [(n, k) for n in names for k in range(1, a.repeat + 1)]
     print(f'{len(names)} tests{f" x {a.repeat}" if a.repeat > 1 else ""} on {build}, results in {out}')
@@ -670,6 +782,8 @@ def main():
                 return run_engine(emu, build, d, card0)
             if n == DIAL:
                 return run_dial(emu, build, d, card0)
+            if n == VIDEO:
+                return run_video(emu, build, d, card0)
             first = shared.get((k, boot_key(TESTS[n][0])))
             return run_test(n, TESTS[n], emu, build, card0, d, first and first.result(), fixtures)
         except static_check.Skip as e:

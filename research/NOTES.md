@@ -5269,6 +5269,46 @@ Owner: "yes, build the noise filter fix" (the row's '*' follows the camera's own
   tele-converter (x2), COLOR 3 FILM 15 single. Not in the files: RAW only, Live ND, multiple exposure, focus stacking,
   silent single. CADLOG: "nothing unusual", photos counted 87 (counted once per EXIF fill; the 33 above the 54 saved
   shots are likely the multi-frame modes' frames: guess).
+- Reporter's log on v0.30.3 (2026-11-17): A, f/4, ISO 200, 1/1.6..1/2.5 s, FILM 1, Drive [32], AF [1] (C-AF), face / eye
+  [6]; 4 photos counted in 57 events, nothing unusual.
+- **Owner's camera, test 5 (2026-11-17; camera-tested): not reproduced with their exposure and AF.** FILM 1 (changed),
+  M, f/4, ISO 200, 1/2 s, C-AF, face / eye [6], Drive [11]: 18 shots PB173018..035, all saved (JPG + ORF): 5 single
+  presses, a 6-shot burst with anti-shock, a 7-shot burst (EXIF "Sequential, Fast"). Left: the drive mode. Code 32 is
+  one of the owner's bursts too (the 10-shot "Sequential, Fast" burst at the end of grain g2b, 2026-11-16, COLOR 1, no
+  grain), but its EXIF reads the same as code 11's, so which menu mode it is is not known.
+- **Owner's camera, every drive mode with grain (2026-11-17, test 5, FILM 1 changed, A, 1/40 or 1/160 s):** 82 photos
+  PB173037..118 saved (EXIF list in the private card backup). Drive codes from the log's photo counts against the
+  EXIF: 11 Sequential + anti-shock, **32 Sequential (plain: PB173042-043, 2 shots, saved)**, 40 SH1, 41 SH2, 39 Pro
+  Capture, 42 Pro Capture SH1, 43 Pro Capture SH2 (single and single + anti-shock before them). Two loose ends: the
+  log counts 83 photos this power-on but PB173036 (the first after switch-on) is not on the card; and the last mode
+  tried (code 0, events 49-54) counted no photo and wrote none. The reporter's exact combination (code 32 at about
+  1/2 s) is still untested.
+- Drive code 0 = Single (PB173134 below; its EXIF says "Anti-shock", see the correction below).
+- **Owner's camera with the default 20 films (2026-11-17, test 5; the v0.30.3 LOOKS.BIN made new to the camera by one
+  byte after FILM 20's name, CURVES.BIN of v0.30.3, NAMES.BIN off the card):** the camera took the set ("from the card
+  (films the camera never had)", CURVES "taken", matches 20). FILM 1 Portra 400 with grain changed, A, f/4, ISO 200,
+  1/1.3 s, C-AF, face / eye [6]: drive 11 (Sequential + anti-shock) 6 single presses and a 9-shot burst, then drive 0:
+  16 photos PB173119..134, 16 counted, all saved. Not reproduced. Code 32 (plain Sequential) at a slow shutter is
+  still not tried.
+- **Side finding (analysis, to look at):** right after taking the new set the log lists films with changes 1, 2, 3, 4,
+  5, 7, 8, 9, 10, 12..19 (all but 6, 11, 20). Before the swap the owner's set had changes on 1, 6, 11 only (FILM 20 is
+  Natura 1600 in both sets). USING.md says a film changed by a new set starts again as built and the others keep
+  their changes, so a fresh set should show no '*' (except FILM 1's grain): this looks inverted (films that had changes
+  reset, the others keep the old film's values). Not checked in om-emu yet.
+  **Next power-on (owner, 2026-11-17): "they look normal to me"; the log lists films with changes: none.** So the
+  list was only in the log of the power-on that took the set (stale comparison in that power-on: guess); not a fault
+  the owner can see.
+- Correction: the EXIF "Anti-shock" tag is not the menu's anti-shock mode (owner: "I am not on antishock mode"; drive 0
+  is the owner's plain Single and its photos carry the tag too). Likely the electronic first curtain. So drive 11 is
+  the owner's usual Sequential and 32 the Sequential whose photos lack the tag (guess: Sequential H, mechanical shutter).
+- **Owner's camera, "Sequential H" try (2026-11-17, test 5, FILM 1 Portra 400 grain changed, f/4, ISO 200, C-AF):** the
+  modes picked were the silent SH2 (30 shots at 1/160, the camera's fastest) and SH1 (12 at 1/15): 42 photos
+  PB173135..176, no gap in the numbers. The log is from a later power-on (no photos). Not reproduced. Tag pattern: on
+  2026-11-16 the owner's Single / Sequential were codes 30 / 32 (no "Anti-shock" tag); today 0 / 11 (tagged), so a
+  camera setting between the two days changes the code; the reporter's 32 is the untagged Sequential.
+- Reporter on Discord (via the owner, 2026-11-17): "Sequential burst and aperture priority". The first #50 question
+  comment was deleted by the owner; the posted one (owner's OK) asks: Single, S-AF in place of C-AF, face / eye
+  detection off, each with Grain Low, and a new CADLOG.TXT. Waiting.
 
 
 ## LookLab: RGB curves and colour mix (2026-11-15; feature/looklab-rgb-curves; browser-checked, not live)
@@ -5701,3 +5741,300 @@ rgb-page-counts-every-click, halation-matches-the-model). Package `test-builds/2
   tag (twice) and the built-in GUIDES CRC (53 bytes). E1479999.BIN 60b6d954…f546; `patch.py --release v0.30.3` makes it
   byte for byte, `--release v0.30.2` still 7fbd3957…. Extras as v0.30.2. LookLab rebuilt (h8's preview). PR #69 lands
   on main with this merge (its head 7b0cc80 is in the history).
+
+## #72: scrolling the films in the Picture Mode list reboots the camera (2026-11-16..17; cause found, fix v0.30.4 test 4)
+- Report (crombach, #72; owner: "trying to track down this bug for ages"): holding the arrow (or pressing it fast)
+  through the films in the Picture Mode list reboots the camera, every time, on v0.30.3. Earlier sightings: the reboot
+  on v0.30 test 12 and "reboot when resetting many films before a half-press" (above). om-emu never reboots.
+- Camera tests (owner, 2026-11-16; full record on `try/v0.31a`, probe builds on `experiment/72-probes` and
+  `experiment/72-probes-cd`): v0.30.3, slow scrolling: no reboot; COLOR 1 <-> COLOR 2 fast: none; **FILM 1 <-> FILM 2
+  fast: reboot in about 10 s**. Probes, each one part of a film step off: A (no settings writes) rebooted; B (no cell
+  redraws) rebooted later; C (a pick only notes the look: no load, WB, capture) rebooted; **E (the films' list cells
+  given the camera's own COLOR 1 picture) did not**; F (our picture lookup `fl_ic` runs, then answers the camera's own
+  picture) rebooted. So: the work `fl_ic` does when the camera asks for a film's picture.
+- What it does (code, om-emu counts): for the film on its COLOR (the one just picked), `fl_fch` -> `fl_live` reads
+  COLOR k's 18 settings through `fl_isdef` (about 67 checks per step) and compares curves and the slot, at every redraw
+  of the list (about 3 per film step; 0 for a COLOR step, whose film neighbours are not on their COLOR). All in the GUI
+  task (om-emu task ids), so not two tasks at once; analysis: the time spent inside the picture lookup while the
+  screen is drawn, at the speed of a held arrow, is what the camera does not survive (om-emu has no such limit).
+  Also seen (om-emu): one 28-byte Rhapsody event (`rhapsody/oxf/itronos.h` line 191) per settings-manager write, about
+  20 per film step; not the cause (probe E kept them).
+- **Fix (v0.30.4 test 1, branch `fix/72-film-switch` from v0.30.3):** `fl_lv`, per COLOR k the film's '*' (0 not
+  known, 1 no, 2 yes). A pick (`fl_set`, after `fl_sw` loaded the film's saved changes or the film as built) sets it
+  from the saved changes (`fl_fsv`, `fl_fch`'s own compare for a film not on its COLOR: memory only). `fl_fch` answers
+  it; `fl_live` only when not known, once. Cleared (not known) by any load into COLOR k (`pf_put1`: mode changes, resets)
+  and any edit (`sl_set` for every setting but 901 / 897 / 162 / 1440 / 2148, `s_dirty2`, `e_rst`, the curves page's
+  edit and `cv_dty`). Debug log, NOW: "Film '*' read from the camera's settings for the list this power-on: N".
+- om-emu: test `film-switching-reads-no-settings-for-the-star` (FILM 1 <-> FILM 2 six times, Tone Balance +1 on
+  FILM 2, away and back): the '*' through `fl_fch` 0, then 1, then 1 (`expect:fch`, a new driver token), the count 2
+  (both after the edit). v0.30.3 has no count line (caught).
+
+- **Camera (owner, 2026-11-16): v0.30.4 test 1 still rebooted, "after about 30ish seconds"** (v0.30.3: about 10 s).
+  Better, not fixed. Model (analysis): a film step's work is longer than the arrow's repeat, so something queues up
+  until it overflows; the more work per step, the sooner. COLOR steps and probe E stay under it. Next: om-emu
+  instruction counts per step for each build, and cut a film step below probe E's.
+- om-emu measurements after test 1 (driver tokens `insns:` with INSNSTATS, SPWATCH, `peek:`): instructions per FILM 1
+  <-> FILM 2 step about 18.7 M on v0.30.3, E, F and test 1 alike (E and F differ by about 25 k; C 11.9 M; a COLOR step
+  13.4 M): **not the amount of work**. The GUI task (t168, 16 KB stack, 0x62458710..0x6245c710) goes at most about 8 KB
+  deep, our picture code about 1.5 KB: **no stack overflow**. The camera's picture table (*(0x60379740)) holds ids up to
+  about 16300; ours are 32656.. (IC_FM0 / IC_FL0), past its end (answered only by our ic_get hook, as far as the code
+  shows: the table pointer is read only by ic_get).
+- Probe G (73632d1, `5d31c7a8…`, camera test pending): our ids in the list, ic_get answers the camera's COLOR 1 picture
+  for them at once (no fl_ic). Reboot -> the ids; none -> our picture code.
+- **Camera (owner, 2026-11-16): probe G rebooted** in about 20 s (our film picture ids, answered at once with the
+  camera's own picture, none of our picture code). With probe E (the camera's own ids) no reboot. **So the cause is our
+  picture ids (32656..32707, past the camera's ~16300).** Some camera code keeps something per picture id; ours fall
+  outside it. Fix: give the films' list pictures ids inside the camera's range.
+- Which camera code minds the ids is not found: in om-emu our ids reach only ic_get (from 0x6128ac1b, which passes
+  the slot on to 0x610db07a, no id) and none of the camera's other per-id lookups (0x610f5628 / 37 / 50). The
+  difference E / G is only the ids in the list's entries (`fl_l1` / `fl_l2`). The left cells' ids (IC_FL0 + j) are
+  asked for only when a film is selected (om-emu: none when switching COLORs), which fits FILM <-> FILM rebooting and
+  COLOR <-> COLOR not. The camera's picture table: 16298 entries; 9381 of them point to one blank placeholder
+  (0xa4693d78), the longest run 7736..8277.
+- **Fix (v0.30.4 test 2 = test 1 + this):** IC_FM0 = 7800, IC_FL0 = 7820 (were 0x7f90 / 0x7fb0), inside that run.
+  The list looks the same (om-emu screen). Test `film-list-pictures-use-the-cameras-ids` (the list entries' ids).
+  Our other picture ids (0x7f60.., IC_BK.., DG0, AR_IC0) are past the table too; they are not in the films' list and
+  did not reboot COLOR switching (left as they are).
+- **Camera (owner, 2026-11-16): v0.30.4 test 2 still rebooted, after 50 s (timed).** Times so far for FILM 1 <-> FILM 2
+  fast (estimates before this one): v0.30.3 ~10 s, probe C ~15 s, G ~20 s, test 1 ~30 s, test 2 50 s; **probe E
+  was tested only 30 s** ("no reboot"), so it may only be later, not gone. COLOR 1 <-> COLOR 2 fast: none in 60 s;
+  films slowly: none in 3-4 min. So every change made it come later, none removed it: something builds up with each
+  fast film step and drains when slow (analysis). Next: probe E for 2 minutes, timed; if it reboots too, the picture
+  ids are not the cause, and the fix is to not load a film's settings on every list step while the arrow is held
+  (load it when the stepping pauses) - a behaviour change, the owner's call.
+- **Camera (owner, 2026-11-17): probe E retest, FILM 1 <-> FILM 2 fast, timed: rebooted at 1 min 8 s.** So the picture
+  ids are not the cause either (the "So the cause is our picture ids" line above is wrong: E's 30 s run was too
+  short). Times now: v0.30.3 ~10 s, C ~15 s, G ~20 s, test 1 ~30 s, test 2 50 s, E 68 s (one run each, human tapping,
+  so rough). Every probe delays it, none removes it. Probe C (no film loading at all, our ids) still rebooted at ~15 s,
+  so the plan above (load a film only when the stepping pauses) is not expected to fix it alone (analysis).
+  The debug log is from the half-press before the test (written at shutter events only): nothing about the reboot.
+- Open: COLOR 1 <-> COLOR 2 fast was tested only 60 s, shorter than E's 68 s, so it does not yet show that the
+  camera's own list survives. Next (no build needed): COLOR 1 <-> COLOR 2 fast for 3 minutes, timed. A reboot there
+  means the camera's own list fails under fast stepping and our film steps only reach it sooner; none means our film
+  steps leave something behind each time.
+- **Camera (owner, 2026-11-17): COLOR 1 <-> COLOR 2 fast for 3 minutes (on probe E): no reboot.** So the camera's own
+  list holds up under fast stepping; our film steps leave something behind each time, and both parts add to it:
+  the film load (probe C, none: ~15 s) and our list pictures (probe E, the camera's own: 68 s) (analysis).
+- **Probe H** (5e8dba1 on `experiment/72-probe-h`, `74cc3659…`): v0.30.4 test 2, but a film / COLOR pick in the list
+  only notes the look (probe C's change: no capture, load, WB, '*'). om-emu: starts, picks, half-press keeps the pick;
+  `film-switching-reads-no-settings-for-the-star` fails by design (no '*' at the pick: one read later, then cached).
+- **Camera (owner, 2026-11-17): probe H rebooted at 13 s** (FILM 1 <-> FILM 2 fast, timed); test 2 with the loading
+  rebooted at 50 s. So taking the film loading out did not help: it is not the cause, and it may even slow the
+  stepping enough to make the reboot later. Analysis: the times may be largely random (a crash with some chance per
+  fast step, not a fill-up), so one run per build cannot rank the probes; only "reboots" / "no reboot in 3 min" is
+  solid. Solid so far: fast film steps reboot on every build; fast COLOR steps (3 min) and slow film steps (3-4 min)
+  do not.
+- What a FILM 1 <-> FILM 2 step does that a COLOR step never does (analysis): the list hands the camera the same
+  picture mode again (COLOR 1 -> COLOR 1), which the stock list never does (every stock entry is its own mode). Probe H
+  leaves almost nothing else of ours in a step except our list pictures. Next (no build): on probe H, FILM 5 <-> FILM 6
+  fast for 3 min (FILM 5 is on COLOR 1, FILM 6 on COLOR 2, so the camera's mode changes each step, as with COLOR
+  steps). No reboot -> the repeated same mode is the cause; reboot -> our list pictures. Then FILM 1 <-> FILM 2 again
+  on H, timed, to see how much the time varies.
+- **Camera (owner, 2026-11-17), probe H, no reflash: FILM 5 <-> FILM 6 fast for 3 min: no reboot. FILM 1 <-> FILM 2
+  fast: reboot at 30 s** (13 s on the first run: the time varies a lot run to run). Both use our list pictures and
+  neither loads the film, so **the cause is handing the camera the same picture mode again (COLOR 1 -> COLOR 1) at
+  speed**: a step between two films on the same COLOR. A step that changes the mode (COLOR <-> COLOR, FILM 5 <-> 6)
+  holds. Camera-tested on probe H; why the camera minds is not known (analysis next).
+- Why (analysis, disassembly): the settings manager (0x60bb528f) runs, for 111 / 897..901 / 988, 0x6041b019(111, 0)
+  before the write and 0x6041b0bd(111, 0) after it, with no same-value check; it always returns 1. fl_set handed it
+  901 = COLOR k on every film pick, also when the camera was on COLOR k already.
+- **v0.30.4 test 3** (72a95f4 on `fix/72-film-switch`, `b29daec0…`): test 2 + fl_set returns 1 as the manager does
+  (`ret [d2,d3,a2,a3],68`), without calling it, when the look on COLOR k changed and sget(901) is COLOR k already.
+  No look change (the camera's own 901 at a half-press): the manager as before. om-emu: all 29 pass; new test
+  `film-step-on-one-color-sets-no-picture-mode` (driver tokens count: / expect:count:): 0 manager 901 calls in 12
+  FILM 1 <-> 2 steps, 1 at FILM 5 -> 6; on test 2: "12, not 0" (caught). List and shooting screens pixel-identical
+  to test 2 at seven points (FILM 2/1/2/3/6, shooting screen, after a half-press). Not known: whether live view
+  follows a film on the same COLOR without the manager's 111 steps (om-emu shows no live view look): camera test.
+- **Camera (owner, 2026-11-17): v0.30.4 test 3 rebooted at 11 s** (FILM 1 <-> FILM 2 fast). So the manager's call with
+  the same 901 is not the cause either (om-emu: test 3 makes none in those steps; assumed the camera takes the same
+  path). What still holds on the camera: every fast test between films on one COLOR rebooted (all builds); fast steps
+  that change the COLOR never did (COLOR 1 <-> 2, 3 min; FILM 5 <-> 6 on probe H, 3 min). Analysis: a change of
+  picture mode makes the camera do its own (slower) mode change, which may pace the list; steps on one COLOR are
+  quicker and something of ours or the camera's list fails at that pace. Not proven.
+- Owner's idea (2026-11-17): put adjacent films on different COLORs (FILM 1 on COLOR 1, FILM 2 on COLOR 2, ...), so
+  every list step changes the COLOR, as the steps that held. Untested with film loading (probe H loaded nothing, and
+  FILM 5 <-> 6 back and forth loads nothing after the first two steps).
+- **Probe I** (045fe5e on `experiment/72-probe-i`, `b78037e5…`): test 3 with the list's films (fl_rec, fl_l0..2) in
+  the order j = 0,5,10,15,1,6,11,16,...,4,9,14,19 (COLOR 1-4, then FILM 1, 6, 11, 16, 2, ...), so each step between
+  films changes the COLOR; storage and film numbers as before. om-emu: starts; the list shows that order (screen); 12
+  FILM 1 <-> FILM 6 steps make 12 manager 901 calls (each a change of COLOR). Eleven tests fail only on the step counts
+  (they land on FILM 6 / another COLOR). Camera test pending: FILM 1 <-> 6 fast 3 min, the arrow held 2 min.
+- **Camera (owner, 2026-11-17), probe I: FILM 1 <-> FILM 6 fast 3 min: no reboot; the arrow held through all films:
+  reboot at 11 s.** So the order alone does not fix it: holding the arrow still changes a COLOR's film at every step.
+  The pattern over every camera run: a reboot whenever a COLOR's film (P+LIDX+k) changes many times a second (also
+  in probe H, where that byte was all a pick changed); none when fast steps leave each COLOR's film as it is (COLOR
+  1 <-> 2; FILM 5 <-> 6 and FILM 1 <-> 6 back and forth: after the first two steps each COLOR keeps its film).
+- What reacts to P+LIDX (analysis): since v0.30 (fcfdb7e, el_pk), sx_set marks every 901 write, and at the next GUI
+  event cm_hp keeps the group's record: cm_save (LIDX, choice) -> cm_wr (cm_ram into M at CM_C and CM_U, UB_DIRTY)
+  and ss_hp -> ss_put / ss_wr (the per-mode set's slots and looks, written when changed). The earlier reboot reports
+  in #72 (v0.30 test 12, resetting many films before a half-press) are from the same release. om-emu, 12 FILM 1 <-> 2
+  steps on test 3: cm_hp 12 times (cm_wr 0 there: the emulator's group may not hold; the owner's P/A/S/M/B keeps).
+- **Probe J** (b7ca60c on `experiment/72-probe-j`, `4d36c6e1…`): test 3 without el_pk (cm_hp at shutter events only, as
+  before v0.30). om-emu: 28 / 29; `film-kept-with-no-half-press-after-pick` fails (the behaviour el_pk added); cm_hp
+  0 times in the same 12 steps. Camera test pending: FILM 1 <-> 2 fast 3 min, the arrow held 2 min.
+- **Camera (owner, 2026-11-17): probe J: FILM 1 <-> FILM 2 fast 3 min and the arrow held 3 min: no reboot either way.**
+  **Cause found (camera-tested):** the group's record keep (cm_hp: cm_save / cm_wr / ss_hp) run at the GUI event after
+  every picture-mode change (el_pk, since v0.30 fcfdb7e), many times a second when a COLOR's film changes at each
+  step. Why the camera minds is not known (analysis: the record copies into M under LOCK, UB_DIRTY, racing the
+  camera's own use of M). Tests 1-3 and probes A-I were not the cause. Fix: keep the record once on leaving the list.
+- **The fix (v0.30.4 test 4, branch `fix/72-record-keep` from main, without tests 1-3 / probes, which were not the
+  cause; their record stays on `fix/72-film-switch`):** gx_map holds el_pk while the Picture Mode list (GUI state
+  0x0418, bytes 04 18) or the super control panel (0x0403: its dials step the films too, om-emu: cm_hp 8 times in 8
+  dial steps on v0.30.3) stays open: no state change (d0 0) or one between those two. The record is kept once at
+  the state change that closes them (OK, MENU, a half-press). om-emu: all 28 pass; new tests
+  `film-list-keeps-the-record-once-as-it-closes` (v0.30.3: "18, not 0", caught) and
+  `control-panel-dial-keeps-the-record-once-as-it-closes` (v0.30.3: "8, not 0", caught); driver tokens count: /
+  expect:count: (`*` = any d0).
+- Behaviour that differs from v0.30.3 (om-emu): a film picked in the list and the camera switched off **with the list
+  still open** (no OK / MENU / half-press) comes back on the film from before (v0.30.3: the new one; as before v0.30).
+  Leaving the list first, or a half-press, keeps it (`film-kept-with-no-half-press-after-pick` passes). The owner's
+  call.
+- **Camera-tested (owner, 2026-11-17): v0.30.4 test 4 (`0e5708ea…`): no reboot after 3 minutes; "looks good".** Debug
+  log: nothing unusual. Next (owner): a test merge of PR #70 and PR #73 with this fix before pushing.
+- **v0.30.4 test 5 (try/v0.30.4 086a0a2, `2b62b341…`): test 4 + PR #70 (c430a40) + PR #73 (d9cc857)**, merged as
+  written; conflicts only where both sides added lines (NOTES, emu_test.py, session_ed1.mjs: kept both). om-emu: 32 /
+  35. FAIL: PR #70's `color-wheel-dial-label-follows-the-page`, `color-wheel-saturation-guide-names-the-page`,
+  `color-wheel-tone-readout-keeps-the-callers-a2` (label stream sizes: e.g. Lum 1108 here, 1092 expected; the guide
+  4124, 4132 expected). Also on PR #70 alone. A build of PR #70 with Pillow **without raqm** passes all three: its
+  expected sizes come from a build without raqm text layout; release builds use raqm (`research/setup.sh`).
+- **Camera (owner, 2026-11-17): test 5 on the camera, card read:** debug log "nothing unusual" (57 shutter events, 35
+  log writes, 8 shooting-mode changes). Six photos (P, A, S, M; FILM 1 with split toning, a curve and Glow): each
+  shows the full look. The movie clip: no split toning, curve or Glow, but dark corners (the film's own camera
+  settings, which PR #73 leaves to video, its note); the S&Q clip: stock. **Camera-tested (owner, 2026-11-17): #72 and the wheel
+  labels "Both worked".** Test 5 is the v0.30.4 candidate (PR #70's three label-size tests still to settle).
+- PR #70's three label-size tests now take the sizes from the drawing code (1e02ceb): pass with and without raqm.
+- **v0.30.4 released locally (2026-11-17, owner: "lets make two new releases"; with PR #70 and PR #73 merged):** VERSION
+  "v0.30.4 (#72 fix + PR #70 + #73; camera-tested)", 47 characters as test 5's (a first try at 51 characters moved the
+  debug log's strings: 13,002 bytes apart). main.bin vs test 5: 48 bytes (the name, the code-block tag twice, the
+  built-in GUIDES CRC). E1479999.BIN 2814bfde…c0e; patch.py --release v0.30.4 and the default make it; v0.30.3 still
+  60b6d954…f546.
+
+## Issue #64: the wheel's dial label names the page (2026-11-16; feature/dial-label-per-page; camera-tested)
+- Owner on #64: "I like these changes, if you make a pr with them, I'll merge". This replaces the sp1 request (2026-11-09)
+  that the dial label stay the camera's "Vivid" on Shadows / Highlights.
+- The label ("Vivid", VDESC 0xa4cf688c, 70 x 30) now reads Sat (Color and Color All), Hue, Lum, and Tint (Shadows and Highlights).
+  LABELS.BIN goes from 27 to 31 labels (indices 27..30, after the Extras ones). `xb_va` (xblock.s) maps the axis to
+  the label, 0xff = the stock picture (Film).
+- The label code only ran on axes 1..4: ed_get calls vl_s only there, and the Shadows / Highlights readout is
+  tn_get's, which skipped it (the sp1 request). ed_get now also calls vl_s on axis 0, with the entry's d0 / d1 kept
+  for the stock path. tn_get calls it on its readout.
+- Emulator: VDESC +12 per page = Sat 796, Hue 996, Lum 1092, Tint 1028 (each = mklabels encode11
+  length). Test `color-wheel-dial-label-follows-the-page`. On v0.30's code every page keeps the stock 1660.
+- Leaving the wheel keeps the last label in VDESC (Sat after the usual exit from Color), as the Extras labels did
+  since v0.20. Whether another camera screen draws that picture: camera test.
+- Follow-up (2026-11-16, emulator only). The guides on Saturation were the camera's: "Color All [INFO]" with one colour,
+  "Color Select [INFO]" with all colours. They name what INFO does next, while ours name the page, so they read swapped.
+  - **One Saturation page (crombach, camera, on the look-perf test build):** the front dial already reaches ALL, so
+    the INFO stop on ALL repeated it. INFO with a single color now goes straight to Hue (k_6b -> k_step). INFO with ALL
+    on is unchanged: the stock handler turns ALL off, then k_step. This differs from the release: the owner's call on
+    the PR.
+  - **Back to the camera's INFO (crombach, 2026-11-16, PR #70 review):** on stock firmware both the front dial (after
+    Yellow-green) and INFO (it toggles ALL) reach Color All (om-emu, unmodified firmware). So k_6b again lets stock INFO
+    turn ALL on from a single color, as in v0.30.3. The dial label stays Sat and both guides "Saturation [INFO]".
+  - **Guides.** gd_s0 puts film test 8's "Saturation [INFO]" (P+SATB) in both Saturation guides: GDESC (single color)
+    and SDESC 0xa49edf88 (ALL), the latter with its width set to 175. gd_sel puts SDESC back to the camera's, at width
+    180, before every gd_set.
+  - **Dial label.** "Sat" in both states: "Saturation" would squeeze to 42 % in the 62 px label. "Highlt" (squeezed to
+    74 %) read jammed on the camera, so it is now "Hilite" (56 px, no squeeze). "Shadow" (62 px) read crammed next to
+    the dial icon (crombach, camera, PR #70). Both split-tone pages now read "Tint" (44 px), the value the rear dial
+    sets, as Sat, Hue and Lum do. The guide below already names the page.
+  - **Half-press.** ed_trig calls vl_s after its page reset, so the label reads "Sat" right away.
+  - **W_SALL.** Its SDESC code would now share the descriptor with gd_s0's. Re-enabling it needs a look at both.
+  - **Pictures live in the heap.** A test build that pointed a picture's descriptor into .ext12 (0x60f9…) blanked the
+    rest of the camera's menu (camera, crombach, 2026-11-16, the swatch work on feature/color-wheel-swatches). Every
+    picture of ours that the camera has shown points into the heap (0xa2…). om-emu draws from either address, so no
+    emulator test catches this.
+  - **Camera (crombach, 2026-11-16, build b023e44e…): the menu works, but the wheel showed a moment late when moving
+    down onto it.** om-emu instruction counts on that step (a copy of session_ed1.mjs that adds `insns` to WATCH hits,
+    ed_get's first to last hit): v0.30.3 1 761 445, this build 3 379 421. The extra 1.62 M is xb_rend drawing "Sat"
+    (vl_s). xb_lc caches one label, so each INFO step to a new page cost the same, and so did a half-press after
+    leaving the wheel off Saturation. Now build.py encodes the five wheel labels (mklabels.render, encode11: the same
+    sizes as xb_rend's, per the label tests) into wl_tab. xb_vl points VDESC at them, with no drawing. Step after:
+    1 761 614.
+  - **Where the pictures live.** wl_tab sits in .ext13 (.ext12 had no room). fl_mk copies it into a heap block of its
+    own, wl_blk. It could not join the P+SATB block: an 18 KB block made malloc return 0 in om-emu, and the Saturation
+    pictures went with it. xb_vl gets wl_blk's address from build.py (WL_BLK).
+  - **Build note.** A `.set` that uses a films.inc size before films.inc is included works in editor.s's own code.
+    But nm prints a wrong value for it, so a value handed to the code block must be set after films.inc.
+  - **Camera (crombach, 2026-11-16, E1479999.BIN 90283858…): no issues.** Labels, the one Saturation page, the guides,
+    the half-press reset, editing on each page, photos and video all worked. No screen showed "Sat" in place of
+    "Vivid". The wheel opens as fast as on v0.30.3 (om-emu: 1 762 023 instructions on that step, v0.30.3 1 761 853).
+    The swatch work moved to feature/color-wheel-swatches, its own PR.
+  - Tests:
+    - `color-wheel-dial-label-follows-the-page` (INFO from Saturation to ALL, then Hue)
+    - `color-wheel-dial-label-resets-with-the-page`
+    - `color-wheel-saturation-guide-names-the-page`
+    - `color-wheel-front-dial-skips-all-colors-off-saturation`
+  - **Camera (crombach, 2026-11-16, E1479999.BIN 6cef8303…): works, performance good.** The camera's INFO, Tint on both
+    tone pages and the stack fix. crombach: "Color All is useless on the tint wheels, so we should remove it. Probably
+    same for hue and luminance."
+  - **The front dial skips all colors off Saturation (2026-11-16, emulator only).** The front dial reaches the wheel as
+    the left / right events 0x9008 / 0x900a, through the record hooks ed_l / ed_r (EDLR). The cursor runs 1, 255, 12,
+    11 .. 2, 1 (255 = all colors, 2197 + k). On every page but Saturation, EDLR now calls the stock handler, reads the
+    cursor (k_ad), and calls it once more when it landed on 255. The dial widget steps both times, so its index and
+    the cursor agree. No new hook. Arrow keys take the same path. Driver token `expect:val:ID=V` reads a setting
+    through the getter (`getv`, shared with `vals`). The read is k_cur (2197 + k only): from slices 1 and 12 the dial
+    sets 255 there, while k_ad also reads 2201 + k.
+  - **"Sat. All [INFO]" on all colors (crombach, 2026-11-16, emulator only).** crombach: "When on Sat. All, whether accessed
+    via the dial or the INFO button, the label at the bottom (next to the info button) should say Sat. All". gd_s0 now
+    puts mkguides "Sat. All" (175 x 50, 3516 B) in SDESC; GDESC keeps "Saturation [INFO]". The picture lives in .ext13
+    (fl_sagd in wheel.inc: .ext11 had 1.7 KB too little), and fl_mk copies it to P+SATB + SAT_AG with ub_cpy, so
+    gd_sel's range check on the block still finds it. Screenshots (om-emu): the guide reads "Sat. All" after the dial
+    and after INFO.
+  - **Review fixes (2026-11-16).** ed_trig calls vl_s with d2 = -1 at the half-press: xb_vl puts the camera's "Vivid"
+    back in VDESC (it kept Sat for other screens), and the wheel draws Sat when it opens. xb_vl needs LABELS.BIN
+    (xb_lb) only to draw a label, not for wl_blk's. fl_mk allocates wl_blk last, after LV_BLK and SP_BLK, and copies
+    the P+SATB pictures and wl_tab with ub_cpy (a word at a time, was a byte). Test
+    `color-wheel-tone-readout-keeps-the-callers-a2` (keep: on tn_get to t_ret) catches tn_get without its return slot.
+  - **Leaving with MENU or OK** keeps the last label in VDESC until the next half-press: neither reaches an editor
+    record handler (ed_info, ed_l, ed_r, ed_event, gd_set; the stock words +8..+40 not hit in om-emu). Hooking the
+    draw instead: the only VDESC read is 0x610eaf8c, the camera's picture routine for every descriptor on every screen
+    (GDESC goes through it too), so not used.
+  - **Camera (crombach, 2026-11-16, E1479999.BIN ec545b42…, GUIDES.BIN e433434b…): "Testing is good."** The front
+    dial skips Color All off Saturation, "Sat. All [INFO]" from the dial and from INFO, no wheel label on the other
+    screens after MENU / OK, the half-press reset, photos, video and films.
+
+## #68: our looks for photos only, video and S&Q stock (2026-11-16; camera-tested; branch feature/video-curves-68)
+Issue #68: in video, `st_run` skipped `cv_set` but still ran when the look had split toning, and read `cv_pp`, which
+still held the last photo pass's curve blocks. crombach: none of the custom settings are meant for video or S&Q.
+- **`st_run`:** `mx_photo` right after the COLOR key gate, so video and S&Q (mode code 10, or switch position 1 / 0
+  while the code is 0) leave the tables stock. Split toning, Tone Balance and RGB curves are now photos only. Before
+  this, split toning reached video (since v0.26, see "Split toning"). `cv_set` now runs on every pass that gets that far.
+- **`s_lv` (live view / movie request flags):** `mx_photo` first, so video and S&Q get no Glow or Art Effect flag.
+  The body moved to `.ext11` as `s_lv6`, because `.ext2` had 7 B too few. The v0.24-era changelog line "Movies
+  recorded with such a look get the effect too" no longer holds.
+- **Unchanged:** Colour Mix (already `mx_photo`), grain and halation (stills only). Films still reach video through the
+  COLOR block the camera keeps. Keeping them out means writes at the photo-to-video switch, the path behind #53.
+- **B:** `mx_photo` has no `MC_B` check, unlike `ss_photo`. On the camera B reads code 0 and the switch gives photo,
+  so B keeps its looks. In om-emu B reads 62 and would count as video. Analysis only.
+- Test `video-keeps-the-stock-tables` (emu_test.py): the fake COLOR job of `look-tables-match-the-model`, a photo
+  pass then a video pass (rc_in's mode code 10) of a look with split toning and curves. The video tables must equal
+  the camera's. On upstream main (v0.30.3) it is `caught` (entry 1: 145, camera 78). Suite 27 of 27 on the fix. The
+  Glow gate has no om-emu test: the live view request path is camera-only.
+- Camera check: video and S&Q with a look that has split toning, curves and Glow, after a photo in the same power-on.
+  The image must look stock. Photos in P / A / S / M / B and a custom mode must keep the full look.
+- **Camera, first try (crombach, 2026-11-16; build `bdfe521e…abf3`, GUIDES `0df6729b…86ed`, on top of
+  `feature/dial-label-per-page`): one quick reboot** while switching films in the Picture Mode menu. The screen went
+  black and the shutter closed, then it came back. crombach: it looks like the v0.30 test 12 reboot ("Test 12 camera,
+  first report", and "Reboot when resetting many films before a half-press"). The card's CADLOG.TXT was still the
+  15:32 one from v0.30.3: no release came after the flash. Cause unknown. It is not tied to this branch yet.
+- **Reproduced (crombach, camera, 2026-11-16):** scroll through the films in the Picture Mode menu with the right
+  arrow, held or pressed quickly, until the camera reboots. It happens every time. No film reset or edited, only the
+  films' defaults. Moving between films is much slower than between COLOR profiles with no film (a leak? guess). The
+  CADLOG after it has only the next power-on (the log is written at a release). Its films with changes read
+  "none", where the 15:32 log had 3. crombach says no film was reset, so how they were cleared is not known.
+- om-emu (P, the Picture Mode list, `right` with no waits): 60 and 120 presses are clean ("nothing unusual") on this
+  build. At 300 the om-emu node process is killed (exit -9, no log, about 1.4 GB). The same happens on upstream main
+  (v0.30.3 code), so the stop is not from this branch. Whether it is om-emu's own memory or the camera's code is not
+  known.
+- **Also on the v0.30.3 release (crombach, camera, 2026-11-16; `60b6d954…f546` from `patch.py --release v0.30.3`):
+  the same scrolling reboots it.** So it is older than this branch. Filed as #72. The #68 build is back on the card
+  for the video test.
+- **Camera-tested (crombach, 2026-11-16; on `feature/dial-label-per-page` c430a40, E1479999.BIN `3beac2ce…`, GUIDES.BIN
+  `56e88eeb…`): "Looks good. I didn't run into any issues, and the video and S&Q look normal."** Video and S&Q
+  stay stock. Photos keep their looks.
+- **A movie from the photo position (crombach, camera, 2026-11-16): stock.** A button mapped to recording in the photo
+  Button Function menu starts a movie with the switch at photo (CB161282.MOV; CADLOG: M, mode code 0, switch 2). It
+  "looked stock". So the photo position's movie gets none of our looks. Why is not known: the camera may change the
+  mode code while it records, or that movie's frames may not reach `st_run` / `s_lv6` as a COLOR job. That part is
+  a guess. No recording flag is needed for now.
