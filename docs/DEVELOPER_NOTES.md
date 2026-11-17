@@ -394,7 +394,7 @@ Stock: OLY_E_147_1100_0000_0000_3.BIN sha 8c133084…696d, main 5e8d376e…7d59.
 - The looks are only as good as the preview model (`src/preview.ts`) is of the camera; check a film on the camera
   before trusting it for anything critical.
 
-## v0.30.4 release (try/v0.30.4 = main v0.30.3 + fix/72-record-keep + PR #70 + PR #73; test 5, camera-tested 2026-11-17)
+## v0.30.4-alpha (try/v0.30.4 = main v0.30.3 + fix/72-record-keep + PR #70 + PR #73; test 5, camera-tested 2026-11-17; GitHub pre-release)
 
 - #72: `gx_map` holds `el_pk` (the group's record keep, `cm_hp`) while the Picture Mode list (GUI state 0x0418) or the
   super control panel (0x0403) stays open (no state change, or one between the two), and keeps the record once at the
@@ -407,8 +407,8 @@ Stock: OLY_E_147_1100_0000_0000_3.BIN sha 8c133084…696d, main 5e8d376e…7d59.
   label-size tests now take the sizes from the drawing code (raqm and non-raqm builds differ by a few bytes).
 - PR #73 (crombach, #68): `st_run` and `s_lv` leave video and S&Q to the camera (`mx_photo`); `s_lv`'s body moved
   to `.ext11` (`s_lv6`). Test `video-keeps-the-stock-tables`.
-- `firmware/VERSION` "v0.30.4 (#72 fix + PR #70 + #73; camera-tested)", 47 characters as test 5's: main.bin differs only
-  in that string, the code-block tag and the built-in GUIDES CRC (48 bytes). E1479999.BIN 2814bfde…c0e; `patch.py`
+- `firmware/VERSION` "v0.30.4-alpha (#72 fix, PR #70, PR #73; tested)", 47 characters as test 5's: main.bin differs only
+  in that string, the code-block tag and the built-in GUIDES CRC (47 bytes). E1479999.BIN 90a0325a…7bd; `patch.py`
   makes it by default; `--release v0.30.3` still makes 60b6d954…. Extras as v0.30.3.
 
 ## v0.30.3 release (try/v0.30.3 = main v0.30.2 + feature/faster-halation h7 / h8 + PR #69 + the debug log change; test 3, camera-tested 2026-11-17)

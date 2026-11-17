@@ -1,7 +1,8 @@
-# Caduceus for OM-3 v0.30.4
+# Caduceus for OM-3 v0.30.4-alpha (test version)
 
 **No more reboot when you switch films fast, clearer labels on the color wheel, and our looks kept out of video.**
-Firmware camera-tested (2026-11-17, test 5; only its name was changed to v0.30.4).
+A test version (a GitHub pre-release): v0.30.3 stays the current version. Firmware camera-tested (2026-11-17, test 5;
+only its name was changed to v0.30.4-alpha).
 
 **Fixed**
 - **Switching films fast rebooted the camera**
@@ -27,7 +28,7 @@ film you had before. Press OK, MENU or half-press first and the new film is kept
 
 Everything else is as in [v0.30.3](../v0.30.3/NOTES.md).
 
-**Make it and copy it:** run the launcher and press Return (or `python3 firmware/patch.py --release v0.30.4`). Copy
+**Make it and copy it:** run the launcher and press Return (or `python3 firmware/patch.py --release v0.30.4-alpha`). Copy
 `DCOLYMP` and flash it (hold OK, then switch the camera on). Your films, changes, custom modes and button settings stay
 in the camera. **Coming from v0.29.x or older?** Also put `CURVES.BIN` in the `OM3MOD` folder for the regraded films.
 
@@ -35,4 +36,4 @@ Going back: make v0.30.3 and copy its `DCOLYMP`.
 
 The files here are the patch (only the bytes Caduceus for OM-3 adds; no OM firmware), the optional extras
 (`CURVES.BIN`, `LOOKS.BIN`, `DEBUG.TXT`, the photo code kit, all as in v0.30) and the expected checksums. Full list
-of changes: [CHANGELOG](../../CHANGELOG.md#v0304).
+of changes: [CHANGELOG](../../CHANGELOG.md#v0304-alpha-test-version).
