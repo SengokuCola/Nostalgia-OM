@@ -6674,3 +6674,7 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   move to that area, so B follows the crop's short side (as the live view frame line). research/border/model.py
   `crop_area` models it; emu_check.py has five crop cases (XPan in 4:3 and 16:9 buffers, 21:9, 5:4, a buffer already
   the crop's shape) and pokes Image Aspect per case (emu_hl.mjs `pokes`): **14 of 14 bit-exact**.
+- **Round 7 suite** (build of d9c2c2c = the package `test-builds/2026-11-17-crop-round-7`, E1479999.BIN
+  `1cd2f94c…6c41`): **47 pass** (border-matches-the-model with the crop cases), **2 FAIL**: `static:hook-list` (five
+  crop hooks for the owner's OK: hook_crs, hook_crb, hook_crg, hook_crh, and hook_crp 0x6057fb1b, the playback info
+  diagnosis, playback only) and `static:changed-bytes`.
