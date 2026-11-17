@@ -893,7 +893,11 @@ xb_tex:
  cmp 5,d1
  beq 9f
 3:
- movbu d0,(xb_tl)                 /* ft9: Glow / Clarity too (Grainy Film's list) */
+ mov a1,a0                        /* better grain g2: the Film Grain strength 1..5 (the level is on) and Grain Size */
+ call GS_EFF,[d2,d3,a2],16        /* 0..2 of this COLOR (editor.s gs_eff; uses a0, a1; keeps a2 = the job) */
+ inc d1
+ movbu d1,(xb_tz)                 /* our tile's size 1..3 (Fine / Medium / Coarse) */
+ movbu d0,(xb_tl)                 /* ft9: Glow / Clarity too (Grainy Film's list); g2: the strength (xb_c1e's gains) */
  ARTB d1
  movbu d1,(xb_tart)
  mov a2,a3
@@ -923,7 +927,7 @@ xb_tex:
  movhu d3,(4,sp)
  movbu (44,a3),d0
  movbu d0,(6,sp)
- movbu (xb_tl),d0                 /* better grain g1: the key's 4th byte = 0x80 + our tile's size (the camera's own
+ movbu (xb_tz),d0                 /* better grain g1: the key's 4th byte = 0x80 + our tile's size (the camera's own
                                      are TXPF's 1 or 3): Grainy Film never gets our tile, nor we its, from the cache */
  or 0x80,d0
  movbu d0,(7,sp)
@@ -934,7 +938,7 @@ xb_tex:
  mov (10280,a2),a0
  mov sp,a1
  add 4,a1
- movbu (xb_tl),d0                 /* g1: while TXGET runs, the builder's tile is ours (editor.s tr_sz / tr_ld) */
+ movbu (xb_tz),d0                 /* g1: while TXGET runs, the builder's tile is ours (editor.s tr_sz / tr_ld) */
  movbu d0,(TG_OWN)
  call TXGET,[d2,d3,a2,a3],28
  clr d1
@@ -992,32 +996,33 @@ xb_c1e:
  mov d1,(152,a2)
  bra 9f
 2:
- cmp 3,d0
+ cmp 5,d0                         /* g2: the strength 1..5 */
  bls 1f
- mov 3,d0
+ mov 5,d0
 1:
  add d0,d0
  mov xb_tgain-2,a0
  add d0,a0
  movhu (a0),d1                    /* the texture's Y gain (+148 low half) */
- movhu (6,a0),d0                  /* g1: its Cb / Cr gains (+148 high half, +152; the second input's three gains,
+ movhu (10,a0),d0                 /* g1: its Cb / Cr gains (+148 high half, +152; the second input's three gains,
                                      as +96 / +100 are the photo's: combiner cases 0x60504bad / 0x60504c8c) */
  mov d0,(152,a2)
  asl 16,d0
  or d0,d1
  mov d1,(148,a2)
- movhu (12,a0),d1                 /* the output's Y offset (+180 low half; rc2a: camera-confirmed as Y): our tile's
+ movhu (20,a0),d1                 /* the output's Y offset (+180 low half; rc2a: camera-confirmed as Y): our tile's
                                      Y sits at 48 (8-bit), added as it is -> -(4 x 48 x Y gain / 1024) (10-bit) */
  movhu d1,(180,a2)
 9:
  rets
  .balign 2
-xb_tgain:                         /* g1: Y gain by Grain level (g1: the level is the tile's size; one strength) */
- .hword 1024, 1024, 1024
-xb_tcgain:                        /* g1: Cb / Cr gain (our tile's chroma sigma 16 -> about 7) */
- .hword 448, 448, 448
-xb_tbias:                         /* -(4 x 48 x Y gain / 1024), 16 bits */
- .hword -192 & 0xffff, -192 & 0xffff, -192 & 0xffff
+xb_tgain:                         /* g2: Y gain by the Film Grain strength 1..5 (g1, camera: 1024 about today's Med = 3;
+                                     today's Low / High about 0.6 / 1.5 of it, so films' Low / Med / High -> 2 / 3 / 5) */
+ .hword 400, 650, 1024, 1280, 1536
+xb_tcgain:                        /* Cb / Cr gain: 0.4375 of Y's, as g1 (our tile's chroma sigma 16 -> 7 at 3) */
+ .hword 175, 284, 448, 560, 672
+xb_tbias:                         /* -(4 x 48 x Y gain / 1024), 16 bits (g1, camera: -192 kept the brightness) */
+ .hword -75 & 0xffff, -122 & 0xffff, -192 & 0xffff, -240 & 0xffff, -288 & 0xffff
 
 /* xb_wl (ft8): `calls` from s_wl in the work-list builder 0x604b8cf7, a0 = job, before it picks the list by the
  * job's key (job+5352). A COLOR still (11) that already has our texture (job+8324, made at the set-up) and whose
@@ -2526,7 +2531,10 @@ xb_gt:                            /* camera-route grain level of the last captur
  .byte 0
 xb_tx:                            /* ft1: 1 = xb_su gave this still a texture, 2 = attached to xb_rq */
  .byte 0
-xb_tl:                            /* ft2: that still's Grain level (1 / 3: combiner 1 with key 11, 2: with GF II's key) */
+xb_tl:                            /* ft2: that still's Grain level (1 / 3: combiner 1 with key 11, 2: with GF II's key);
+                                     g2: its Film Grain strength 1..5 */
+ .byte 0
+xb_tz:                            /* g2: that still's grain tile size 1..3 (Grain Size Fine / Medium / Coarse) */
  .byte 0
 xb_ck:                            /* ft3: 1 = xb_lg answers combiner 1 for this configuration */
  .byte 0

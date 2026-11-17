@@ -1363,6 +1363,9 @@ e_rst:
  mov (12,sp),d0                   /* colour mix: and its mix off */
  add -2197,d0
  call mx_zk,[d2],8
+ mov (12,sp),d0                   /* g2: and its Film Grain strength / size follow the level (0 now): G 0 */
+ add -2197,d0
+ call gs_zk,[d2],8
  mov 1,d0
  movbu d0,(DIRTY,a2)              /* saved to the card on the next half-press */
  cmp 0,d2
@@ -2660,7 +2663,7 @@ pm_list:                          /* item ids, in the order the owner reads them
                                    * the colour wheel), tone (Contrast, Highlight & Shadow, Blacks, Whites), white balance
                                    * (A-B, G-M), detail (Sharpness, Noise Filter = NR), lens (Vignette Correction =
                                    * VigFix, Shading), finish (Film Grain Effect = Grain) */
- .long 111, MX_IT, RG_IT, 5397, TB_IT, AB_IT, 5398, BK_IT, 8, 7, NR_IT, VF_IT, 5399, GL_IT, HL_IT, 5400, FR_IT   /* borders: + Border (last).  colour menu (test 7, owner-approved spec): pages of five: the film and its colour in the camera's order (mix, curves, wheel, split tone balance), white balance and tone, detail / lens / light, grain. v0.25: Shading back,
+ .long 111, MX_IT, RG_IT, 5397, TB_IT, AB_IT, 5398, BK_IT, 8, 7, NR_IT, VF_IT, 5399, GL_IT, HL_IT, GS_IT, SZ_IT, FR_IT   /* better grain g2: Film Grain Effect (5400, Off / Low / Med / High) -> our strength slider GS_IT and the Grain Size row SZ_IT. borders: + Border (last).  colour menu (test 7, owner-approved spec): pages of five: the film and its colour in the camera's order (mix, curves, wheel, split tone balance), white balance and tone, detail / lens / light, grain. v0.25: Shading back,
                                     Glow / Clarity and Frame rows; AB_IT = the WB grid (no G-M row) */
 .set PM_N, (. - pm_list) / 4
 
@@ -2700,6 +2703,10 @@ pm_list:                          /* item ids, in the order the owner reads them
 .set HL_IT, 5380                  /* v0.28 Halation slider row (class 12, slot +30, 0..5) */
 .set HLB, 0x7ed0                  /* its bar ids + k (row 13; row 12 is WGB) */
 .set TB_IT, 5379                  /* v0.28 split-tone Balance slider row (class 13, slot +33, -5..+5) */
+.set GS_IT, 5388                  /* better grain g2: the Film Grain strength slider (class 15, 0..5; gs_eff / gs_wr) */
+.set SZ_IT, 5387                  /* g2: the Grain Size choice row (class 16: 0 Fine, 1 Medium, 2 Coarse) */
+.set GSB, 0x7e90                  /* g2: their bar ids + k (row 9: the films' FLB rows end at 0x7e83) */
+.set SZB, 0x7e98
 .set RG_IT, 5378                  /* rgb-curves: the RGB curves row (the H&S row's cases; rgbcurves.inc) */
 .set MX_IT, 5377                  /* colour mix: the Mix row (the H&S row's cases too; colourmix.inc) */
 .set TBB, 0x7ee0                  /* its bar ids + k (row 14) */
@@ -2716,6 +2723,10 @@ pm_list:                          /* item ids, in the order the owner reads them
 .set ST_BDR, 0x7f07                 /* borders: "Border" (was "Frame") */
 .set ST_HAL, 0x7f08                 /* v0.28 "Halation" */
 .set ST_TBL, 0x7f09                 /* v0.28 "Tone Balance" */
+.set ST_GZT, 0x7f0a                 /* g2: "Grain Size", then "Grain Size: Fine" / "... Medium" / "... Coarse", "Coarse" */
+.set ST_GZ0, 0x7f0b
+.set ST_CRS, 0x7f0e
+.set ST_MED, 0x7f0f                 /* g2: "Med" (the strip: the camera's "Medium" is too wide for a cell, om-emu) */
 .set IC_BK, 0x7f80                /* our picture ids (ic_get answers them; the camera's table has ~20000 slots) */
 .set IC_WH, 0x7f81
 .set IC_AB, 0x7f82
@@ -2736,6 +2747,8 @@ pm_list:                          /* item ids, in the order the owner reads them
                                    * ic_list 8. b1b tried the camera's Frame picture 832: 82 x 62, too big for the 46 x 46
                                    * slot (owner: "too large and already cut off"); the camera has no smaller one */
 .set IC_END, 0x7f8e
+.set IC_GR, 0x7f78                /* g2: the Film Grain slider icon (mkicons PICTURES[14]), then "Size" over Fine / Med / */
+.set IC_Z0, 0x7f79                /* Coarse (PICTURES[15..17], the left column, 100 x 76): ic_ent entries 14..17 */
 .set IC_WB, 0x7f8f                 /* v0.25 the WB grid row's left cell (wb_desc, drawn at run time) */
 .set FV0, 100                     /* v0.24 film list: picture-mode values FV0 + j for film j (COLOR k = j / 5, look j % 5 + 1) */
 .set NF, 20
@@ -2799,6 +2812,10 @@ hl_tab:
  .long 54, HLB, 55, HLB + 1, 56, HLB + 2, 64, HLB + 3
 tb_tab:
  .long 54, TBB, 55, TBB + 1, 56, TBB + 2, 64, TBB + 3
+gs_tab:                           /* g2 */
+ .long 54, GSB, 55, GSB + 1, 56, GSB + 2, 64, GSB + 3
+sz_tab:
+ .long 54, SZB, 55, SZB + 1, 56, SZB + 2, 64, SZB + 3
 .balign 8
 sw11_tab:                         /* the row switches 0x615511cc and 0x6155134c (16 entries, full with our rows) */
  .space 32 * 8                    /* re-hashed by build.py into 32 entries */
@@ -2817,6 +2834,8 @@ it_tab:                           /* the stock 17 item entries (filled by build.
                                                                    * Frame choice row, as Vignette Correction) */
  .long HL_IT, 0, 0, 0, hl_title, 0, 10 << 16, 0, 0, 0          /* v0.28: icon 10 = IC_HL */
  .long TB_IT, 0, 0, 0, tb_title, 0, 11 << 16, 0, 0, 0          /* v0.28: icon 11 = IC_TB */
+ .long GS_IT, 0, 0, 0, gs_title, 0, 12 << 16, 0, 0, 0          /* g2: a slider as Halation; icon 12 = IC_GR */
+ .long SZ_IT, sz_title, sz_l0, 3, 0, sz_l1, 3, 0, sz_l2, 3    /* g2: a choice row as Noise Filter */
  .long RG_IT, 0, 0, 0, 0x6154bd18, 0x1b, 0, 0, 0, 0             /* rgb-curves: as H&S's entry (item 5398) */
  .long MX_IT, 0, 0, 0, 0x6154bd18, 0x1b, 0, 0, 0, 0             /* colour mix: the same */
 bk_title:
@@ -2842,6 +2861,12 @@ hl_title:
  .long 0x6154b480
 tb_title:
  .short 4, ST_TBL
+ .long 0x6154b480
+gs_title:                         /* g2: the camera's own "Film Grain Effect" (string 2778), the row's title until now */
+ .short 4, 2778
+ .long 0x6154b480
+sz_title:
+ .short 4, ST_GZT
  .long 0x6154b480
 nr_title:
  .short 4, 188                    /* string 188 "Noise Filter" */
@@ -2894,6 +2919,19 @@ wb_l1:                            /* the left column: the WB± picture over the 
  OPT 0, 3, IC_WB
 wb_l2:                            /* the strip (under the grid): the camera's WB± picture */
  OPT 0, 3, 12545
+sz_l0:                            /* g2 Grain Size: the title with its value */
+ OPT 0, 4, ST_GZ0
+ OPT 1, 4, ST_GZ0 + 1
+ OPT 2, 4, ST_GZ0 + 2
+sz_l1:                            /* the left column: "Size" over Fine / Med / Coarse */
+ OPT 0, 3, IC_Z0
+ OPT 1, 3, IC_Z0 + 1
+ OPT 2, 3, IC_Z0 + 2
+sz_l2:                            /* the strip: the camera's "Fine" (1146), our "Med" (its "Medium", 1084, is too wide for
+                                     a cell, as "Standard" for Noise Filter) and "Coarse" */
+ OPT 0, 4, 1146
+ OPT 1, 4, ST_MED
+ OPT 2, 4, ST_CRS
 nr_s2v:                           /* NR slot value 1..4 (index 0..3) -> Noise Filter value; 0 Camera: the camera's own */
  .byte 0, -1, -2, 1
 nr_v2s:                           /* Noise Filter value -2..+1 (index + 2) -> slot value */
@@ -2963,8 +3001,20 @@ gr_lc:
  bra 9f
 11:
  cmp TB_IT,d0                     /* v0.28 Tone Balance */
- bne 9f
+ bne 12f
  mov tb_tab,a3
+ mov 4,d2
+ bra 9f
+12:
+ cmp GS_IT,d0                     /* g2 Film Grain strength */
+ bne 13f
+ mov gs_tab,a3
+ mov 4,d2
+ bra 9f
+13:
+ cmp SZ_IT,d0                     /* g2 Grain Size */
+ bne 9f
+ mov sz_tab,a3
  mov 4,d2
 9:
  jmp lc_back                      /* 0x611d19b4: cmp 0,a3 */
@@ -2972,6 +3022,18 @@ gr_lc:
 /* st_get <- jmp from the string getter 0x610f56a6 (its frame: `call ..,[d2],8`; d0 id -> a0 the UTF-16 string):
  * our own strings, else as stock (language index 0x610f56bd, then the table lookup at 0x610f56ac). */
 st_get:
+ cmp ST_GZT,d0                    /* g2: "Grain Size" .. "Coarse" (gs_strs) */
+ bcs 50f
+ cmp ST_MED + 1,d0
+ bcc 50f
+ mov d0,d2
+ add -ST_GZT,d2
+ asl2 d2
+ mov gs_strs,a0
+ add d2,a0
+ mov (a0),a0
+ ret [d2],8
+50:
  cmp ST_VIG,d0
  bne 1f
  mov vig_str,a0
@@ -3075,6 +3137,22 @@ hal_str:                          /* v0.28 "Halation"; colour menu (test 7): "Ha
  .short 72, 97, 108, 97, 116, 105, 111, 110, 32, 69, 102, 102, 101, 99, 116, 0
 tbl_str:                          /* v0.28 "Tone Balance"; colour menu (test 7): "Split Tone Balance" */
  .short 83, 112, 108, 105, 116, 32, 84, 111, 110, 101, 32, 66, 97, 108, 97, 110, 99, 101, 0
+gzt_str:                          /* g2: "Grain Size", then ": Fine" / ": Medium" / ": Coarse", "Coarse" */
+ .short 71, 114, 97, 105, 110, 32, 83, 105, 122, 101, 0
+gz0_str:
+ .short 71, 114, 97, 105, 110, 32, 83, 105, 122, 101, 58, 32, 70, 105, 110, 101, 0
+gz1_str:
+ .short 71, 114, 97, 105, 110, 32, 83, 105, 122, 101, 58, 32, 77, 101, 100, 105, 117, 109, 0
+gz2_str:
+ .short 71, 114, 97, 105, 110, 32, 83, 105, 122, 101, 58, 32
+crs_str:
+ .short 67, 111, 97, 114, 115, 101, 0
+med_str:
+ .short 77, 101, 100, 0
+ .balign 4
+gs_strs:
+ .long gzt_str, gz0_str, gz1_str, gz2_str, crs_str, med_str
+ .balign 2
  .balign 16
 std_str:                          /* "Std" */
  .short 83, 116, 100, 0
@@ -3129,6 +3207,12 @@ ch_id:
  CHC hl_f, HLB, f2c_obj           /* v0.28 Halation slider */
  CHC tb_f, TBB, f2c_obj           /* v0.28 Tone Balance slider */
  CHC fr_f, FRB, f2c_obj           /* borders: the Border slider (was the Frame choice row) */
+ CHC gs_f, GSB, f2c_obj           /* g2: the Film Grain strength slider */
+ CHC sz_a, SZB, cha_back          /* g2: the Grain Size choice row (as Noise Filter) */
+ CHC sz_b, SZB, chb_back
+ CHC sz_c, SZB, chc_back
+ CHC sz_d, SZB, chd_back
+ CHC sz_f, SZB, chf_back
  CHC bw_a, BWB, cha_back          /* v0.28 Blacks / Whites grid row: as the WB grid row */
  CHC bw_b, BWB, chb_back
  CHC bw_c, BWB, chc_back
@@ -3153,6 +3237,9 @@ lc_wg:
  bra 1f
 lc_bw:
  mov BK_IT,d2
+ bra 1f
+lc_sz:                            /* g2 Grain Size */
+ mov SZ_IT,d2
 1:
  mov (20,sp),a3
  mov 1,d0
@@ -3241,6 +3328,16 @@ sl_slot:
  add -BWB,d2
  cmp 4,d2
  bcs 2f
+ mov 15,d1                        /* g2 Film Grain strength, Grain Size */
+ mov d3,d2
+ add -GSB,d2
+ cmp 4,d2
+ bcs 2f
+ mov 16,d1
+ mov d3,d2
+ add -SZB,d2
+ cmp 4,d2
+ bcs 2f
  mov 1,d1
  cmp 7,d3
  beq 1f
@@ -3273,6 +3370,12 @@ sl_slot:
  beq 1f
  mov 12,d1                        /* v0.28 Halation */
  cmp HL_IT,d3
+ beq 1f
+ mov 15,d1                        /* g2 */
+ cmp GS_IT,d3
+ beq 1f
+ mov 16,d1
+ cmp SZ_IT,d3
  beq 1f
  mov 13,d1                        /* v0.28 Tone Balance */
  cmp TB_IT,d3
@@ -3309,6 +3412,18 @@ sl_slot:
 
 /* sl_val: d1 class, a0 slot -> d0 the row's value (Sharp -5..+2, Grain 0..3, NR -2..+1, VigFix -1..0). */
  .macro SL_VAL
+ cmp 15,d1                        /* g2: Film Grain strength 0..5 / Grain Size 0..2 (gs_eff: the slot's level and the
+                                     curves record's spare byte) */
+ bcs 80f
+ cmp 17,d1
+ bcc 80f
+ mov d1,d3
+ call gs_eff,[d2,d3,a2],16        /* keeps a3; d0 strength, d1 size */
+ cmp 15,d3
+ beq 99f
+ mov d1,d0
+ bra 99f
+80:
  cmp 14,d1                        /* v0.28 Blacks / Whites grid row: draw its left cell (mode 1); value 0 */
  bne 85f
  mov 1,d0
@@ -3567,6 +3682,18 @@ sl_gb:
  exthu d2
  add -BWB,d2
  cmp 4,d2
+ bcs 90f
+ mov 15,a3                        /* g2 Film Grain strength */
+ mov d0,d2
+ exthu d2
+ add -GSB,d2
+ cmp 4,d2
+ bcs 90f
+ mov 16,a3                        /* g2 Grain Size */
+ mov d0,d2
+ exthu d2
+ add -SZB,d2
+ cmp 4,d2
  bcc \miss
 90:
  .if \p
@@ -3595,8 +3722,13 @@ sl_cnt:
  beq 6f
  cmp 14,a3
  beq 6f
- mov 6,d0                         /* v0.28: 12 Halation 0..5 */
+ mov 6,d0                         /* v0.28: 12 Halation 0..5; g2: 15 Film Grain 0..5 */
  cmp 12,a3
+ beq 6f
+ cmp 15,a3
+ beq 6f
+ mov 3,d0                         /* g2: 16 Grain Size Fine / Medium / Coarse */
+ cmp 16,a3
  beq 6f
  mov 11,d0                        /* v0.28: 13 Tone Balance -5..+5 */
  cmp 13,a3
@@ -3636,9 +3768,14 @@ sl_cnt:
  beq 99f
  cmp 14,a3
  beq 99f
- clr d0                           /* v0.28: 12 Halation 0, 6 */
+ clr d0                           /* v0.28: 12 Halation 0, 6; g2: 15 Film Grain 0, 6 */
  mov 6,d1
  cmp 12,a3
+ beq 99f
+ cmp 15,a3
+ beq 99f
+ mov 3,d1                         /* g2: 16 Grain Size 0, 3 */
+ cmp 16,a3
  beq 99f
  mov -5,d0                        /* v0.28: 13 Tone Balance -5, 11 */
  mov 11,d1
@@ -3784,6 +3921,15 @@ sl_set0:
  beq 7f
  cmp 14,a3                        /* v0.28 Blacks / Whites grid row: nothing either */
  beq 7f
+ cmp 15,a3                        /* g2 Film Grain strength / Grain Size -> gs_row */
+ bcs 41f
+ cmp 17,a3
+ bcc 41f
+ call gs_row,[d2,d3,a2,a3],40     /* keeps d0, a0, a1, a2 -> d1 0 stored */
+ cmp 0,d1
+ bne 7f
+ jmp s_dirty
+41:
  cmp 12,a3
  bne 14f
  cmp 0,d1                         /* v0.28 Halation 0..5 -> +30 */
@@ -3979,6 +4125,8 @@ rw_bar:
  beq 5f
  cmp FR_IT,d0                     /* borders: Border 0..5, as Halation */
  beq 5f
+ cmp GS_IT,d0                     /* g2: Film Grain 0..5, as Halation */
+ beq 5f
  cmp TB_IT,d0                     /* v0.28 Tone Balance: -5..+5 */
  beq 3f
  cmp AB_IT,d0
@@ -4107,6 +4255,10 @@ rv_chk:
  cmp 4,d0
  bcs 1f
  movhu (a0),d0
+ add -GSB,d0                      /* g2: the Film Grain bar */
+ cmp 4,d0
+ bcs 1f
+ movhu (a0),d0
  add -FRB,d0                      /* borders: the Border bar */
  cmp 4,d0
  bcc 2f
@@ -4219,6 +4371,16 @@ ic_get:
  add d1,a0
  retf [],0
 20:
+ cmp IC_GR,d1                     /* g2: IC_GR .. IC_Z0 + 2 -> ic_ent entries 14..17 */
+ bcs 24f
+ cmp IC_Z0 + 3,d1
+ bcc 24f
+ add 14 - IC_GR,d1
+ asl2 d1
+ mov ic_ent,a0
+ add d1,a0
+ retf [],0
+24:
  cmp IC_BK,d1
  bcs ic_stk
  cmp IC_END,d1
@@ -5107,9 +5269,11 @@ ic_list:
  .long 0xffff, 7, 7, IC_GL         /* v0.25: 9 = Glow / Clarity */
  .long 0xffff, 7, 7, IC_HL         /* v0.28: 10 = Halation */
  .long 0xffff, 7, 7, IC_TB         /* v0.28: 11 = Tone Balance */
+ .long 0xffff, 7, 7, IC_GR         /* g2: 12 = Film Grain */
 ic_lend:
 ic_ent:                           /* the slot word of each of our pictures, in firmware/mkicons.py PICTURES order */
  .long ic_d0, ic_d1, ic_d2, ic_d3, ic_d4, ic_d5, ic_d6, ic_d7, ic_d8, ic_d9, ic_d10, ic_d11, ic_d12, ic_d13
+ .long ic_d14, ic_d15, ic_d16, ic_d17   /* g2: ids IC_GR, IC_Z0..IC_Z0 + 2 (ic_get) */
 /* descriptors <6H3I> as the stock pictures': format 14, w, h, 8, 0, 0, size, payload, flags; build.py fills w, h,
  * size and payload (the streams from firmware/mkicons.py, packed into ic_pay, by their uncached address 0xa...) */
  .macro ICD n
@@ -5131,6 +5295,10 @@ ic_d\n:
  ICD 11
  ICD 12
  ICD 13
+ ICD 14
+ ICD 15
+ ICD 16
+ ICD 17
 .balign 8
 /* ------------------------------------------------------------------ v0.28 film WB (w3)
  * Owner: a film (and each COLOR's own settings) remembers the camera's WB last used with it, as its HSL does; one
@@ -5323,10 +5491,10 @@ fw_apply:
  call manager,[d2,d3,a2,a3],68
  ret [d2,d3,a2,a3],32
 
-.section .ext12,"ax"               /* v0.28: moved out of the full ext11 */
+.section .ext13,"ax"               /* g2: moved to ext13 (the GX4-proven reserve; ext12 is nearly full); v0.28: out of the full ext11 */
  .balign 8
 ic_pay:
- .space 17152                     /* v0.25: 14 pictures (build.py checks the fit; A-B blank; v0.28: "Halo" in Frame's place; colour menu test 7: + 256 for the pictures; borders: + 512 for the Border icon in G-M's place) */
+ .space 22864                     /* v0.25: 14 pictures (build.py checks the fit; A-B blank; v0.28: "Halo" in Frame's place; colour menu test 7: + 256 for the pictures; borders: + 512 for the Border icon in G-M's place); g2: + 5712 for the Film Grain icon and the three Size cells */
 ic_pend:
 .section .ext11,"ax"
 
@@ -5370,6 +5538,10 @@ st_chk:
  add -FRB,d0                      /* borders: the Border bar */
  cmp 4,d0
  bcs 1f
+ movhu (a1),d0
+ add -GSB,d0                      /* g2: the Film Grain bar */
+ cmp 4,d0
+ bcs 1f
  clr d0
  mov d0,(a0)
  jmp stp_back
@@ -5406,6 +5578,8 @@ rd_a:
  clr d3
 5:
  cmp HL_IT,d0                     /* v0.28 h6 Halation 0..5: +-0, then +1..+5 (no -1..-5 entries) */
+ beq 51f
+ cmp GS_IT,d0                     /* g2: Film Grain 0..5, as Halation */
  beq 51f
  cmp FR_IT,d0                     /* borders: Border 0..5, as Halation */
  bne 6f
@@ -5466,6 +5640,8 @@ rd_b:
  clr d3
 5:
  cmp HL_IT,d0                     /* v0.28 h6 Halation (as rd_a) */
+ beq 51f
+ cmp GS_IT,d0                     /* g2: Film Grain (as rd_a) */
  beq 51f
  cmp FR_IT,d0                     /* borders: Border (as rd_a) */
  bne 6f
@@ -7858,6 +8034,19 @@ fl_isdef:
  inc d2
  cmp 18,d2
  bcs 1b
+ mov (4,sp),d0                    /* g2: the Film Grain / Grain Size bars -> gs_def */
+ exthu d0
+ mov d0,d1
+ add -GSB,d1
+ cmp 4,d1
+ bcs 46f
+ add GSB - SZB,d1
+ cmp 4,d1
+ bcc 47f
+46:
+ call gs_def,[d2,d3,a2,a3],28
+ ret [d2,d3,a2],24
+47:
  mov (4,sp),d0                    /* film test 8: our rows (Grain, NR, VigFix, Blacks, Whites, A-B, G-M: base + k) */
  exthu d0
  add -GRB,d0
@@ -8770,13 +8959,242 @@ tg_w:                             /* the last tile's size */
  .byte 0
  .balign 4
 tg_l1:
- .asciz "\r\nGrain tiles (better grain g1): made "
+ .asciz "\r\nGrain tiles (better grain g2): made "
 tg_l2:
  .asciz ", failed "
 tg_l3:
  .asciz ", last size "
 tg_l4:
  .asciz ", last time (ms) "
+ .balign 4
+
+/* ------------------------------------------------------------------ better grain g2: the Film Grain and Grain Size rows
+ * Owner (2026-11-15, the mockup): Film Grain a slider Off, 1..5 (replacing Off / Low / Med / High) and a Grain Size row
+ * Fine / Medium / Coarse under it; films saved with Low / Med / High become 2 / 3 / 5. Per COLOR k and so per film:
+ * - slot +53 (record +51) = the old level 0 Off, 1 Low, 2 Med, 3 High, kept in step (gs_lv): older firmware, the CPU
+ *   grain, LookLab and the photo code read it as before, and BUNDLES / EDITS stay in their ranges for going back;
+ * - G = the curves record's spare byte (rgbcurves.inc: a slot's 8 kept bytes, the last one zero until now), live[k]
+ *   +25 in cv_ram: it goes wherever COLOR k's curves go (EDITS records ed[r], the per-mode sets, the record in M), and
+ *   firmware up to v0.30.3 copies it along without reading it. G = 0: the strength from the level (gs_dv: Low 2, Med 3,
+ *   High 5) and Medium; else 0x80 | size << 3 | strength. gs_wr writes 0 whenever the level gives the same, so a film
+ *   as built has G = 0 (and its '*' counts G != 0 as a change: ck_kset / ck_jset). */
+gs_lv:                            /* strength 0..5 -> level */
+ .byte 0, 1, 1, 2, 3, 3
+gs_dv:                            /* level 0..3 -> strength */
+ .byte 0, 2, 3, 5
+ .balign 2
+
+/* gs_ga: `call gs_ga,[d2,d3,a2],16`, a1 = a slot (P + 32 + 64k) -> a0 = &G (cv_ram live[k] +25), or 0 when there is
+ * no settings block or a1 is not COLOR k's slot. Uses d0, d1, a0. */
+gs_ga:
+ mov 0,a0
+ PVAL 9f
+ mov a1,d0
+ sub a2,d0
+ add -32,d0
+ cmp 256,d0
+ bcc 9f
+ btst 63,d0
+ bne 9f
+ lsr 6,d0                         /* k */
+ mov d0,d1
+ asl 4,d1
+ mov d0,d2
+ asl 3,d2
+ add d2,d1
+ add d0,d1
+ add d0,d1                        /* 26 k (CV_ESZ) */
+ mov cv_ram + CV_LV + 25,a0
+ add d1,a0
+9:
+ ret [d2,d3,a2],16
+
+/* gs_eff: `call gs_eff,[d2,d3,a2],16`, a0 = COLOR k's slot -> d0 strength 0..5 (0: the level is Off), d1 size 0 Fine,
+ * 1 Medium, 2 Coarse. Uses a0, a1 (keeps a3). Also the code block's xb_tex (GS_EFF). */
+gs_eff:
+ mov a0,a1
+ call gs_ga,[d2,d3,a2],16
+ movbu (53,a1),d2                 /* the level */
+ mov 1,d1                         /* Medium */
+ clr d3                           /* G */
+ cmp 0,a0
+ beq 2f
+ movbu (a0),d3
+ btst 0x80,d3
+ bne 1f
+ clr d3
+ bra 2f
+1:
+ mov d3,d1
+ lsr 3,d1
+ and 3,d1
+ cmp 3,d1
+ bcs 2f
+ mov 1,d1
+2:
+ clr d0
+ cmp 0,d2
+ beq 9f                           /* Off */
+ mov d3,d0
+ and 7,d0
+ cmp 0,d0
+ beq 3f
+ cmp 6,d0
+ bcs 9f                           /* G's strength 1..5 */
+3:
+ cmp 4,d2                         /* else the level's: Low 2, Med 3, High 5 (an older 4 / 5: 5) */
+ bcs 4f
+ mov 3,d2
+4:
+ mov gs_dv,a0
+ add d2,a0
+ movbu (a0),d0
+9:
+ ret [d2,d3,a2],16
+
+/* gs_wr: `call gs_wr,[d2,d3,a2],16`, a0 = COLOR k's slot, d0 strength 0..5, d1 size 0..2 (the callers check them):
+ * slot +53 <- its level; G <- 0 when the level gives the same strength and the size is Medium, else 0x80 | size << 3 |
+ * strength. Uses d0, d1, a0, a1. */
+gs_wr:
+ mov a0,a1
+ mov d0,d2
+ mov d1,d3
+ mov gs_lv,a0
+ add d2,a0
+ movbu (a0),d0
+ movbu d0,(53,a1)
+ mov gs_dv,a0
+ add d0,a0
+ movbu (a0),d0
+ clr d1
+ cmp d2,d0
+ bne 1f
+ cmp 1,d3
+ beq 2f
+1:
+ mov d3,d1
+ asl 3,d1
+ or d2,d1
+ or 0x80,d1
+2:
+ mov d1,d3
+ call gs_ga,[d2,d3,a2],16
+ cmp 0,a0
+ beq 9f
+ movbu d3,(a0)
+9:
+ ret [d2,d3,a2],16
+
+/* gs_row: `call gs_row,[d2,d3,a2,a3],40` from sl_set0, a3 class 15 (Film Grain 0..5) / 16 (Grain Size 0..2), d1 the
+ * new value, d2 = P + 64k -> d1 0 stored, 1 out of range. Keeps d0, a0, a1 (s_dirty reads them) and a2. Locals (4) d0,
+ * (8) a0, (12) a1, (16) the value, (20) the slot. */
+gs_row:
+ mov d0,(4,sp)
+ mov a0,(8,sp)
+ mov a1,(12,sp)
+ mov d1,(16,sp)
+ add 32,d2
+ mov d2,(20,sp)
+ mov d2,a0
+ call gs_eff,[d2,d3,a2],16        /* d0 strength, d1 size now */
+ cmp 15,a3
+ bne 2f
+ mov (16,sp),d0
+ cmp 6,d0
+ bcc 8f
+ bra 3f
+2:
+ mov (16,sp),d1
+ cmp 3,d1
+ bcc 8f
+3:
+ mov (20,sp),a0
+ call gs_wr,[d2,d3,a2],16
+ clr d1
+ bra 9f
+8:
+ mov 1,d1
+9:
+ mov (4,sp),d0
+ mov (8,sp),a0
+ mov (12,sp),a1
+ ret [d2,d3,a2,a3],40
+
+/* gs_def: `call gs_def,[d2,d3,a2,a3],28` (fl_isdef: the row's '*' and Reset guide), d0 = GSB + k or SZB + k, a2 = P
+ * -> d0 1 when the row is as built: Film Grain = its film's level as a strength (no film there: Off), Grain Size =
+ * Medium; else 0. Locals (4) 0 Film Grain / 1 Grain Size, (8) k, (12) strength now. */
+gs_def:
+ exthu d0
+ clr d1
+ add -GSB,d0
+ cmp 4,d0
+ bcs 1f
+ add GSB - SZB,d0
+ mov 1,d1
+1:
+ mov d1,(4,sp)
+ mov d0,(8,sp)
+ asl 6,d0
+ add 32,d0
+ mov a2,a0
+ add d0,a0
+ call gs_eff,[d2,d3,a2],16
+ mov d0,(12,sp)
+ mov (4,sp),d0
+ cmp 0,d0
+ beq 3f
+ clr d0                           /* Grain Size: Medium */
+ cmp 1,d1
+ bne 9f
+ mov 1,d0
+ bra 9f
+3:
+ mov (8,sp),d2
+ call fl_film,[],0                /* d0 = film j, or -1 */
+ clr d1                           /* no film: Off */
+ cmp 0,d0
+ blt 5f
+ mov d0,d3
+ mov (LPTR,a2),a0
+ call fl_has,[],0
+ clr d1
+ cmp 0,d0
+ beq 5f
+ mov (LPTR,a2),a0
+ mov d3,d0
+ asl 6,d0
+ add d0,a0
+ movbu (32 + 51,a0),d1            /* the film's level as built (its LOOKS record +51) */
+ cmp 4,d1
+ bcs 4f
+ mov 3,d1
+4:
+ mov gs_dv,a0
+ add d1,a0
+ movbu (a0),d1
+5:
+ mov (12,sp),d2
+ clr d0
+ cmp d1,d2
+ bne 9f
+ mov 1,d0
+9:
+ ret [d2,d3,a2,a3],28
+
+/* gs_zk: `call gs_zk,[d2],8`, d0 = k: COLOR k's G <- 0 (e_rst, the whole-profile reset: the level is 0 by then). */
+gs_zk:
+ mov d0,d1
+ asl 4,d1
+ mov d0,d2
+ asl 3,d2
+ add d2,d1
+ add d0,d1
+ add d0,d1
+ mov cv_ram + CV_LV + 25,a0
+ add d1,a0
+ clr d0
+ movbu d0,(a0)
+ ret [d2],8
  .balign 4
 
 /* ------------------------------------------------------------------ split toning (v0.26)
@@ -10200,6 +10618,7 @@ lg_now:
 81:
  LGY
  call lg_ckn,[d2,d3,a2,a3],24     /* v0.30 test 10: curves / mix */
+ call lg_gsn,[d2,d3,a2,a3],24     /* better grain g2: each COLOR's Film Grain strength and Grain Size */
 9:
  ret [d2,d3,a2,a3],24
 
@@ -11781,6 +12200,42 @@ lg_kcmb:
  call lg_kw,[],0
  ret [d2,d3,a2,a3],24
 
+/* lg_gsn: `call lg_gsn,[d2,d3,a2,a3],24` (better grain g2): NOW's "Film Grain on COLOR 1-4: Off, 3 Medium, ..." (each
+ * COLOR's strength 1..5 and Grain Size from gs_eff; Off when its level is 0). */
+lg_gsn:
+ LGS lg_gz0
+ PVAL 9f
+ clr d3
+1:
+ cmp 0,d3
+ beq 2f
+ LGS lg_cm
+2:
+ mov d3,d0
+ asl 6,d0
+ add 32,d0
+ mov a2,a0
+ add d0,a0
+ call gs_eff,[d2,d3,a2],16        /* d0 strength, d1 size */
+ cmp 0,d0
+ bne 3f
+ LGS lg_gz1
+ bra 4f
+3:
+ mov d1,d2
+ LGD
+ LGS lg_sp
+ mov d2,d0
+ mov lg_gw,a0
+ call lg_nth,[],0
+ call lg_s,[],0
+4:
+ inc d3
+ cmp 4,d3
+ bcs 1b
+9:
+ ret [d2,d3,a2,a3],24
+
 /* lg_ckn: `call lg_ckn,[d2,d3,a2,a3],24` (v0.30 test 10): NOW's curves and mix: each COLOR's slot against the
  * built-in of its film (CURVES.BIN, ck_bik; as test 9's ck_txt), then the picture mode's COLOR's 15 curve values (R, G,
  * B x 5 points), its 6 mix values and whether each part follows its film's built-in (the slot's flags). */
@@ -13003,6 +13458,12 @@ lg_rst:
  .asciz "Reset"
 lg_q0:
  .asciz "\r\nCurves / mix on COLOR 1-4: "
+lg_gz0:                           /* better grain g2 */
+ .asciz "\r\nFilm Grain on COLOR 1-4: "
+lg_gz1:
+ .asciz "Off"
+lg_gw:
+ .ascii "Fine\000Medium\000Coarse\000"
 lg_qw:
  .ascii "none\000none (its film has some)\000its film's\000changed\000"
 lg_q1:
