@@ -5306,6 +5306,8 @@ Owner: "yes, build the noise filter fix" (the row's '*' follows the camera's own
   PB173135..176, no gap in the numbers. The log is from a later power-on (no photos). Not reproduced. Tag pattern: on
   2026-11-16 the owner's Single / Sequential were codes 30 / 32 (no "Anti-shock" tag); today 0 / 11 (tagged), so a
   camera setting between the two days changes the code; the reporter's 32 is the untagged Sequential.
+- Asked the reporter (owner's OK, 2026-11-17, #50 comment): Single, their drive mode's name, S-AF in place of C-AF,
+  and a new CADLOG.TXT. Waiting.
 
 
 ## LookLab: RGB curves and colour mix (2026-11-15; feature/looklab-rgb-curves; browser-checked, not live)
