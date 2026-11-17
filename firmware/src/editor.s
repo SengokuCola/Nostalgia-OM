@@ -5015,6 +5015,17 @@ gx_map:
  movbu (el_pk),d1                 /* after a picture-mode change, once the first look is done: the group keeps */
  cmp 0,d1                         /* what it shows now (cm_hp, as at a shutter event), so a power-off keeps it */
  beq 03f
+ mov (8,sp),a0                    /* v0.30.4 (#72): not while the Picture Mode list stays open (no state change, */
+ movhu (a0),d1                    /* d0 0 or 0x0418): at every list step it changed a COLOR's film in the record */
+ cmp 0x1804,d1                    /* many times a second and rebooted the camera (probe J, camera: none without */
+ bne 76f                          /* it). It runs once as the list closes (OK, MENU, a half-press). */
+ mov d0,d1
+ exthu d1
+ cmp 0,d1
+ beq 03f
+ cmp 0x0418,d1
+ beq 03f
+76:
  movbu (cm_init),d1
  cmp 0,d1
  beq 03f

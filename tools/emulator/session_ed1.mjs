@@ -77,6 +77,7 @@ if (process.env.MMIO) Debugger.attach(lab.sim, { lab }).traceMmio((r) => fs.appe
 // SHOTAT=PC,... (hex): during a frames: token, also shoot the screen as it stands when the code reaches each PC
 // (at_PC_N.png, no scene tick first), the state the camera's display can show mid-update.
 let shotArm = false, shotN = 0;
+const counts = new Map();   // count: / expect:count: (PC -> { any, d0, n })
 if (process.env.SHOTAT) Debugger.attach(lab.sim, { lab }).traceExec((r) => { if (shotArm) shot('at_' + r.pc.toString(16) + '_' + shotN++ + '.png', false); },
   { pcs: process.env.SHOTAT.split(',').map((x) => parseInt(x, 16) >>> 0) });
 for (const t of SCRIPT.split(/\s+/).filter(Boolean)) {
@@ -139,6 +140,18 @@ for (const t of SCRIPT.split(/\s+/).filter(Boolean)) {
     let n = 0; while ((dd.m.getRegs()[9] >>> 0) !== ((call_at + 7) >>> 0) && n < 5000000) { dd.m.step(); n++; }
     const got = n >= 5000000 ? 'X' : String(dd.m.getRegs()[0] | 0); dd.m.setRegs(saved);
     if (got !== want) { console.error(`expect:isdef ${id}: ${got}, not ${want}`); process.exit(1); }
+  }
+  else if (t.startsWith('count:')) {
+    // count:PC:D0 (v0.30.4, #72) counts, from here, how often the code reaches PC (hex) with d0 = D0 (hex; * any d0);
+    // expect:count:PC=N ends the run with exit 1 unless that count is N (decimal). count: again starts it over.
+    const [pc, d0] = t.slice(6).split(':'), PC = parseInt(pc, 16) >>> 0;
+    let c = counts.get(PC);
+    if (!c) { c = { n: 0 }; counts.set(PC, c); Debugger.attach(lab.sim, { lab }).traceExec((r) => { if (c.any || (r.d0 >>> 0) === c.d0) c.n++; }, { pcs: [PC] }); }
+    c.any = d0 === '*'; c.d0 = c.any ? 0 : parseInt(d0, 16) >>> 0; c.n = 0;
+  }
+  else if (t.startsWith('expect:count:')) {
+    const [pc, want] = t.slice(13).split('='), c = counts.get(parseInt(pc, 16) >>> 0), got = c ? String(c.n) : 'not counted';
+    if (got !== want) { console.error(`expect:count ${pc}: ${got}, not ${want}`); process.exit(1); }
   }
   else if (t === 'strpoke') {
     const dd = Debugger.attach(lab.sim, { lab });

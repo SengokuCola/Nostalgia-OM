@@ -270,6 +270,13 @@ TESTS = {
     'noise-filter-row-follows-the-camera-setting': [
         Boot(NOISE_FILTER_OFF_ROW),
     ],
+    # #72: switching films fast in the Picture Mode list rebooted the camera; the group's record (cm_hp) was kept at
+    # every step. Now none while the list stays open (FILM 1 <-> FILM 2 and the films after), once as it closes (OK).
+    'film-list-keeps-the-record-once-as-it-closes': [
+        Boot('s1 wait wait ok wait ok wait' + ' right wait' * 5 + ' count:{cm_hp}:*' + ' left wait right wait' * 6 +
+             ' right wait' * 6 + ' expect:count:{cm_hp}=0 ok wait wait expect:count:{cm_hp}=1 menu wait wait'
+             ' s1 wait wait poweroff'),
+    ],
     'video-boot-after-photo-boot': [
         Boot('s1 wait wait poweroff'),
         Boot(VIDEO_BOOT, expect=VIDEO_BOOT_LINES, photo_switch=PHOTO_SWITCH_VIDEO),
