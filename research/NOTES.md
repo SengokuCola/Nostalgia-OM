@@ -6745,3 +6745,7 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   st_claim, ub_save, fopen .. fclose, ub_bun, ub_pfl, mx_go). Nothing new runs at start-up.
 - Tests: `crop-save-waits-for-section-6` (poke 0xa32de58c = 0x1f before a power-off at XPan: the next start reads 6,
   no base ratio; on round 7's build "629209c2: 03, not 06": caught) and `static:section-order` (caught on round 7).
+- **Suite (out-cr7b2, E1479999.BIN 85af7365…e479, commit 480e6b2):** 49 pass, including boot-smoke, patch-audit,
+  every crop test, crop-save-waits-for-section-6 and static:section-order; 2 FAIL, as in every crop round:
+  static:hook-list (crs, crb, crg, crh not in hooks.json) and static:changed-bytes (crop.py's data sites), waiting
+  for the owner's OK to record them. Package `test-builds/2026-11-17-crop-round-7b` (private folder).
