@@ -4,7 +4,6 @@ SECTIONS {
   .hook_crb     0x6006120e : { *(.hook_crb) }   /* crop modes: the buffer before the write (after a menu) */
   .hook_crg     0x611cb24d : { *(.hook_crg) }   /* crop round 3: the GUI screen spec's ratio byte */
   .hook_crh     0x60dc4bb1 : { *(.hook_crh) }   /* crop round 5: the live histogram's area (Set_Histogram_CalcMode) */
-  .hook_crp     0x6057fb1b : { *(.hook_crp) }   /* crop round 7: playback info diagnosis (the ratio code's copy) */
   .hook_shutter 0x60415216 : { *(.hook_shutter) }
   .ext1         0x6031e920 : { *(.ext1) }
   .ext4         0x60a8f100 : { *(.ext4) }
@@ -265,4 +264,3 @@ cr_rc_j       = 0x60c0d35f;         /* ratioToConvertSize: mov d0,(4,a1); retf [
 cr_oa_j       = 0x60c14b95;         /* getOutputAspect: mov d0,(16,sp) */
 cr_spec_back  = 0x611cb253;         /* crop round 3: after the screen spec's ratio byte */
 cr_dhm_back   = 0x60dc4bb7;         /* crop round 5: Set_Histogram_CalcMode after its entry */
-cr_pbi_back   = 0x6057fb22;         /* crop round 7: after the play app's ratio code copy */

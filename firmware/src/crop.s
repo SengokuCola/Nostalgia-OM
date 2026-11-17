@@ -15,12 +15,41 @@
  * build: the c4 / c5 run counters and the 0x6043900f counter hook, the playback label diagnosis, the SetValue hook
  * (cr_set: cr_rst's own check covers it), and c6's AF target lists (c6 was the only build with black screens). */
 
+/* Round 7b (round 7 boot-looped the camera: research/NOTES.md "Crop round 7: the boot loop"). The firmware's sections
+ * are copied 1..10 while the camera starts, and code in a section already in runs before the later ones arrive, so
+ * nothing in sections 1..5 may reach .ext11..13 (section 6) unless section 6 is in (tools/test/static_check.py,
+ * section-order). The two lists that section-2 records point to live in sections 1 / 2, and the two store-write hooks
+ * (section 1) go through cr_g1 / cr_g2, which check the camera's own ready bit for section 6 first (SEC_READY, as
+ * its check 0x60045e39 reads it; stock section 1 waits on it before calling section 9, 0x60062210). */
+ .set SEC_READY, 0xa32de58c       /* bit id - 1: section id is in (set at 0x60046064) */
+.section .ext2,"ax"
+cr_vlist:                         /* validator list of 269 (stock 1,3,2,4,9 at 0x60616696; record 0x6061b670, section 2) */
+ .byte 1, 3, 2, 4, 9, 5, 6, 7
+.section .ext1,"ax"
+ .balign 2
+cr_rmap:                          /* the stills rule's allowed values (stock 0x605d100c, 6 entries) + 5, 6, 7 (rule
+                                     0x605d1134, section 2) */
+ .space 9 * 4
+cr_g1:                            /* jmp from 0x60061183 (d0 is free: 0x60060eff sets it) */
+ mov (SEC_READY),d0
+ and 0x20,d0
+ beq 1f
+ jmp cr_sin
+1:
+ mov a1,(12,sp)                   /* section 6 not in yet: the stock instructions */
+ mov a0,a3
+ call cr_ef,[],0
+ jmp cr_sin_back
+cr_g2:                            /* jmp from 0x6006120e (d0 is free: 0x60061214 clears it) */
+ mov (SEC_READY),d0
+ and 0x20,d0
+ beq 1f
+ jmp cr_sbuf
+1:
+ mov 0xa373d280,d3                /* the stock instruction (CR_BUF) */
+ jmp cr_sb_back
 .section .ext12,"ax"
  .balign 4
-cr_vlist:                         /* validator list of 269 (stock 1,3,2,4,9 at 0x60616696) */
- .byte 1, 3, 2, 4, 9, 5, 6, 7
-cr_rmap:                          /* the stills rule's allowed values (stock 0x605d100c, 6 entries) + 5, 6, 7 */
- .space 9 * 4
 cr_stra:                          /* SCP strip lists A / B (stock 0x6155ea2c / 0x6155ea68, 5 x 12 B) + 3 entries */
  .space 8 * 12
 cr_strb:
@@ -309,10 +338,10 @@ cr_rst:
  ret [d2,d3,a2,a3],20
 
 .section .hook_crs,"ax"
- jmp cr_sin                       /* stock 0x60061183: mov a1,(12,sp); mov a0,a3; call 0x60060eff,[],0 */
+ jmp cr_g1                        /* stock 0x60061183: mov a1,(12,sp); mov a0,a3; call 0x60060eff,[],0 */
  .byte 0xcb, 0xcb, 0xcb
 .section .hook_crb,"ax"
- jmp cr_sbuf                      /* stock 0x6006120e: mov 0xa373d280,d3 */
+ jmp cr_g2                        /* stock 0x6006120e: mov 0xa373d280,d3 */
  .byte 0xcb
 .section .ext12,"ax"
 
@@ -530,7 +559,7 @@ cr_dst:
 cr_daf:
  .long 0
 cr_t1:
- .asciz "\r\n\r\nCROP MODES (crop round 7): tag at the first half-press "
+ .asciz "\r\n\r\nCROP MODES (crop round 7b): tag at the first half-press "
 cr_t2:
  .asciz ", Image Aspect then "
 cr_t3:
@@ -589,7 +618,6 @@ cr_txt:                           /* `call cr_txt,[d2,d3,a2,a3],24` */
  LGS cr_t16
  mov (cr_hn),d0
  LGD
- call cr_txt7,[d2,d3,a2,a3],24    /* round 7: the playback info diagnosis */
  ret [d2,d3,a2,a3],24
 
 /* ---- Grid lines inside the strip (crop round 2; camera c5: "the gridlines/guides do not match the framing"). The
@@ -981,93 +1009,5 @@ cr_bdc:
  mov a2,d0
  ret [d2,d3,a2,a3],28
 
-/* ---- Crop round 7: the playback label, a second diagnosis. The label shows entry (code - 1) of a 5-entry picture list
- * (4:3, 3:2, 3:4, 16:9, 1:1) for the photo info's ratio code (GUI item 197, +144 +78), which the play app copies at
- * 0x6057fb1b from its photo info (p + 132 + 22; p = (4,sp), a2 = the GUI's info being filled). Where that code is made
- * (from the photo's size?) is not found. cr_pbi: the stock copy, then once per power-on (after the first shutter
- * event) keep the code and 56 words: p + 0..127, p + 132..163, the GUI info + 32..95, for the log. */
- .balign 4
-cr_pib:                           /* the snapshot: code, then 56 words */
- .space 4 + 224
-cr_pin:
- .byte 0
- .balign 2
-cr_pbi:                           /* jmp from 0x6057fb1b (d2 = p + 132, a2 = the GUI info, (4,sp) = p) */
- movbu (a0),d0                    /* the stock: movbu (a0),d0; mov d2,a0; movbu d0,(78,a2) */
- mov d2,a0
- movbu d0,(78,a2)
- movbu (cr_on),d0
- cmp 0,d0
- beq 9f
- movbu (cr_pin),d0
- cmp 0,d0
- bne 9f
- mov 1,d0
- movbu d0,(cr_pin)
- add -8,sp
- mov d1,(0,sp)
- mov a1,(4,sp)
- movbu (78,a2),d0
- mov d0,(cr_pib)
- mov (12,sp),a0                   /* p (the function's (4,sp)) */
- mov cr_pib + 4,a1
- clr d1
-1:
- mov (d1,a0),d0                   /* p + 0..127 */
- mov d0,(d1,a1)
- add 4,d1
- cmp 128,d1
- bcs 1b
- mov d2,a0                        /* p + 132..163 */
- add 128,a1
- clr d1
-2:
- mov (d1,a0),d0
- mov d0,(d1,a1)
- add 4,d1
- cmp 32,d1
- bcs 2b
- mov a2,a0                        /* the GUI info + 32..95 */
- add 32,a0
- add 32,a1
- clr d1
-3:
- mov (d1,a0),d0
- mov d0,(d1,a1)
- add 4,d1
- cmp 64,d1
- bcs 3b
- mov (0,sp),d1
- mov (4,sp),a1
- add 8,sp
- mov d2,a0                        /* as the stock left it */
-9:
- jmp cr_pbi_back                  /* 0x6057fb22 */
-.section .hook_crp,"ax"
- jmp cr_pbi                       /* stock 0x6057fb1b: movbu (a0),d0; mov d2,a0; movbu d0,(78,a2) */
- .byte 0xcb, 0xcb
-.section .ext12,"ax"
-
-cr_t21:
- .asciz "\r\nCROP PLAYBACK INFO (round 7 diagnosis): code "
-cr_t22:
- .asciz ", p / p+132 / info+32:"
-cr_t23:
- .asciz " "
- .balign 2
-cr_txt7:                          /* `call cr_txt7,[d2,d3,a2,a3],24` from cr_txt */
- LGS cr_t21
- mov (cr_pib),d0
- LGD
- LGS cr_t22
- clr d2
- mov cr_pib + 4,a2
-1:
- LGS cr_t23
- mov (a2),d0
- call lg_h,[],0
- add 4,a2
- inc d2
- cmp 56,d2
- bcs 1b
- ret [d2,d3,a2,a3],24
+/* ---- (Crop round 7's playback info diagnosis, cr_pbi at 0x6057fb1b, is removed: that hook sat in section 2 and jumped
+ * into section 6's extension, and the camera boot-looped. research/NOTES.md "Crop round 7: the boot loop".) */

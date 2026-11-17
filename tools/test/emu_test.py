@@ -263,7 +263,7 @@ GRID_THIRDS = 'menu left ok wait down ok wait down wait down wait down wait ok w
 
 
 def CROP_LINE(tag, then, set_to, after, now):
-    return (rf'^CROP MODES \(crop round \d+\): tag at the first half-press {tag}, Image Aspect then {then}, set to {set_to}, '
+    return (rf'^CROP MODES \(crop round \d+\w*\): tag at the first half-press {tag}, Image Aspect then {then}, set to {set_to}, '
             rf'after {after}, now {now};')
 
 
@@ -272,7 +272,7 @@ def CROP_ASPECT_IS(v):                           # Image Aspect in the camera's 
 
 
 def CROP_NOW(now):
-    return rf'^CROP MODES \(crop round \d+\): .*, now {now};'
+    return rf'^CROP MODES \(crop round \d+\w*\): .*, now {now};'
 
 
 CK_WORDS = ['none', 'none (its film has some)', "its film's", 'changed']   # has values x 2 + differs from the built-in
@@ -370,6 +370,13 @@ TESTS = {
         Boot(f's1 wait wait {PICK_ASPECT(6)} s1 wait wait poweroff', expect=[CROP_NOW(6)]),
         Boot(f'wait wait {CROP_ASPECT_IS(3)} expect:mem:{{cr_on}}=00 s1 wait wait {CROP_ASPECT_IS(6)} poweroff',
              expect=[CROP_LINE('43520006', 3, 6, 6, 6)]),
+    ],
+    # crop round 7b: the two store-write hooks sit in section 1 and their code in section 6, which is copied later while
+    # the camera starts: they wait for the camera's own ready bit for section 6 (0xa32de58c bit 5). With it cleared
+    # (bits for sections 1..5 left), a power-off saves Image Aspect as it is (XPan, 6): no base ratio, no tag.
+    'crop-save-waits-for-section-6': [
+        Boot(f's1 wait wait {PICK_ASPECT(6)} s1 wait wait poke:a32de58c=1f poweroff', expect=[CROP_NOW(6)]),
+        Boot(f'wait wait {CROP_ASPECT_IS(6)} poweroff'),
     ],
     # crop modes: a stock ratio (16:9) is saved as it is, with no tag, and nothing is set at the first half-press.
     'crop-stock-ratio-left-alone': [
