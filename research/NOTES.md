@@ -5849,4 +5849,5 @@ rgb-page-counts-every-click, halation-matches-the-model). Package `test-builds/2
   still open** (no OK / MENU / half-press) comes back on the film from before (v0.30.3: the new one; as before v0.30).
   Leaving the list first, or a half-press, keeps it (`film-kept-with-no-half-press-after-pick` passes). The owner's
   call.
-
+- **Camera-tested (owner, 2026-11-17): v0.30.4 test 4 (`0e5708ea…`): no reboot after 3 minutes; "looks good".** Debug
+  log: nothing unusual. Next (owner): a test merge of PR #70 and PR #73 with this fix before pushing.
