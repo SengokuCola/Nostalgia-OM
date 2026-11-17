@@ -6351,3 +6351,41 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
 - Camera (owner, 2026-11-17, test 1): "borders don't show up in live view". As designed (b1: a pass on the finished
   still, `bd_run` from `xb_gs`; nothing in live view or video, `xb_lv` unchanged), as Halation. A live-view preview
   would be new work (an on-screen overlay, as the frame-lines work, is one way): the owner's call.
+
+## Border preview in live view: a frame line on the grid (2026-11-17; branch feature/border-live-view; emulator only, camera test pending)
+- Owner, after v0.31 alpha test 1: "borders don't show up in live view" -> "Add a live view preview".
+- **How the OM-3 draws its grid** (om-emu, this work): each line rect {x0, y0, x1, y1} is a **line segment** from
+  (x0, y0) to (x1, y1), 2 px wide (x - 1..x, y - 1..y), in the grid colour; a rect is never filled (a wide rect drew a
+  diagonal). Any of the 5 "V" and 3 "H" slots draws any line. So the grid can show the border's inner edge as a frame,
+  not white bars. Filled bars would need the OSD engine's own rectangle call (om-emu knows GPI_DRAW_OSD_RECTANGLE) from
+  the GUI's drawing side: not tried.
+- The four grid builders (0x612380bf rear screen, 0x611cb359, 0x611e4221, 0x611eab68) read the grid with the GUI's
+  setting read 0x610fd8ef (`call ..,[d2,d3,a2,a3],28`, d0 155 / 2047 stills, 446 movie) at 0x6123825e, 0x611cb433,
+  0x611e44d7, 0x611eae1e, then: 7 / 8 picture grids, 0 Off (kind 2), else kind 1 and the line lookup 0x611c78c7 (the
+  value's 68-B record, per screen and aspect; values in the tables: 1 thirds, 5 6x4, 6 golden; the 16:9 frame 9 has
+  tables of its own). The grid item is part of the GUI's screen object (rear: obj + 2668 = {u16, u16 kind, 5 V, 3 H};
+  its place differs from boot to boot in om-emu, 0x62469e7c / 0x6246875c), compared each frame and redrawn on a change.
+  The GUI read caches settings (tables 0x62ce5888 / 5b08 / 5d88, id < 300 / < 1200 / else) and fetches a miss through
+  the settings interface: 111 (the picture mode) is in it.
+- **Build (border preview 1, commit 7af273c):** the four reads -> `bl_gv`: the stock read, then for 155 / 2047 in a photo
+  mode (mx_photo), after the first shutter event (el_hold 0; STATE valid, PVAL), with the picture mode (111 via the GUI
+  read) a COLOR k (fl_cvt) whose slot +50 is 1..5: the value v becomes 0x100 | L << 4 | v. No table holds it, so the
+  lookup misses; its loop end (0x611c7922, frame-lines' hook site) -> `bl_tail`: for our values, v's own lines when v is
+  thirds or golden, then the frame B inside the picture (the table's thirds record: V[0] y0..y1, H[0] x0..x1),
+  B = max(1, min(w, h) 983 L >> 16) (bd_run's width), into the first empty slots; other values as stock. Other grids
+  (Off, 6x4, scale, diagonal, 16:9 frame) show the frame alone while a Border is set. ext12 +488 B.
+- om-emu (rear screen, 4:3: picture x 50..850, y 0..599): Border 3 -> lines on x 75..76 / 823..824, y 25..26 (the
+  bottom line at 573 under the info bar); Border 5 -> x 93..94, y 43..44; Border 1 -> x 58; thirds + Border kept both;
+  Border 0 -> no line; after a power-off with Border 3, no line before the first half-press (el_hold 1 after the early
+  load; STATE 0 without it), the line after it; a video boot with Border 3 and the stills grid on thirds: the stock
+  video grid only. Not seen in om-emu: the EVF and the other screens (their builders are hooked the same way).
+- Tests (emu_test.py): `border-preview-on-at-3-off-at-0`, `border-preview-waits-for-the-first-half-press`,
+  `border-preview-not-in-video`, through the driver's new `expect:pxsame` / `expect:pxdiff` (the rear screen as shot:
+  two pixels the same / different). On v0.31 alpha test 1 the first is `FAIL` (no line).
+- Hooks (reviewed for the start-up rule: before the first shutter event bl_gv is the stock read plus a few memory reads,
+  bl_tail is the stock loop for every value but ours): hook_bga 0x6123825e, hook_bgb 0x611cb433, hook_bgc 0x611e44d7,
+  hook_bgd 0x611eae1e (7 B each, call target only), hook_blk 0x611c7922 (5 B). Not yet in tools/test/hooks.json.
+- Clash: feature/frame-lines (XPan / 21:9, not merged) uses the same loop-end site 0x611c7922 and values 2 / 3: merging
+  both needs one tail that handles both.
+- Package `test-builds/2026-11-17-border-preview-1` (private folder): E1479999.BIN `db1fedfa…a732`, VERSION
+  "v0.31-alpha-dev (border preview 1: frame line in live view)", go-back v0.31 alpha test 1 `9622a965…2576`.
