@@ -155,11 +155,15 @@ NOISE_FILTER_OFF_ROW = (f's1 wait wait {NR_ROW_STAR(False)} poke:{NF_BYTE:x}=fe 
 
 # The wheel's dial label (#64) names the page: Saturation -> Hue -> Luminance -> Shadows -> Highlights -> Saturation.
 # As on the camera, INFO on a single color turns ALL on, and the label stays Sat. The checks read a descriptor's
-# stream size (+12), which differs per picture: update them when the pictures change.
+# stream size (+12), which differs per picture (worked out below from the drawing code).
 U32 = lambda v: v.to_bytes(4, 'little').hex()
 U16 = lambda v: v.to_bytes(2, 'little').hex()
 VDESC = 0xa4cf688c                # the dial label ("Vivid"), 70 x 30
-LABEL_SIZE = {'Sat': 796, 'Hue': 996, 'Lum': 1092, 'Tint': 1028}
+# The label and guide sizes come from the same drawing code as build.py: with and without Pillow's raqm text layout
+# the pictures differ by a few bytes (the release builds use raqm, research/setup.sh), so they are worked out here.
+import mkicons, mklabels  # noqa: E402
+LABEL_SIZE = {t: len(mklabels.encode11(bytes(mklabels.render(mklabels.bitmap(t)).flatten()), 70, 30))
+              for t in ('Sat', 'Hue', 'Lum', 'Tint')}
 LABEL_IS = lambda name: f'expect:mem:{VDESC + 12:x}={U32(LABEL_SIZE[name])}'
 OPEN_WHEEL = 's1 ok ok down down down wait'
 WHEEL_PAGE_LABELS = (f'{OPEN_WHEEL} {LABEL_IS("Sat")} info wait {LABEL_IS("Sat")} info wait {LABEL_IS("Hue")} '
@@ -168,7 +172,9 @@ WHEEL_PAGE_LABELS = (f'{OPEN_WHEEL} {LABEL_IS("Sat")} info wait {LABEL_IS("Sat")
 # On Saturation, GDESC (a single color) reads "Saturation [INFO]" and SDESC (ALL, 175 wide while ours) "Sat. All
 # [INFO]", whether the dial or INFO turned ALL on. Off Saturation, SDESC is the camera's again.
 GDESC, SDESC = 0xa49ecdf8, 0xa49edf88
-SATURATION_GUIDE, SAT_ALL_GUIDE, SDESC_STOCK_SIZE = 4132, 3516, 4471
+_SAT_PICS = mkicons.sat_pictures()
+SATURATION_GUIDE, SAT_ALL_GUIDE = (len(mkicons.encode11(bytes(a.flatten().tolist()), 175, 50)) for a in _SAT_PICS[1:])
+SDESC_STOCK_SIZE = 4471
 SDESC_IS = lambda width, size: f'expect:mem:{SDESC + 2:x}={U16(width)} expect:mem:{SDESC + 12:x}={U32(size)}'
 WHEEL_SAT_GUIDES = (f'{OPEN_WHEEL} expect:mem:{GDESC + 12:x}={U32(SATURATION_GUIDE)} {SDESC_IS(175, SAT_ALL_GUIDE)} '
                     f'sub+1 wait expect:val:2197=255 {SDESC_IS(175, SAT_ALL_GUIDE)} sub-1 wait '
