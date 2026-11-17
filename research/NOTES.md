@@ -5283,7 +5283,7 @@ Owner: "yes, build the noise filter fix" (the row's '*' follows the camera's own
   log counts 83 photos this power-on but PB173036 (the first after switch-on) is not on the card; and the last mode
   tried (code 0, events 49-54) counted no photo and wrote none. The reporter's exact combination (code 32 at about
   1/2 s) is still untested.
-- Drive code 0 = Single + anti-shock (PB173134 below).
+- Drive code 0 = Single (PB173134 below; its EXIF says "Anti-shock", see the correction below).
 - **Owner's camera with the default 20 films (2026-11-17, test 5; the v0.30.3 LOOKS.BIN made new to the camera by one
   byte after FILM 20's name, CURVES.BIN of v0.30.3, NAMES.BIN off the card):** the camera took the set ("from the card
   (films the camera never had)", CURVES "taken", matches 20). FILM 1 Portra 400 with grain changed, A, f/4, ISO 200,
@@ -5295,6 +5295,12 @@ Owner: "yes, build the noise filter fix" (the row's '*' follows the camera's own
   Natura 1600 in both sets). USING.md says a film changed by a new set starts again as built and the others keep
   their changes, so a fresh set should show no '*' (except FILM 1's grain): this looks inverted (films that had changes
   reset, the others keep the old film's values). Not checked in om-emu yet.
+  **Next power-on (owner, 2026-11-17): "they look normal to me"; the log lists films with changes: none.** So the
+  list was only in the log of the power-on that took the set (stale comparison in that power-on: guess); not a fault
+  the owner can see.
+- Correction: the EXIF "Anti-shock" tag is not the menu's anti-shock mode (owner: "I am not on antishock mode"; drive 0
+  is the owner's plain Single and its photos carry the tag too). Likely the electronic first curtain. So drive 11 is
+  the owner's usual Sequential and 32 the Sequential whose photos lack the tag (guess: Sequential H, mechanical shutter).
 
 
 ## LookLab: RGB curves and colour mix (2026-11-15; feature/looklab-rgb-curves; browser-checked, not live)
