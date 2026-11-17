@@ -6348,3 +6348,6 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   only where both sides added lines (NOTES, emu_test.py: VIDEO and GRAINMIX both kept, session_ed1.mjs: keep: and
   expect:p: both kept) and VERSION ("v0.31-alpha-dev (test 1: v0.30.4 + borders + grain g2c)"). xblock.s merged on
   its own (PR #70 and grain). om-emu: 39 / 39. E1479999.BIN `9622a965…2576`. Camera test pending.
+- Camera (owner, 2026-11-17, test 1): "borders don't show up in live view". As designed (b1: a pass on the finished
+  still, `bd_run` from `xb_gs`; nothing in live view or video, `xb_lv` unchanged), as Halation. A live-view preview
+  would be new work (an on-screen overlay, as the frame-lines work, is one way): the owner's call.
