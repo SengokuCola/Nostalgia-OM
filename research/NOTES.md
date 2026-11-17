@@ -6755,3 +6755,30 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   PB173202..206 all XPan 5184 x 1920; 203..206 have the white Border on all four edges (edge means 255), 202 none
   (taken before the Border was set). CROP MODES line: "... now 6; display 3, 900 x 506; screen specs mapped 0;
   histogram area 800 x 600, trimmed 14". **Camera-tested: the Border inside the crop, and round 7b's start-up.**
+
+## Crop round 8: the playback label, a diagnosis (2026-11-17; emulator + analysis, camera run pending)
+- **Where the label comes from (analysis):** the playback screen (0x61150638.., item 197's copy at (32,sp) =
+  screen + 1024, its photo info at (24,sp) = + 180) sets the label (item 34) at 0x611509bc..c2 to index code - 1
+  of 4:3, 3:2, 3:4, 16:9, 1:1 from (24,sp) + 78; 0x6128abe0 ignores an index past the widget's count. The photo's
+  file holds the crop: maker note (ImageProcessing) AspectRatio 0x1112 = **6 6** for the owner's XPan PB173203
+  (AspectFrame 0 0 5183 1919, ExifImageWidth / Height 5184 x 1920). The play module reads it at 0x618dfcde (tag
+  4370, its first byte stored at 0x618dfd0f), called from 0x618de947 (the photo's sizes by id from the WH4
+  tables, crop.py patches their rows 5..7) and 0x618dfb14 (the 160 x 120 thumbnail). 0x618e2e66 turns id 1 into 3
+  for three sizes (0x603865c8). No id -> code table (u8 / u16 / u32, indexed by id or id - 1) and no id switch found
+  on the way to the play app's p + 132 + 22 (copies 0x6057ef01, 0x60565096; 0x60570883 clears it).
+- **om-emu cannot show it:** in its playback (an XPan photo it took) neither 0x6057f9ed (the play app's info fill),
+  0x618dfcde, 0x618de947 nor 0x618e2e66 runs; item 197 is zeros but for the shutter, aperture, date and file number
+  strings (UTF-16 at +184, +198, +262, +276, +322..); the code is 0, so 0x611509bc is not reached (0x6115099d
+  hides the label).
+- **Round 8 (diagnosis only, nothing on screen changes):** `.hook_crl` 0x611509bc (section 7) -> cr_pbl, and
+  `.hook_crm` 0x618dfd0f (section 9) -> cr_pmr, both in sections loaded after section 6. From the first half-press:
+  the last four AspectRatio reads (seq, id, the call's d0, its caller) and label updates (seq, code); the first
+  label update with a code keeps item 197 (416 B) as A, the next with a different item 197 as B, each with the reads
+  then. The log line "CROP PLAYBACK (round 8 diagnosis)" prints A's non-zero words and B's words not as A's. The
+  next build can then pick the crop up where it is (item 197, or the last read for the photo shown).
+- **Start-up:** sections 1..5 are byte-identical to round 7b (camera: normal start-ups); the changes are .ext12,
+  6 B in section 7 and 10 B in section 9. static:section-order passes.
+- **Suite** (out-cr8, E1479999.BIN 37a0a294…bba2, commit 64c989c): **50 pass**, among them the new
+  crop-playback-info-kept (direct calls: info X kept as A, X again not kept, a different Y kept as B; cr_pmr's
+  stock instructions, d1 / a1 kept, the read kept), and **2 FAIL** as before: static:hook-list (now crs, crb, crg,
+  crh, crl, crm) and static:changed-bytes. Package `test-builds/2026-11-17-crop-round-8`.
