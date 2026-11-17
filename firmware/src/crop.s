@@ -572,3 +572,190 @@ cr_txt:                           /* `call cr_txt,[d2,d3,a2,a3],24` */
  movhu (CR_DSP + 12),d0
  LGD
  ret [d2,d3,a2,a3],24
+
+/* ---- Grid lines inside the strip (crop round 2; camera c5: "the gridlines/guides do not match the framing"). The
+ * shooting screen's grid reads 269 through cr_gv (a crop -> the ratio it sits in), so its lines are 16:9's (4:3's for
+ * 5:4). With a crop set, the border preview's grid read (bl_gv, editor.s) also marks the grid value BL_C: the line
+ * lookup misses it, and bl_tail copies the value's own lines (thirds, golden, 6x4) and jumps to cr_gx, which maps
+ * them from the picture's place (the table's thirds record) into the crop's strip, centred in it (XPan / 21:9: full
+ * width; 5:4: full height), and gives bl_tail the strip as the picture's place, so a Border's frame line sits inside
+ * the strip too. Photo modes (mx_photo), stills grid (155 / 2047), after the first shutter event (cr_on). */
+ .balign 4
+cr_gid:                           /* the id bl_gv read */
+ .long 0
+cr_px:                            /* the picture's place (x0, y0, w, h) and the strip's (x0, y0, w, h) */
+ .long 0
+cr_py:
+ .long 0
+cr_pw:
+ .long 0
+cr_ph:
+ .long 0
+cr_sx:
+ .long 0
+cr_sy:
+ .long 0
+cr_sw:
+ .long 0
+cr_sh:
+ .long 0
+
+/* cr_gm: `call cr_gm,[d2,d3,a2,a3],28` from bl_gv (after its own work), a0 -> the grid value: + BL_C when a crop is
+ * set and the value draws lines (thirds 1, 6x4 5, golden 6, or a Border's value). */
+cr_gm:
+ movbu (cr_on),d0
+ cmp 0,d0
+ beq 9f
+ movbu (CR_A1),d0
+ cmp 5,d0
+ bcs 9f
+ cmp 8,d0
+ bcc 9f
+ mov (cr_gid),d0
+ cmp 155,d0
+ beq 1f
+ cmp 2047,d0
+ bne 9f
+1:
+ mov a0,a2
+ call mx_photo,[],0               /* uses d0, a0 */
+ cmp 0,d0
+ beq 9f
+ mov (a2),d0
+ mov d0,d1
+ and 0xffffff00,d1
+ cmp BL_V,d1
+ beq 2f                           /* a Border's value: its frame goes in the strip too */
+ cmp 0,d1
+ bne 9f
+ cmp 1,d0
+ beq 2f
+ cmp 5,d0
+ beq 2f
+ cmp 6,d0
+ bne 9f
+2:
+ or BL_C,d0
+ mov d0,(a2)
+9:
+ ret [d2,d3,a2,a3],28
+
+ .macro CRMAP off, p0, pn, s0, sn  /* the u16 at (\off,a0): from the picture's (\p0, \pn) to the strip's (\s0, \sn) */
+ movhu (\off,a0),d0
+ mov (\p0),d1
+ sub d1,d0
+ bcc 7771f
+ clr d0                           /* (never left of / above the picture) */
+7771:
+ mov (\sn),d1
+ mul d1,d0
+ clr d1
+ mov d1,mdr
+ mov (\pn),d1
+ divu d1,d0
+ mov (\s0),d1
+ add d1,d0
+ movhu d0,(\off,a0)
+ .endm
+
+/* cr_gx <- jmp from bl_tail (its frame: no calls; it returns through the stack, so mdr is free): a2 = bl_r (5 + 3 line
+ * rects {x0, y0, x1, y1}), a3 = bl_q (the picture's x0, x1, y0, y1). -> jmp bl_cgb with bl_q = the strip. */
+cr_gx:
+ movhu (0,a3),d0
+ mov d0,(cr_px)
+ movhu (2,a3),d1
+ sub d0,d1
+ mov d1,(cr_pw)
+ movhu (4,a3),d0
+ mov d0,(cr_py)
+ movhu (6,a3),d3
+ sub d0,d3
+ mov d3,(cr_ph)
+ movbu (CR_A1),d0
+ cmp 5,d0
+ bne 1f
+ mov d3,(cr_sh)                   /* 5:4 in 4:3: full height, width h x 5 / 4 */
+ mov d3,d0
+ mov 5,d2
+ mul d2,d0
+ lsr 2,d0
+ mov d0,(cr_sw)
+ bra 3f
+1:
+ mov d1,(cr_sw)                   /* XPan / 21:9 in 16:9: full width, height w x 24 / 65 or w x 9 / 21 */
+ mov d1,d2
+ cmp 6,d0
+ bne 2f
+ mov 24,d0
+ mov 65,d3
+ bra 21f
+2:
+ mov 9,d0
+ mov 21,d3
+21:
+ mul d2,d0
+ clr d1
+ mov d1,mdr
+ divu d3,d0
+ mov d0,(cr_sh)
+3:
+ mov (cr_sh),d0                   /* never larger than the picture */
+ mov (cr_ph),d1
+ cmp d1,d0
+ bls 31f
+ mov d1,(cr_sh)
+31:
+ mov (cr_sw),d0
+ mov (cr_pw),d1
+ cmp d1,d0
+ bls 32f
+ mov d1,(cr_sw)
+32:
+ mov (cr_pw),d0                   /* centred */
+ mov (cr_sw),d1
+ sub d1,d0
+ lsr 1,d0
+ mov (cr_px),d1
+ add d1,d0
+ mov d0,(cr_sx)
+ mov (cr_ph),d0
+ mov (cr_sh),d1
+ sub d1,d0
+ lsr 1,d0
+ mov (cr_py),d1
+ add d1,d0
+ mov d0,(cr_sy)
+ mov (cr_pw),d0
+ cmp 0,d0
+ beq 8f
+ mov (cr_ph),d0
+ cmp 0,d0
+ beq 8f
+ clr d3                           /* each line rect that is not empty */
+4:
+ mov a2,a0
+ add d3,a0
+ mov (a0),d0
+ mov (4,a0),d1
+ or d1,d0
+ beq 7f
+ CRMAP 0, cr_px, cr_pw, cr_sx, cr_sw
+ CRMAP 2, cr_py, cr_ph, cr_sy, cr_sh
+ CRMAP 4, cr_px, cr_pw, cr_sx, cr_sw
+ CRMAP 6, cr_py, cr_ph, cr_sy, cr_sh
+7:
+ add 8,d3
+ cmp 64,d3
+ bcs 4b
+8:
+ mov (cr_sx),d0                   /* the strip -> bl_q */
+ movhu d0,(0,a3)
+ mov (cr_sw),d1
+ add d1,d0
+ movhu d0,(2,a3)
+ mov (cr_sy),d0
+ movhu d0,(4,a3)
+ mov (cr_sh),d1
+ add d1,d0
+ movhu d0,(6,a3)
+ jmp bl_cgb

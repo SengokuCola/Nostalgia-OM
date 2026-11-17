@@ -249,6 +249,10 @@ def PICK_ASPECT(n):
     return 'ok down down right right' + ' main+1 wait' * n
 
 
+# Custom menu > Grid Settings > Displayed Grid > thirds (the 4th row), back to shooting.
+GRID_THIRDS = 'menu left ok wait down ok wait down wait down wait down wait ok wait s1 wait wait'
+
+
 def CROP_LINE(tag, then, set_to, after, now):
     return (rf'^CROP MODES \(crop round \d+\): tag at the first half-press {tag}, Image Aspect then {then}, set to {set_to}, '
             rf'after {after}, now {now};')
@@ -367,6 +371,17 @@ TESTS = {
     # grid (id 6: 16:9's 39 x 19) have rows for the crops. om-emu does not run that code, so this checks the tables.
     'crop-xpan-display-area-and-af-grid': [
         Boot('s1 wait wait expect:mem:602ed136=84034c01 expect:mem:60a3cd36=27001300 poweroff'),
+    ],
+    # crop round 2: at XPan the thirds sit in the strip (rear screen: 16:9 picture y 47..552, XPan strip y 134..465):
+    # a vertical line at x 300 inside the strip, none above it; a horizontal one at y 243 (the strip's first third).
+    'crop-grid-thirds-in-the-xpan-strip': [
+        Boot(f's1 wait wait {PICK_ASPECT(6)} s1 wait wait {GRID_THIRDS} '
+             'expect:pxdiff:300,300,310,300 expect:pxsame:300,120,310,120 expect:pxdiff:450,243,450,250 poweroff'),
+    ],
+    # crop round 2: a stock ratio keeps the camera's own thirds (16:9: the line at x 300 runs above y 134; y 215).
+    'crop-grid-stock-ratio-unchanged': [
+        Boot(f's1 wait wait {PICK_ASPECT(1)} s1 wait wait {GRID_THIRDS} '
+             'expect:pxdiff:300,120,310,120 expect:pxdiff:450,215,450,225 poweroff'),
     ],
     # better grain g2: the Film Grain row steps 0..5 (no step past 5) and keeps the old level byte in step (5 -> High 3,
     # 2 -> Low 1); the Grain Size row (Medium -> Coarse); both kept over a power-off (the debug log's NOW line).

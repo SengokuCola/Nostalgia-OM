@@ -20625,9 +20625,11 @@ wl_blk:                           /* the heap copy of wl_tab (fl_mk), 0 = none *
  * Border L the value v (0..15) becomes BL_V | L << 4 | v: a line grid (kind 1) that no table holds, so the line lookup
  * misses and bl_tail draws it. Frame: (0) call slot, (4) id, then the picture mode, (8) -> the value. */
  .set BL_V, 0x100
+ .set BL_C, 0x200                 /* crop modes (crop.s cr_gm): the lines fit the crop's strip */
 .section .ext12,"ax"
 bl_gv:
  mov d0,(4,sp)
+ mov d0,(cr_gid)                  /* crop modes: the id, for cr_gm (crop.s) */
  mov a0,(8,sp)
  call gui_get,[d2,d3,a2,a3],28    /* the stock read */
  mov d0,d2                        /* its answer, given back */
@@ -20679,6 +20681,8 @@ bl_gv:
  or BL_V,d0
  mov d0,(a0)
 9:
+ mov (8,sp),a0                    /* crop modes: a crop's grid lines go inside the strip (crop.s cr_gm, BL_C) */
+ call cr_gm,[d2,d3,a2,a3],28
  mov d2,d0
  ret [d2,d3,a2,a3],28
 
@@ -20698,9 +20702,12 @@ bl_tail:
  jmp gl_loop                      /* 0x611c78cc: the next record */
 1:
  mov d0,d2
- and 0xffffff00,d2
- cmp BL_V,d2
- beq 2f
+ and 0xfffffc00,d2                /* ours: only bits 8 (BL_V, a Border) and 9 (BL_C, a crop: crop.s cr_gm) above v, L */
+ bne 0f
+ mov d0,d2
+ and 0x300,d2
+ bne 2f
+0:
  jmp gl_ret                       /* 0x611c7927: retf (a miss writes nothing, as stock) */
 2:
  mov d0,(bl_v)
@@ -20722,7 +20729,12 @@ bl_tail:
  cmp 1,d2
  beq 5f
  cmp 6,d2
+ beq 5f
+ cmp 5,d2                         /* crop modes: 6x4 too (a crop's value always misses its own record) */
  bne 6f
+ mov (bl_v),d0
+ and BL_C,d0
+ beq 6f
 5:
  mov a1,a0                        /* v's record -> bl_r */
  mov d1,d3
@@ -20764,6 +20776,15 @@ bl_tail:
  movhu d1,(2,a3)
  movhu d2,(4,a3)
  movhu d3,(6,a3)
+ mov (bl_v),d0                    /* crop modes: the lines and the picture's place -> the crop's strip (crop.s cr_gx) */
+ and BL_C,d0
+ beq bl_cgb
+ jmp cr_gx
+bl_cgb:                           /* (back from cr_gx: the strip in bl_q) */
+ movhu (0,a3),d0
+ movhu (2,a3),d1
+ movhu (4,a3),d2
+ movhu (6,a3),d3
  sub d0,d1                        /* w */
  sub d2,d3                        /* h */
  cmp d1,d3
@@ -20773,6 +20794,9 @@ bl_tail:
  mov (bl_v),d0
  lsr 4,d0
  and 15,d0
+ bne 66f
+ jmp 8f                           /* crop modes: no Border (L 0), no frame */
+66:
  mov 983,d2
  mul d2,d0
  mul d1,d0
