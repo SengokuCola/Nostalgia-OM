@@ -5945,3 +5945,7 @@ rgb-page-counts-every-click, halation-matches-the-model). Package `test-builds/2
   Size: Fine / Medium / Coarse" (om-emu). The Film Grain slider icon (`grain_icon`) still waits for the owner's OK.
   Suite on ff8251b: **29 of 29 pass**. Build f26ff261…842a (VERSION "v0.30.3-dev (grain g2b: strength + size rows)"),
   not packaged until the icon is approved; g2 (`92ab3c99…`) withdrawn, never flashed.
+- **Owner approved the Film Grain icon (2026-11-16: "Icon OK").** Package `test-builds/2026-11-16-grain-g2b`
+  (private folder): E1479999.BIN `f26ff261…842a` (a rebuild of 466bf47 matches), go-backs v0.30.3 `60b6d954…f546` and
+  border test 1c `d8ce3d89…3db3`; TEST-STEPS: the rows, old Low / Med / High -> 2 / 3 / 5, strengths Off / 1 / 3 / 5,
+  sizes, Grain + Border 3 together, per film, no-freeze cases, Grainy Film, the log. Emulator only so far.
