@@ -6520,7 +6520,7 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
 - Package `test-builds/2026-11-17-crop-round-2` (private folder): E1479999.BIN `7a0736fd…8286` (commit d80efbc),
   VERSION "v0.31-alpha-dev (crop round 2: AF target, grid lines)", go-back border preview 1 `db1fedfa…a732`.
 
-## Crop round 3: the AF target reproduced in om-emu, its cause (2026-11-17; emulator + analysis, work in progress)
+## Crop round 3: the AF target reproduced in om-emu, its cause and fix (2026-11-17; emulator, camera test pending)
 - **Camera, round 2 (owner, 2026-11-17):** "still no focus point when moving it. also after taking the pictures it
   still displays 16:9 instead of the actual crop. the grids look good". Grid lines in the strip: **camera-tested**.
   The display / AF grid rows of round 2 did not bring the target back. **Review after a shot: only the label is
@@ -6552,5 +6552,20 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   ratio key -> the base's; (c) 0x61292189 (the screen helper's facade read of 269) -> `cr_gw`. With (a)-(c) and
   without the experiment the target stays missing in om-emu. The CROP MODES log line adds the AF pair and the
   mapped counts.
-- Next: find the fill of the screen struct's ratio / element (then map the ratio there, so every layout follows
-  16:9's), check (a)-(c) are still needed, then a camera build.
+- **Found and fixed (commit 701f9f2):** the struct is the GUI's screen spec. Its builder (0x611cb1c4..) reads Image
+  Aspect through the facade into its object's +1056 (0x611cadba), copies it into the spec's ratio byte at
+  **0x611cb24d** (`mov (8,sp),a0; mov (a0),d0; movbu d0,(9,a3)`; found with a memory watch on one of the spec's
+  copies: 0x6247ab78 is written by 0x611caf29..0x611cb381), and 0x611caf1d picks the element from that byte (default
+  1; 1, 2, 3, 4, 9 only). **`.hook_crg` 0x611cb24d -> cr_spec:** a crop's ratio -> its base (5 -> 1, 6 / 7 -> 3)
+  after the first shutter event; the element and every layout follow. Pinned om-emu: the target and the area outline
+  at XPan and 21:9 (16:9's outline) and 5:4 (4:3's), moved up / up / right exactly as at 16:9.
+- Checked by restoring stock bytes in copies of the build: (b) AF_Target_Actuator's key and (c) the helper's read
+  change nothing on screen with cr_spec in -> both dropped (and the experiment). Kept: (a) `.hook_cra` (the AF
+  driver's pair; camera-only; the log shows "AF pair w:h, mapped n").
+- Test `crop-af-target-drawn-at-xpan` (the outline at x 2 and the Single target at x 506 present at XPan; `--without`
+  round 2: caught). Package `test-builds/2026-11-17-crop-round-3`: E1479999.BIN `7cc7fb5f…16ec` (commit 701f9f2),
+  go-back border preview 1. Playback / review label: still 16:9 (next).
+- **Suite** (build of 701f9f2 = the package, om-emu 0819080): **46 pass, 2 FAIL**: `static:hook-list` (four crop
+  hooks waiting for the owner's OK: hook_crs 0x60061183 8 B, hook_crb 0x6006120e 6 B (round 1, save time only),
+  hook_cra 0x60882acd 16 B, hook_crg 0x611cb24d 6 B (round 3: the stock copy plus one byte read before the first
+  shutter event)) and `static:changed-bytes` (crop.py's data patches).
