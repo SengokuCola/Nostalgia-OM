@@ -6393,3 +6393,76 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   both needs one tail that handles both.
 - Package `test-builds/2026-11-17-border-preview-1` (private folder): E1479999.BIN `db1fedfa…a732`, VERSION
   "v0.31-alpha-dev (border preview 1: frame line in live view)", go-back v0.31 alpha test 1 `9622a965…2576`.
+## Section order audit: released paths from sections 1..5 into later sections (2026-11-17; analysis + om-emu, nothing camera-tested; branch research/section-order)
+- **Scope.** `static:section-order` (from `feature/crop-modes`, "Crop round 7b") on three builds, each rebuilt here:
+  v0.30.3 (byte for byte, E1479999.BIN 60b6d954…), main 78a809e (v0.30.3 + PR #70, #73) and border preview 1
+  (`feature/border-live-view` 27bcd0f, db1fedfa…, byte for byte). With `LATE_RELEASED` emptied it finds **26 entries,
+  not 21**: 13 hooks and 13 data words. v0.30.3 has 23; main adds hook_lv (PR #73, #68); border preview 1 adds
+  hook_trs and hook_trl. v0.26 (34df5bf6…, byte for byte) already has hook_tone, su, wl, sel2, c1e (all reaching
+  section 6) and hook_fx (section 8).
+- **How the camera starts** (om-emu `docs/hle-gaps.md` 4.6.3, 4.6.4, `FIDELITY-NOTES.md` 7.17..7.19; their E147
+  addresses + 0x10021020 = ours; the parts below were read again in the stock code here):
+  - CPU 2's loader (0x600455c5..0x600458de) copies sections 1..8 one after another (0x60045ed5: the copy, then bit
+    id - 1 of 0xa32de590) and posts each section's step 0x60045f44 to CPU 0 (section 8's to CPU 1). It waits for
+    stage 7 (0x60045856) before it posts section 8's step, copies 9, waits for stage 8 (0x60045892), copies 10.
+  - The step runs the section's constructors, then sets bit id - 1 of the ready word 0xa32de58c (0x60046064). Before
+    that, for id < 10, it sets up a region from section id + 1's start to section 10's end in the block 0x99700000
+    (four times; the string "[DbgSup-" follows its table), and for id 10 it clears it (0x6005a7d6). What that unit
+    does with an access inside the region is not known (?). It may trap, so "copied" may not be enough: the ready
+    bit is the safe test, as `cr_g1` / `cr_g2` use.
+  - CPU 0's start tasks wait on the ready word: USTART2 on 2 only, USTART3 on 3 and 4, USTART4 on 6 and 7
+    (0x60219174, 0x6021917d) before the HighLevel (the camera application) starts, USTART5 on 8, 9 and 10. The fast
+    start (USR_FAST_APP, started by stage 1) starts the live view ("Flg-ThroughStart") and can take a picture
+    ("Flg-TakeFunc", "Flg-RhpTake") before it hands over to the HighLevel. Live view's request is built on CPU 2.
+  - The camera's own early code tests before it calls later code: 0x602eee0f / 0x602eee2f (section 1, called from
+    0x601e4270 / 0x601e4285) test stage 6 before calling 0x60ae1144 / 0x60ae3e85 (section 6).
+  - **A gate we already have:** STATE (0x62b4dd16) becomes non-zero only through `st_claim`, after `hl_ok` saw all ten
+    sections copied (SECBITS 0x3ff), and section 10 is copied only after stage 8. So our code behind `PVAL`, STATE or
+    `xp` (the code block, published by the load) runs with sections 1..8 ready.
+  - v0.20 test 1 (above, "v0.20 grain research"): section-8 code reached from the development stage 0x605196b4
+    (0x605196d2) boot-looped the camera; test 1b, the same code in sections 1, 3 and 4, started. So that stage runs
+    during start-up before section 8 is ready.
+- **The table.** "Who reaches it": direct calls in the stock code (pointer-table guesses checked by hand).
+
+  | Entry (site) | In | Reaches | Who reaches the site | During start-up, before the section is in? | Gate |
+  |---|---|---|---|---|---|
+  | hook_shutter 0x60415216 (s2) | all | pr_hook (s1) -> hl_ok, pr_nmd, st_claim, lg_pr / ic_pend (s6), sd_load (s4); further s4 -> s6, s6 -> s7 / s10 | function 0x60415111; its only way in is the `call` at 0x60af1445 (section 6; no pointer word, no immediate, no branch into its body). om-emu: task 164, return 0x60af144c | **No** (analysis + om-emu): section-6 code calls it, in the HighLevel, which starts after USTART4's wait for 6 and 7. The reaches past section 6 are behind `hl_ok` (all copied) or STATE | none |
+  | hook_tone 0x605197d7 (s2) | all since v0.26 | tone (s5), and from every exit of tone (t9) st_run (s6) | the development stage 0x605196b4: stills and live view (camera: split toning in live view, sp4) | **Yes, it runs during start-up** (live view's first picture set-up). Before section 6 is in: not shown. Every start since v0.26 (2026-11-09) took this jump; none failed. A race nothing enforces | G2 |
+  | hook_mx 0x6051485a (s2) | v0.30+ | mx_go (s6) | the matrix function 0x605147a2, called by the same stage (0x605196f6); the site is on every path (join 0x60514852). Camera: colour mix shows in live view (m1) | **Yes** (as hook_tone), since v0.30 (2026-11-15) | G1 |
+  | hook_lv 0x6046b8bb (s2) | main, border preview 1 | s_lv (s2) -> s_lv6 (s6), for picture mode 11 | the live view / movie request (#68) | **Yes**, at a COLOR mode at power-on. New in PR #73 (2026-11-16): v0.30.3's s_lv called `xp` first (0 until the half-press load) and stayed in section 2 | G3 |
+  | hook_wt 0x605048c1 (s2) | all | s_wt (s5), then `xp` | the Soft Focus weight getter in the combiner set-up (case table 0x606cc7f0) | Unknown whether live view gets here (an Art Filter live view may). Section 5 is ready before 6 (steps in order, I), so hook_tone's record covers it | none |
+  | hook_su 0x604b7730 (s2) | all | xs_su (s6) | the still set-up thunk (from 0x604b5896) | Stills only (analysis). A still before section 6 is in needs a shot in the first moments after switch-on (the fast start can take one). Unknown, never seen | G4 (optional) |
+  | hook_wl 0x604b8d91 (s2) | all | s_wl (s6) | the still's work-list builder 0x604b8cf7 | as hook_su | G4 |
+  | hook_sel2 0x60504b5d, hook_c1e 0x605053cc (s2) | all | s_sel2, s_c1e (s6) | the combiner set-up 0x60504b2b and its tail 0x6050538b (case table 0x606cc830) | stills (textured COLOR); whether an Art Filter live view passes here is unknown | G4 |
+  | hook_ex 0x60457578 (s2) | all | ex_hook (s6) | the per-shot EXIF fill | as hook_su | G4 |
+  | hook_trs 0x604cf156, hook_trl 0x604cf1a4 (s2) | border preview 1 | tr_sz, tr_ld (s6) | 0x604cf0b9, from 0x604cd921, from the still set-up 0x604b97db / 0x604b5585. (The word 0x604cf0df at 0x60b99f04 looks like a section-6 pointer to it but is a `ret` instruction's bytes) | as hook_su | G4 |
+  | hook_fx 0x60555e50 (s2) | all since v0.20 | s_cap (s8) | the Art Effect -> job flag converter 0x60555e47 (callers 0x6054f6fa, 0x60553ac2) | Stills only: if it ran in live view's start-up set-up, every start since v0.20 would fail as v0.20 test 1 did. A shot at switch-on is the most exposed case here: section 8 is ready last (after section 7's constructors, on CPU 1). Never seen | G4, first |
+  | word 0x604b9288 (s2) | all since v0.21 | g_sf (s3) | `mov imm32,a1` / `calls` in the work-list builder's default path 0x604b917f (a still's Soft Focus blend) | stills only; section 3 is copied right after 2 | none |
+  | 12 words 0x6061a33c..0x6061a580 (s2) | all since v0.27 | ar_list, dm_list, dm_plist (s6) | records of the settings store's value table 0x6061912c (settings 50..55, 571, 1275, 1277, 1284, 1958, 1966). A value is looked up in its list at 0x604051c1..0x604051ff (getter 0x603f15b1 -> 0x604050be) | **No in om-emu:** the store's start-up pass (task 160, 27,181 record lookups at 202 ms) reads only each record's kind byte (+17, 0x6040541f). Our lists are first read at 1.13 s (saved settings) or 2.6 s (fresh) from our own `cv_get` (s6) and the GUI (s7). Camera: not shown. If read early: a read bounded by the record's length (in section 2), so a wrong answer, never a jump | none (or move the 156 B of lists to `.ext4`) |
+- **Verdict.** Nothing is clearly unsafe, so nothing was built. The real exposure is the live view's first set-up at
+  power-on, which jumps into section 6 through hook_tone (since v0.26), hook_mx (since v0.30) and hook_lv (main and
+  border preview 1 only). It has never failed, but no stock wait orders it after section 6's step. The capture hooks
+  need a shot at switch-on to run early, hook_fx most of all.
+- **Proposed gates** (none built; SEC_READY = 0xa32de58c; .ext1 has 116 B free on main, .ext2 15 B, .ext5 20 B):
+  - G1 hook_mx: the site `jmp mx_g`; in .ext1 `mov (SEC_READY),d0; and 0x20,d0; beq 1f; jmp mx_go; 1: call
+    0x605144ef,[d2,d3,a2,a3],20; jmp 0x6051485f` (d0 and d1 are free there, mx_go's note). About 28 B. Before section 6
+    is ready: the stock matrix, the same picture as now (colour mix needs the films, loaded later).
+  - G2 hook_tone: the site `call tn_g,[d2,d3,a2,a3],56`; in .ext1 a test with no data register, because every
+    register but a0 is live there (e.g. `btst 0x20,(SEC_READY)`), then `beq 1f; jmp tone; 1: mov d3,a0; jmp
+    tone_next` (the displaced stock, as tone's own exit). About 21 B. Covers tone (s5) and st_run (s6). The check's
+    gate pattern (mov / and / bcc) would have to accept `btst`.
+  - G3 hook_lv: s_lv in .ext2 as v0.30.3 had it: `call xp,[],0; beq 9f; jmp s_lv6; 9: jmp lv_skip` (+12 B). xp is
+    non-zero only after the half-press load, which needs all ten sections copied.
+  - G4 (optional) the capture hooks, G1's pattern: hook_fx (bit 7, section 8) first, then ex / su / wl / sel2 / c1e /
+    trs / trl (bit 5). .ext1 has room for G1, G2 and about two more.
+  - Measure first, if wanted: G1's stub can keep the ready word from its first pass after power-on for the debug log.
+    A few camera starts (normal, from playback, on the EVF, without a card) would show the margin: 0x7f or more means
+    section 7's copy and constructors come between, 0x3f means it is tight. For G4 the camera question is a shot at
+    switch-on (the shutter held fully down while switching on); that may hang the camera if the risk is real.
+- **Gaps in `static:section-order` found here:** it stops at the first crossing. It missed hook_tone's jump from
+  section 5 on into section 6 (tone's exit -> st_run) and 15 crossings on the shutter path (sd_z s4 -> fopen / fseek /
+  ftell s6; ed_trig s6 -> vl_s s7, gd_set s10), all behind `hl_ok` / STATE. A walk that keeps going, with the later
+  section as the new floor, lists them (prototype in this audit). Using it would add st_run to hook_tone and those 15
+  targets to hook_shutter in `LATE_RELEASED`. Not changed here. om-emu shows none of this: it maps every section from
+  the first instruction and does not run the stills' or live view's development (no hits at any pipeline site in a
+  boot, a half-press and a shot).

@@ -1,7 +1,7 @@
 # Deterministic firmware tests
 
 Research, 2026-11-15. Status: analysis, with emulator runs where marked. Nothing here is camera-tested. The suite is
-built: seven emulator tests, the patch audit, and five static build checks, all run by `tools/test/emu_test.py`.
+built: seven emulator tests, the patch audit, and six static build checks, all run by `tools/test/emu_test.py`.
 
 A deterministic regression suite for the firmware is possible and cheap to start. The emulator, om-emu, gave
 byte-identical screenshots, card images, and settings files when one build ran the same script twice. om-emu also
@@ -97,12 +97,14 @@ The gate and the digest have unit tests that need no firmware:
 | `color-wheel-tone-readout-keeps-the-callers-a2` | On Shadows, tn_get gives its caller a2 back after the label code (#64) |
 | `color-wheel-saturation-guide-names-the-page` | The Saturation guide reads "Saturation [INFO]" with one color and "Sat. All [INFO]" with ALL, from the dial or INFO. The ALL guide is the camera's again off Saturation (#64) |
 | `look-tables-match-the-model` | `st_run`'s R, G and B tables on a fake COLOR job match the Python models for split toning, curves and both together, and `sd_crc` matches zlib's CRC-32 |
+| `live-view-gates-wait-for-section-6` | The three live-view hook sites (hook_mx, hook_tone, hook_lv), called directly with the camera's ready word at 0x1f, reach the stock code (lv_skip with d0 = 11), and at 0x3f our code (fix/section-gates, 2026-11-17) |
 | `patch-audit` | om-emu's audit finds no patched byte the camera does not load, and no task started at power-on |
 | `static:release-rebuild` | `firmware/patch.py` rebuilds the newest release byte for byte, and `SHA256SUMS` matches |
 | `static:hook-list` | The build's hooks equal `tools/test/hooks.json` |
 | `static:hook-sections` | Each `.hook_*` section in `firmware/src/editor.s` has a hook entry, and the reverse |
 | `static:changed-bytes` | Every byte that differs from stock lies in a place the build may write |
 | `static:loader-end` | The loader's end word, read from the image, covers every section that uses it |
+| `static:section-order` | No hook or patch site in sections 1..5 reaches our code or data in a later section (copied later while the camera starts), unless behind the camera's own ready check for that section |
 
 Results, emulator only:
 
@@ -271,6 +273,7 @@ release. `--all-releases` rebuilt all 23 releases byte for byte in 44 s. All pas
 | `static:hook-list`: the build's hooks equal `tools/test/hooks.json` | A new hook nobody reviewed, such as one on the start-up path | `hooks.json` holds names, addresses, and lengths for 40 hooks, and no firmware bytes. |
 | `static:hook-sections`: every `.hook_*` section in `firmware/src/editor.s` has a hook entry, and the reverse | A hook assembled but not placed, or placed but not built | |
 | `static:loader-end`: the loader's end word, read back from the image, covers every section that uses it | Code past the loaded end, such as `.ext11` beyond 0x60f99800 | |
+| `static:section-order` (crop round 7b, 2026-11-17; fix/section-gates): from each hook and changed patch site in sections 1..5, follows our code's direct jumps, calls and branches (objdump of `p.elf`, `-z`) and flags any later-section address reached or named, and any pointer into our later code. It keeps going past each crossing, with the later section as the new floor, so a path from section 5 on into 6 is found (hook_tone -> tone -> st_run). A jump or call right after `mov (0xa32de58c),dN; and MASK,dN; beq/bne` passes for any section up to MASK's lowest bit (the camera marks sections ready in order) | A hook on a path that runs while the camera starts jumping into code not copied yet, such as crop round 7's 0x6057fb1b, which boot-looped the camera; on main 78a809e: hook_mx, hook_tone (and its st_run), hook_lv | Indirect jumps and calls (`jmp (aN)`, `calls (aN)`) are not followed. The released paths it finds besides those three are listed in `LATE_RELEASED` (the shutter hook's, behind `hl_ok` / STATE; the stills hooks; the validator words): audited in research/NOTES.md "Section order audit" (2026-11-17), not proven. Needs the toolchain's objdump. |
 | `static:release-rebuild`: `firmware/patch.py --release` rebuilds the newest release, and the `SHA256SUMS` line matches | An unintended change to a shipped release | |
 
 After a reviewed hook change, regenerate the list with `--write-hooks` and read each difference first.
@@ -351,6 +354,8 @@ emulator test as proposed here would have failed. "Maybe" means it depends on a 
 | DS2, #54 | A live turn from C1 back to M briefly shows "COLOR1*" before M's film | No | None, the camera's own picture-mode write at a turn. `live-dial-turn-holds-the-label` checks the hold |
 | DS3, #54 | The same flash: at the turn the camera reads as video and makes no 901 write, so no hold is set | No | None, the emulator draws no label while the mode code is in between |
 | e9b954f | Start-up path overwrote its caller's saved registers | Yes | Boot smoke, register watch |
+| crop round 7 (2026-11-17) | Boot loop at every start: a section-2 hook (0x6057fb1b) jumped into section 6's extension before section 6 was copied | No in om-emu (it maps every section at once); yes statically | `static:section-order` |
+| fix/section-gates (2026-11-17) | Live view's first picture set-up at power-on could jump into section 6 (hook_mx, hook_tone via st_run, hook_lv) before the camera marks it ready: never seen on a camera | No (om-emu maps every section at once and runs no live-view set-up); yes statically | `static:section-order`; `live-view-gates-wait-for-section-6` calls the sites directly |
 | v0.28–v0.30.1, #65 (#27) | With Image Review on, a Glow or Halation photo gives a black review picture, then the Creative Dial to a standard picture mode freezes live view | No | None, om-emu develops no photos (the review picture is one of the shot's small extra developments) |
 | v0.30, menu-flicker | Leaving Blacks / Whites or WB compensation flashes the old row's bottom bar for a frame | No | None, om-emu draws only after the screen update. `grid-row-gives-the-bottom-bar-back` checks the bar comes back |
 | v0.30–v0.30.3, #72 | Switching films fast in the Picture Mode list (holding the arrow, or FILM 1 <-> FILM 2) reboots the camera | Yes | om-emu does not reboot; the cause (the group's record kept at every step, camera probe J) is counted: `film-list-keeps-the-record-once-as-it-closes`, `control-panel-dial-keeps-the-record-once-as-it-closes` |

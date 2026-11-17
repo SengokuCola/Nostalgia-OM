@@ -273,8 +273,212 @@ def loader_end(build, stock):
     return fails
 
 
+# ---------------------------------------------------------------- section order
+
+# The loader copies the firmware's sections 1..10 one after another while the camera starts (0x60045ed5), and code in
+# a section already copied can run before the later ones are in: stock section 1 waits on its own ready check
+# 0x60045e39 (bit id - 1 of SEC_READY, set at 0x60046064) before it calls section 9 (0x60062210). Our code entered
+# from a hook or patch site in sections 1..5 must not reach code or data in a later section (.ext11..13 are section
+# 6) unless it does the same check first (research/NOTES.md, "Crop round 7: the boot loop"; crop round 7 boot-looped
+# the camera this way). A gate is `mov (SEC_READY),dN; and BIT,dN; beq/bne` right before the jump or call.
+SECTION_ENDS = (0x6031f000, 0x60718800, 0x60820000, 0x60a8f800, 0x60adb800, EXT_SPACE_LIMIT, 0x6164b000, 0x617e4800,
+                0x619a9800, 0x61aa4800)
+EARLY_SECTIONS = 5
+SEC_READY = 0xa32de58c
+OBJDUMP_CANDIDATES = (os.environ.get('OBJDUMP'), str(WORK / 'toolchain/build/binutils/objdump'))
+# Paths already in the released firmware (main v0.30.x, and border preview 1 on top of it), which start normally on
+# the camera: entry -> the later symbols it reaches. Listed so that a new path fails; NOT proven start-up safe by this
+# check. Audited 2026-11-17 (research/NOTES.md, "Section order audit"): the shutter hook cannot run before section 6
+# (its one caller is in section 6) and goes past section 6 only behind hl_ok (all ten sections copied) or STATE; the
+# other hooks run for stills only; the validator words are data. hook_tone, hook_mx and hook_lv (live view's first
+# set-up at power-on) are not listed: since fix/section-gates they go through the gates tn_g, mx_g and lv_g.
+# Picture pipeline = a still's picture set-up.
+LATE_RELEASED = {
+    'hook_shutter': {'ic_pend', 'lg_pr', 'hl_ok', 'pr_nmd', 'st_claim', 'sd_load',            # shutter events
+                     'fopen', 'fseek', 'ftell', 'fread', 'fclose', 'ub_bun', 'ub_pfl', 'nm_ex',  # sd_load, after hl_ok
+                     'gd_load', 'gd_set', 'vl_s', 'ed_isdef', 'pf_open'},                     # after hl_ok / STATE
+    'hook_ex': {'ex_hook'},                                   # the per-shot EXIF fill
+    'hook_su': {'xs_su'}, 'hook_wl': {'s_wl'}, 'hook_trs': {'tr_sz'}, 'hook_trl': {'tr_ld'},
+    'hook_wt': {'s_wt'}, 'hook_sel2': {'s_sel2'}, 'hook_c1e': {'s_c1e'},
+    'hook_fx': {'s_cap'},                                     # the picture pipeline (films, grain), stills
+    'patch site 0x604b9288': {'g_sf'},                        # grain: the Soft Focus blend's work-list word
+    **{f'patch site {a}': {'ar_list'} for a in ('0x6061a33c', '0x6061a378', '0x6061a454', '0x6061a468')},
+    **{f'patch site {a}': {'dm_list'} for a in ('0x6061a350', '0x6061a364', '0x6061a38c', '0x6061a580')},
+    **{f'patch site {a}': {'dm_plist'} for a in ('0x6061a51c', '0x6061a530', '0x6061a544', '0x6061a56c')},
+}
+_STOP = {'ret', 'retf', 'rets', 'rti', 'rtm', 'trap'}
+_BCC = {'beq', 'bne', 'bgt', 'bge', 'ble', 'blt', 'bhi', 'bcc', 'bls', 'bcs', 'bvc', 'bvs', 'bnc', 'bns'}
+_INSN = re.compile(r'^\s*([0-9a-f]+):\t([0-9a-f ]+?)\s*\t(\S+)\s*(.*)$')
+_MORE = re.compile(r'^\s*([0-9a-f]+):\t([0-9a-f ]+?)\s*$')         # an instruction's further bytes
+_SYM = re.compile(r'^([0-9a-f]{8}) <([^>]+)>:$')
+
+
+def section_of(a):
+    if not MAIN_BASE <= a < SECTION_ENDS[-1]:
+        return None
+    return next(i + 1 for i, e in enumerate(SECTION_ENDS) if a < e)
+
+
+def _objdump():
+    for c in OBJDUMP_CANDIDATES:
+        if c and pathlib.Path(c).is_file():
+            return c
+    raise Skip('no mn10300 objdump (set $OBJDUMP, or run research/setup.sh)')
+
+
+class _Code:
+    """Our placed code (p.elf's .hook_* / .ext* sections), decoded on demand from any start address."""
+    def __init__(self, build):
+        self.elf = build / 'p.elf'
+        self.secs = sorted((a, a + s, n) for n, (a, s) in patched_sections(build).items())
+        self.od, self.insn, self.syms = _objdump(), {}, {}
+        for a, e, n in self.secs:
+            self._decode(a, e)
+
+    def placed(self, a):
+        i = bisect.bisect_right(self.secs, (a, 1 << 40, '')) - 1
+        return self.secs[i] if i >= 0 and a < self.secs[i][1] else None
+
+    def _decode(self, a, e):
+        out = subprocess.run([self.od, '-d', '-z', f'--start-address={hx(a)}', f'--stop-address={hx(e)}', str(self.elf)],
+                             capture_output=True, text=True).stdout
+        last = None
+        for line in out.splitlines():
+            if (m := _SYM.match(line)):
+                self.syms[int(m[1], 16)] = m[2]
+                last = None
+            elif (m := _INSN.match(line)):
+                last = int(m[1], 16)
+                self.insn[last] = (len(m[2].split()), m[3], m[4])
+            elif (m := _MORE.match(line)) and last is not None:
+                n, mn, ops = self.insn[last]
+                self.insn[last] = (n + len(m[2].split()), mn, ops)
+
+    def at(self, a):
+        if a not in self.insn:
+            s = self.placed(a)
+            self._decode(a, min(a + 0x200, s[1]))
+        return self.insn.get(a)
+
+    def name(self, a):
+        best = max((s for s in self.syms if s <= a), default=None)
+        return f'{hx(a)} ({self.syms[best]}{"+" + hex(a - best) if a != best else ""})' if best is not None else hx(a)
+
+
+_TARGET = re.compile(r'([0-9a-f]+) <[^>]*>')
+
+
+def _numbers(ops):
+    """The operands' numbers other than a branch target (0x... hex, else decimal), as u32."""
+    for tok in re.findall(r'(?<![\w$])-?(?:0x[0-9a-f]+|\d+)(?![\w$])', _TARGET.sub('', ops)):
+        yield int(tok, 16 if '0x' in tok else 10) & 0xffffffff
+
+
+def _gated(code, x):
+    """The section a gate right before x proves ready, else 0: `mov (SEC_READY),dN; and MASK,dN; bcc`, x after it.
+    A passed gate means one of MASK's bits is set; the camera marks sections ready in order (research/NOTES.md,
+    "Section order audit"), so it proves the lowest of them and every section before it."""
+    seq, a = [], x
+    for _ in range(3):
+        prev = next((p for p in range(a - 1, a - 8, -1) if p in code.insn and p + code.insn[p][0] == a), None)
+        if prev is None:
+            return 0
+        seq.insert(0, code.insn[prev])
+        a = prev
+    (_, m1, o1), (_, m2, o2), (_, m3, _) = seq
+    r = re.fullmatch(r'\((?:0x)?([0-9a-f]+)(?: <[^>]*>)?\),(d\d)', o1)
+    b = re.fullmatch(r'(\d+),(d\d)', o2)
+    if not (m1 == 'mov' and r and int(r[1], 16) == SEC_READY and m2 == 'and' and b and b[2] == r[2] and m3 in _BCC):
+        return 0
+    mask = int(b[1]) & 0x3ff
+    return (mask & -mask).bit_length() if mask else 0
+
+
+def _walk(code, entry, k):
+    """Every later-section address our code reaches from entry (entered from section k): {(from, to): (kind, floor)}.
+    floor is the latest section known to be in where the address is reached: k at the entry, then the section of each
+    crossing (a gate's section past a gate), so a path that goes on from section 5 into 6 is found too."""
+    late, seen, todo = {}, set(), [(entry, k)]
+    while todo:
+        a, f = todo.pop()
+        if (a, f) in seen or not code.placed(a):
+            continue
+        seen.add((a, f))
+        ins = code.at(a)
+        if ins is None:
+            late[(a, a)] = ('undecodable', f)      # reported as such
+            continue
+        n, mn, ops = ins
+        nxt, tgt = a + n, None
+        tm = _TARGET.match(ops)
+        if mn in ('call', 'calls', 'jmp', 'bra') or mn in _BCC:
+            if ops.startswith('('):          # jmp / calls (aN): not followed (the code block's entries, via xp)
+                if mn == 'jmp':
+                    continue
+            elif tm:
+                tgt = int(tm[1], 16)
+        for v in _numbers(ops):
+            j = section_of(v)
+            if code.placed(v) and j and j > f:
+                late.setdefault((a, v), ('address', f))
+        if tgt is not None:
+            j = section_of(tgt)
+            if j and j > f:
+                g = _gated(code, a)
+                if g < j:
+                    late.setdefault((a, tgt), (mn, f))
+                if code.placed(tgt):
+                    todo.append((tgt, max(j, g)))
+            elif code.placed(tgt):
+                todo.append((tgt, f))
+        if mn in _STOP or mn in ('jmp', 'bra'):
+            continue
+        todo.append((nxt, f))
+    return late
+
+
+def section_order(build, stock):
+    """No hook or patch site in sections 1..5 reaches our code or data in a later section, unless behind a SEC_READY
+    check or listed in LATE_RELEASED. Follows direct jumps, calls and branches through our code (not jmp / calls
+    (aN): the code block's entries, through xp, wait for the half-press load); flags later addresses its operands
+    name, and pointers into our later code in the changed bytes of sections 1..5."""
+    code = _Code(build)
+    m, s = read_main(build), stock_main(stock)
+    entries = [(n[1:], a, k) for a, e, n in code.secs
+               if n.startswith(HOOK_PREFIX) and (k := section_of(a)) and k <= EARLY_SECTIONS]
+    found = []                                                # (entry, later address, what)
+    for p0, ln in group(uncovered_positions(changed_runs(m, s), known_intervals(build, m))):
+        k = section_of(MAIN_BASE + p0)
+        if not k or k > EARLY_SECTIONS:
+            continue
+        for p in range(max(0, p0 - 6), p0 + ln):
+            at = MAIN_BASE + p
+            v, = struct.unpack_from('<I', m, p)
+            if p + 4 > p0 and code.placed(v) and section_of(v) > k:
+                found.append((f'patch site {hx(at)}', k, v, 'holds a pointer to it'))
+            d = {0xdc: ('<i', 5), 0xdd: ('<i', 7), 0xcc: ('<h', 3), 0xcd: ('<h', 5)}.get(m[p])
+            if d and p + 1 < p0 + ln and p + 1 + struct.calcsize(d[0]) > p0:
+                t = (at + struct.unpack_from(d[0], m, p + 1)[0]) & 0xffffffff
+                if code.placed(t):
+                    entries.append((f'patch site {hx(at)}', t, k))
+    for name, a, k in entries:
+        for (x, t), (kind, f) in sorted(_walk(code, a, k).items()):
+            found.append((name, f, t, f'{kind} at {code.name(x)}'))
+    fails = []
+    for name, k, t, what in found:
+        if what.startswith('undecodable'):
+            fails.append(f'{name} (section {k}): {what}, cannot follow it')
+            continue
+        sym = code.syms.get(max((s for s, n in code.syms.items() if s <= t and not n.startswith('.')), default=-1), '')
+        if sym in LATE_RELEASED.get(name, ()):
+            continue
+        fails.append(f'{name} (past section {k}) reaches {code.name(t)} in section {section_of(t)} ({what}), which is '
+                     'loaded later while the camera starts: check SEC_READY first (static_check.py, section order)')
+    return fails
+
 CHECKS = {'release-rebuild': release_rebuild, 'hook-list': hook_list, 'hook-sections': hook_sections,
-          'changed-bytes': changed_bytes, 'loader-end': loader_end}
+          'changed-bytes': changed_bytes, 'loader-end': loader_end,
+          'section-order': section_order}
 
 
 # ---------------------------------------------------------------- command line
