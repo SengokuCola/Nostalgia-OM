@@ -254,6 +254,10 @@ def CROP_LINE(tag, then, set_to, after, now):
             rf'after {after}, now {now}$')
 
 
+def CROP_ASPECT_IS(v):                           # Image Aspect in the camera's settings image (M + 0x2c2) is v
+    return f'expect:mem:629209c2={v:02x}'
+
+
 def CROP_NOW(now):
     return rf'^CROP MODES \(crop round 1\): .*, now {now}$'
 
@@ -348,10 +352,11 @@ TESTS = {
         Boot(f'wait wait s1 wait wait {BORDER_LINE_OFF_VIDEO} poweroff', photo_switch=PHOTO_SWITCH_VIDEO),
     ],
     # crop modes: XPan (Image Aspect 6) is saved as 16:9 with our tag, so the camera starts on 16:9; the first half-press
-    # puts XPan back (the start-up rule: nothing of ours before it).
+    # puts XPan back (the start-up rule: nothing of ours before it, not even with v0.30's early load of the films).
     'crop-xpan-starts-as-16-9-and-comes-back': [
         Boot(f's1 wait wait {PICK_ASPECT(6)} s1 wait wait poweroff', expect=[CROP_NOW(6)]),
-        Boot('wait wait s1 wait wait poweroff', expect=[CROP_LINE('43520006', 3, 6, 6, 6)]),
+        Boot(f'wait wait {CROP_ASPECT_IS(3)} expect:mem:{{cr_on}}=00 s1 wait wait {CROP_ASPECT_IS(6)} poweroff',
+             expect=[CROP_LINE('43520006', 3, 6, 6, 6)]),
     ],
     # crop modes: a stock ratio (16:9) is saved as it is, with no tag, and nothing is set at the first half-press.
     'crop-stock-ratio-left-alone': [

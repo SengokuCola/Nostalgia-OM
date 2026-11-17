@@ -1,6 +1,6 @@
-> **Branch `feature/better-grain`: camera test (2026-11-16).** Our own colour grain picture (g1, camera-tested) with
-> the Film Grain slider and Grain Size row (g2, emulator only), on top of the Border row; see `research/NOTES.md`,
-> "Better grain g1" and "g2". The released firmware is on `main`.
+> **Branch `feature/crop-modes`: camera test (2026-11-17).** Real crop modes XPan 65:24, 21:9 and 5:4 (round 1:
+> the parts of crop test c5 that worked, nothing of ours at start-up), on border preview 1; see `research/NOTES.md`,
+> "Crop modes reopened". The released firmware is on `main`.
 
 <h1 align="center">Caduceus for OM-3</h1>
 

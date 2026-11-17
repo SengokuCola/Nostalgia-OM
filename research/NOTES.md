@@ -6393,3 +6393,50 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   both needs one tail that handles both.
 - Package `test-builds/2026-11-17-border-preview-1` (private folder): E1479999.BIN `db1fedfa…a732`, VERSION
   "v0.31-alpha-dev (border preview 1: frame line in live view)", go-back v0.31 alpha test 1 `9622a965…2576`.
+
+## Crop modes reopened: crop round 1 (2026-11-17; branch feature/crop-modes; emulator only, camera test pending)
+- Owner (2026-11-17), after the XPan / 21:9 grid lines on the camera: "that looks good, but I'm honestly not happy with
+  it. Its just a faint attempt at crop modes. I think we should scrap the custom gridlines and really try and break into
+  a custom crop mode". The record of c1–c6 (2026-11-13/14, every address, test and camera result) is on
+  `feature/composition-guides` (research/NOTES.md there, "Crop modes ..."); this branch starts from
+  `feature/border-live-view` (27bcd0f, border preview 1, camera-tested).
+- **Round 1 = c5's working parts, nothing of ours before the first half-press** (`firmware/src/crop.s`,
+  `firmware/crop.py`). Kept from c5 (camera-tested there): Image Aspect values 5 (5:4, the camera's hidden ratio), 6
+  (XPan 65:24, was 7:6) and 7 (21:9, was 6:5) through the validator (0x6061b904 -> cr_vlist), the stills rule's map
+  (0x605d1134 -> cr_rmap), the super control panel strip and the three Image Aspect menus; photo sizes (5184 x 1920,
+  5184 x 2224, 4864 x 3888) and the RAW frame; the live view strip through ratioToConvertSize 0x60c0d30b and
+  getOutputAspect 0x60c14b28 (and the CapThr switches, which only run behind a mode check); the shooting screen's 16
+  reads of 269 (5 -> 4:3, 6 / 7 -> 16:9 for its lookups; the label reads give each crop a slot of its own); our labels
+  (pictures 0x7fc4.., strings 0x7f68..); the size text table; the save guard (hooks 0x60061183 power-off,
+  0x6006120e after a menu: M is saved with the crop's base ratio and our tag 'C' 'R' 0 id at M + 0x39FF0, the buffer's
+  checksum corrected) and the restore at the first shutter event (cr_rst through cr_hp).
+- **Left out of c5's build:** the c4 / c5 run counters and the 0x6043900f counter hook (diagnosis only), the playback
+  label diagnosis (rings in cr_ic / cr_str), the SetValue hook cr_set (cr_rst's own check, "269 still holds the crop's
+  base", covers it: a ratio picked before the first half-press other than the base is kept), and c6's AF target lists
+  (0x615034f8 / 0x615034e0): the only c5 -> c6 binary difference, and c6 was the only build with black screens.
+- **Start-up:** the camera's saved settings never hold 5 / 6 / 7, so it always starts on a stock ratio and stock code
+  paths. **Found on this base:** c5's restore ran from nm_ex, sd_load's last call, and since v0.30 sd_load also runs in
+  the early load (el_go: the films from camera memory at the GUI's first state change, during start-up, el_nc 1). The
+  first build of round 1 (out-cr1, 9d6240dd…) so set XPan back during start-up: om-emu, boot 2 after a power-off in
+  XPan, M + 0x2c2 was 6 before any half-press. Now `cr_hp` runs cr_rst once, from nm_ex only when el_nc is 0 (the
+  half-press load) and from lg_pr (the first shutter event after an early load); before it, 269 stays 3 (test below,
+  `--without` out-cr1: caught). `cr_on` (set by cr_rst) gates the label hook (cr_ic: straight to ic_get), and the 16
+  screen reads (cr_gv / cr_gvl: the stock getter, then one byte read). cr_str is a two-compare pass-through for ids
+  other than ours. The save hooks run only at a save of a store (a menu exit or power-off), never at start-up; they read
+  only a0, a3 and the stack after 0x60061183 (checked in the stock code: a1 is stored at entry, d0 comes from
+  0x60060eff, d1 is set before use). M + 0x39FF0 is free on this base (the films block starts at + 0x3A000).
+- **The c6 black screens, what is known:** two at switch-on, both after switching off in a normal ratio, with c6 only.
+  Not found by analysis. Round 1 removes c6's change and every diagnosis hook, and gates the rest; if a black screen
+  comes back with round 1, the cause is in c1–c5's parts (then: a build with the save hooks alone, then without them).
+- **Known gaps:** a custom mode saved while in a crop would hold 5 / 6 / 7 and could start the camera in it (test steps:
+  don't); the AF point in S-AF at XPan (c5: disappears when moved); grid lines and the border preview line follow
+  16:9, not the strip (the camera's grid can now take our own lines: border preview's hook at 0x611c7922); playback
+  labels (16:9 / 4:3 codes from 0x610db128).
+- **Tests (emu_test.py):** `crop-xpan-starts-as-16-9-and-comes-back` (boot 1 picks XPan, power-off; boot 2: Image
+  Aspect 3 and cr_on 0 after start-up, 6 after the first half-press; log "tag at the first half-press 43520006, Image
+  Aspect then 3, set to 6, after 6, now 6") and `crop-stock-ratio-left-alone` (16:9 saved as it is, no tag, nothing
+  set).
+- om-emu, round 1: XPan shows in the control panel cell and the top bar (preview); border preview 1's regression shots
+  (Picture Mode, live view at 3:2) identical to border preview 1.
+- Package `test-builds/2026-11-17-crop-round-1` (private folder): E1479999.BIN `9d6240dd…b5dd`, VERSION
+  "v0.31-alpha-dev (crop round 1: XPan, 21:9, 5:4)", go-back border preview 1 `db1fedfa…a732`.

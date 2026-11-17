@@ -10346,6 +10346,7 @@ lg_pr:                            /* jmp from pr_ed, pr_hook's frame: as `call e
  call ub_try,[d2,d3,a2,a3],36     /* films in camera memory: a block write held back by the camera's own save */
  call el_card,[d2,d3,a2,a3],36
  call ck_card,[d2,d3,a2,a3],24    /* v0.30 test 9: CURVES.BIN, after el_card's films */
+ call cr_hp,[d2,d3,a2,a3],20      /* crop modes: the first shutter event after an early load (crop.s) */
  call cm_hp,[d2,d3,a2,a3],24      /* k4: in P / A / S / M, their films and choice now (kept in M) */
  call lg_write,[d2,d3,a2,a3],40
  call ex_live,[d2,d3,a2,a3],48    /* v0.28 pc1: the film's settings now, for the next photo's code */
@@ -14953,7 +14954,7 @@ ex_out:                           /* the record as coded (ex_cd1) */
 nm_ex:
  call nm_load,[d2,d3,a2,a3],36
  call ex_live,[d2,d3,a2,a3],48
- call cr_rst,[d2,d3,a2,a3],20     /* crop modes: cr_on, and the crop back (crop.s) */
+ call cr_hp,[d2,d3,a2,a3],20      /* crop modes: at a half-press load, cr_on and the crop back (crop.s) */
  ret [d2,d3,a2,a3],36
 
 /* ex_live: `call ex_live,[d2,d3,a2,a3],48` at each half-press (the first: sd_load via nm_ex; then lg_pr after the editor's save),

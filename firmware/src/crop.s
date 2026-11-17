@@ -8,8 +8,10 @@
  *
  * Start-up (owner, 2026-11-13: nothing of ours while the camera starts): the camera's saved settings never hold 5 / 6 / 7
  * (cr_sin / cr_sbuf save the ratio the crop sits inside, and our tag), so the camera always starts on a stock ratio;
- * cr_rst puts the crop back at the first half-press and sets cr_on. Until then every hook here that runs while the
- * camera draws (labels, the shooting screen's reads of 269) is the stock path plus one byte read. Left out of c5's
+ * cr_rst puts the crop back at the first shutter event and sets cr_on (cr_hp: from the half-press load nm_ex, or from
+ * lg_pr at a later shutter event; never from v0.30's early load at the GUI's first state change, el_nc). Until then
+ * every hook here that runs while the camera draws (labels, the shooting screen's reads of 269) is the stock path plus
+ * one byte read. Left out of c5's
  * build: the c4 / c5 run counters and the 0x6043900f counter hook, the playback label diagnosis, the SetValue hook
  * (cr_set: cr_rst's own check covers it), and c6's AF target lists (c6 was the only build with black screens). */
 
@@ -248,8 +250,22 @@ cr_sbuf:                          /* jmp from 0x6006120e (0x60061183's frame; a3
  mov CR_BUF,d3                    /* the stock instruction */
  jmp cr_sb_back
 
-/* cr_rst: `call cr_rst,[d2,d3,a2,a3],20` from nm_ex, sd_load's last call (the first half-press of a power-on, the
- * HLS_EVENT task, where ar_getv / ar_setv are used as the dial handler uses them). Sets cr_on. Our tag in M (loaded with
+/* cr_hp: `call cr_hp,[d2,d3,a2,a3],20` from nm_ex (sd_load's last call) and from lg_pr (every later shutter event),
+ * both in the HLS_EVENT task: once per power-on, at the first shutter event, cr_rst. sd_load also runs in the early
+ * load (el_go, GUI task, during start-up, el_nc 1): nothing then. */
+cr_hp:
+ movbu (el_nc),d0
+ cmp 0,d0
+ bne 9f
+ movbu (cr_on),d0
+ cmp 0,d0
+ bne 9f
+ call cr_rst,[d2,d3,a2,a3],20
+9:
+ ret [d2,d3,a2,a3],20
+
+/* cr_rst: `call cr_rst,[d2,d3,a2,a3],20` from cr_hp (the first shutter event of a power-on, the HLS_EVENT task, where
+ * ar_getv / ar_setv are used as the dial handler uses them). Sets cr_on. Our tag in M (loaded with
  * the camera's settings) says the crop the camera was saved in; if the setting still holds that crop's base, set the
  * crop again. The tag is cleared either way (the next save seals it). */
 cr_rst:
