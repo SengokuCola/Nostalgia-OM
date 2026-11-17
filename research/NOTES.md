@@ -6647,3 +6647,8 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   `6bc684b4…7769`): **47 pass, 2 FAIL** (the same four crop hooks for the owner's OK, changed bytes). Its test steps
   ask for one XPan photo shown in playback with its info line, then a half-press: the log then holds the picture id
   and the code addresses that drew it, the input for the label's fix.
+- **Camera, round 6 (owner, 2026-11-17):** "Still shows 16:9. I also noticed the borders get cropped off on the new
+  crop sizes". Diagnosis line (card read by the main chat): "picture 10931, mdr 610DB128, code words on the stack:
+  610DB128 610D9AE5 610C9630 610DB2A6 6128AE33 615E7128 615E7128 6128B4AC 610CD504 610D807C 610C8FF9 611509BC
+  610CD723 611504C8 6115047D" (the first label asked in playback was 4:3's). New: a film's Border is cut off on the
+  crops (the border drawn on the uncropped frame, its top / bottom outside the XPan / 21:9 band, its sides outside 5:4).
