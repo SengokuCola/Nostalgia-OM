@@ -346,14 +346,16 @@ def sat_pictures():
     """Film test 8 (owner): the wheel's Saturation page always shows all colours, so its pictures say "Saturation":
     the dial label (70 x 30, in place of the camera's "Color" there; card/mklabels.py, the Extras labels' style) and
     the guide (film test 8: 180 x 50 for "Color Select [INFO]"; film test 11: 175 x 50 for "Color All [INFO]", the
-    Saturation page now showing one colour at a time; card/mkguides.py). Returns two palette arrays."""
+    Saturation page now showing one colour at a time; card/mkguides.py), and #64's "Sat. All [INFO]" guide for all
+    colours. Returns three palette arrays."""
     import sys, pathlib
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'card'))
     import mklabels, mkguides
     lab = np.asarray(mklabels.build('Saturation'), dtype=np.uint8)
     gd = np.asarray(mkguides.build('Saturation'), dtype=np.uint8)   # film test 11: 175 x 50, for the one-colour page
-    assert lab.shape == (30, 70) and gd.shape == (50, 175)
-    return lab, gd
+    gda = np.asarray(mkguides.build('Sat. All'), dtype=np.uint8)  # #64: the same page with all colours
+    assert lab.shape == (30, 70) and gd.shape == gda.shape == (50, 175)
+    return lab, gd, gda
 
 
 def hsl_labels():

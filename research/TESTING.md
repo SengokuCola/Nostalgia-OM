@@ -90,6 +90,12 @@ The gate and the digest have unit tests that need no firmware:
 | `curves-file-kept-in-camera` | v0.30 `CURVES.BIN`: taken at the first half-press, a film picked shows its values, kept over a boot with no file, the same file again changes nothing |
 | `curves-file-new-values-follow-edits-stay` | A new `CURVES.BIN` reaches a film you never changed; a curve changed on the RGB page stays when another file comes |
 | `curves-file-none-or-not-valid` | No `CURVES.BIN`, or one with a wrong CRC: nothing taken, no film gets values (as test 8) |
+| `color-wheel-dial-label-follows-the-page` | On the Color wheel, the dial label reads Sat, Sat (ALL), Hue, Lum, Tint, Tint as INFO steps through the pages, then Sat again (#64) |
+| `color-wheel-dial-label-resets-with-the-page` | The wheel left on Hue: after the half-press the page and its dial label are back on Saturation (#64) |
+| `color-wheel-front-dial-skips-all-colors-off-saturation` | The front dial stops on all colors (cursor 255) on Saturation only. On Hue it steps 1 -> 12 -> 1 over it (#64) |
+| `color-wheel-readout-keeps-the-callers-a2` | On Hue, ed_get gives its caller a2 back after the label code. v0.20..v0.30.3 returned the call's return address in a2 (#64) |
+| `color-wheel-tone-readout-keeps-the-callers-a2` | On Shadows, tn_get gives its caller a2 back after the label code (#64) |
+| `color-wheel-saturation-guide-names-the-page` | The Saturation guide reads "Saturation [INFO]" with one color and "Sat. All [INFO]" with ALL, from the dial or INFO. The ALL guide is the camera's again off Saturation (#64) |
 | `look-tables-match-the-model` | `st_run`'s R, G and B tables on a fake COLOR job match the Python models for split toning, curves and both together, and `sd_crc` matches zlib's CRC-32 |
 | `patch-audit` | om-emu's audit finds no patched byte the camera does not load, and no task started at power-on |
 | `static:release-rebuild` | `firmware/patch.py` rebuilds the newest release byte for byte, and `SHA256SUMS` matches |

@@ -5851,3 +5851,88 @@ rgb-page-counts-every-click, halation-matches-the-model). Package `test-builds/2
   call.
 - **Camera-tested (owner, 2026-11-17): v0.30.4 test 4 (`0e5708ea…`): no reboot after 3 minutes; "looks good".** Debug
   log: nothing unusual. Next (owner): a test merge of PR #70 and PR #73 with this fix before pushing.
+
+## Issue #64: the wheel's dial label names the page (2026-11-16; feature/dial-label-per-page; camera-tested)
+- Owner on #64: "I like these changes, if you make a pr with them, I'll merge". This replaces the sp1 request (2026-11-09)
+  that the dial label stay the camera's "Vivid" on Shadows / Highlights.
+- The label ("Vivid", VDESC 0xa4cf688c, 70 x 30) now reads Sat (Color and Color All), Hue, Lum, and Tint (Shadows and Highlights).
+  LABELS.BIN goes from 27 to 31 labels (indices 27..30, after the Extras ones). `xb_va` (xblock.s) maps the axis to
+  the label, 0xff = the stock picture (Film).
+- The label code only ran on axes 1..4: ed_get calls vl_s only there, and the Shadows / Highlights readout is
+  tn_get's, which skipped it (the sp1 request). ed_get now also calls vl_s on axis 0, with the entry's d0 / d1 kept
+  for the stock path. tn_get calls it on its readout.
+- Emulator: VDESC +12 per page = Sat 796, Hue 996, Lum 1092, Tint 1028 (each = mklabels encode11
+  length). Test `color-wheel-dial-label-follows-the-page`. On v0.30's code every page keeps the stock 1660.
+- Leaving the wheel keeps the last label in VDESC (Sat after the usual exit from Color), as the Extras labels did
+  since v0.20. Whether another camera screen draws that picture: camera test.
+- Follow-up (2026-11-16, emulator only). The guides on Saturation were the camera's: "Color All [INFO]" with one colour,
+  "Color Select [INFO]" with all colours. They name what INFO does next, while ours name the page, so they read swapped.
+  - **One Saturation page (crombach, camera, on the look-perf test build):** the front dial already reaches ALL, so
+    the INFO stop on ALL repeated it. INFO with a single color now goes straight to Hue (k_6b -> k_step). INFO with ALL
+    on is unchanged: the stock handler turns ALL off, then k_step. This differs from the release: the owner's call on
+    the PR.
+  - **Back to the camera's INFO (crombach, 2026-11-16, PR #70 review):** on stock firmware both the front dial (after
+    Yellow-green) and INFO (it toggles ALL) reach Color All (om-emu, unmodified firmware). So k_6b again lets stock INFO
+    turn ALL on from a single color, as in v0.30.3. The dial label stays Sat and both guides "Saturation [INFO]".
+  - **Guides.** gd_s0 puts film test 8's "Saturation [INFO]" (P+SATB) in both Saturation guides: GDESC (single color)
+    and SDESC 0xa49edf88 (ALL), the latter with its width set to 175. gd_sel puts SDESC back to the camera's, at width
+    180, before every gd_set.
+  - **Dial label.** "Sat" in both states: "Saturation" would squeeze to 42 % in the 62 px label. "Highlt" (squeezed to
+    74 %) read jammed on the camera, so it is now "Hilite" (56 px, no squeeze). "Shadow" (62 px) read crammed next to
+    the dial icon (crombach, camera, PR #70). Both split-tone pages now read "Tint" (44 px), the value the rear dial
+    sets, as Sat, Hue and Lum do. The guide below already names the page.
+  - **Half-press.** ed_trig calls vl_s after its page reset, so the label reads "Sat" right away.
+  - **W_SALL.** Its SDESC code would now share the descriptor with gd_s0's. Re-enabling it needs a look at both.
+  - **Pictures live in the heap.** A test build that pointed a picture's descriptor into .ext12 (0x60f9…) blanked the
+    rest of the camera's menu (camera, crombach, 2026-11-16, the swatch work on feature/color-wheel-swatches). Every
+    picture of ours that the camera has shown points into the heap (0xa2…). om-emu draws from either address, so no
+    emulator test catches this.
+  - **Camera (crombach, 2026-11-16, build b023e44e…): the menu works, but the wheel showed a moment late when moving
+    down onto it.** om-emu instruction counts on that step (a copy of session_ed1.mjs that adds `insns` to WATCH hits,
+    ed_get's first to last hit): v0.30.3 1 761 445, this build 3 379 421. The extra 1.62 M is xb_rend drawing "Sat"
+    (vl_s). xb_lc caches one label, so each INFO step to a new page cost the same, and so did a half-press after
+    leaving the wheel off Saturation. Now build.py encodes the five wheel labels (mklabels.render, encode11: the same
+    sizes as xb_rend's, per the label tests) into wl_tab. xb_vl points VDESC at them, with no drawing. Step after:
+    1 761 614.
+  - **Where the pictures live.** wl_tab sits in .ext13 (.ext12 had no room). fl_mk copies it into a heap block of its
+    own, wl_blk. It could not join the P+SATB block: an 18 KB block made malloc return 0 in om-emu, and the Saturation
+    pictures went with it. xb_vl gets wl_blk's address from build.py (WL_BLK).
+  - **Build note.** A `.set` that uses a films.inc size before films.inc is included works in editor.s's own code.
+    But nm prints a wrong value for it, so a value handed to the code block must be set after films.inc.
+  - **Camera (crombach, 2026-11-16, E1479999.BIN 90283858…): no issues.** Labels, the one Saturation page, the guides,
+    the half-press reset, editing on each page, photos and video all worked. No screen showed "Sat" in place of
+    "Vivid". The wheel opens as fast as on v0.30.3 (om-emu: 1 762 023 instructions on that step, v0.30.3 1 761 853).
+    The swatch work moved to feature/color-wheel-swatches, its own PR.
+  - Tests:
+    - `color-wheel-dial-label-follows-the-page` (INFO from Saturation to ALL, then Hue)
+    - `color-wheel-dial-label-resets-with-the-page`
+    - `color-wheel-saturation-guide-names-the-page`
+    - `color-wheel-front-dial-skips-all-colors-off-saturation`
+  - **Camera (crombach, 2026-11-16, E1479999.BIN 6cef8303…): works, performance good.** The camera's INFO, Tint on both
+    tone pages and the stack fix. crombach: "Color All is useless on the tint wheels, so we should remove it. Probably
+    same for hue and luminance."
+  - **The front dial skips all colors off Saturation (2026-11-16, emulator only).** The front dial reaches the wheel as
+    the left / right events 0x9008 / 0x900a, through the record hooks ed_l / ed_r (EDLR). The cursor runs 1, 255, 12,
+    11 .. 2, 1 (255 = all colors, 2197 + k). On every page but Saturation, EDLR now calls the stock handler, reads the
+    cursor (k_ad), and calls it once more when it landed on 255. The dial widget steps both times, so its index and
+    the cursor agree. No new hook. Arrow keys take the same path. Driver token `expect:val:ID=V` reads a setting
+    through the getter (`getv`, shared with `vals`). The read is k_cur (2197 + k only): from slices 1 and 12 the dial
+    sets 255 there, while k_ad also reads 2201 + k.
+  - **"Sat. All [INFO]" on all colors (crombach, 2026-11-16, emulator only).** crombach: "When on Sat. All, whether accessed
+    via the dial or the INFO button, the label at the bottom (next to the info button) should say Sat. All". gd_s0 now
+    puts mkguides "Sat. All" (175 x 50, 3516 B) in SDESC; GDESC keeps "Saturation [INFO]". The picture lives in .ext13
+    (fl_sagd in wheel.inc: .ext11 had 1.7 KB too little), and fl_mk copies it to P+SATB + SAT_AG with ub_cpy, so
+    gd_sel's range check on the block still finds it. Screenshots (om-emu): the guide reads "Sat. All" after the dial
+    and after INFO.
+  - **Review fixes (2026-11-16).** ed_trig calls vl_s with d2 = -1 at the half-press: xb_vl puts the camera's "Vivid"
+    back in VDESC (it kept Sat for other screens), and the wheel draws Sat when it opens. xb_vl needs LABELS.BIN
+    (xb_lb) only to draw a label, not for wl_blk's. fl_mk allocates wl_blk last, after LV_BLK and SP_BLK, and copies
+    the P+SATB pictures and wl_tab with ub_cpy (a word at a time, was a byte). Test
+    `color-wheel-tone-readout-keeps-the-callers-a2` (keep: on tn_get to t_ret) catches tn_get without its return slot.
+  - **Leaving with MENU or OK** keeps the last label in VDESC until the next half-press: neither reaches an editor
+    record handler (ed_info, ed_l, ed_r, ed_event, gd_set; the stock words +8..+40 not hit in om-emu). Hooking the
+    draw instead: the only VDESC read is 0x610eaf8c, the camera's picture routine for every descriptor on every screen
+    (GDESC goes through it too), so not used.
+  - **Camera (crombach, 2026-11-16, E1479999.BIN ec545b42…, GUIDES.BIN e433434b…): "Testing is good."** The front
+    dial skips Color All off Saturation, "Sat. All [INFO]" from the dial and from INFO, no wheel label on the other
+    screens after MENU / OK, the half-press reset, photos, video and films.

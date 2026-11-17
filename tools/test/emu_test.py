@@ -147,6 +147,43 @@ GRID_ROW_AND_BACK = ('s1 wait wait ok wait ok wait ' + 'down wait ' * 7 + HOLDER
 NOISE_FILTER_OFF_ROW = (f's1 wait wait {NR_ROW_STAR(False)} poke:{NF_BYTE:x}=fe wait {NR_ROW_STAR(False)} '
                         f'pokep:{NR_SLOT_COLOR2}=01 wait {NR_ROW_STAR(True)} poweroff')
 
+# The wheel's dial label (#64) names the page: Saturation -> Hue -> Luminance -> Shadows -> Highlights -> Saturation.
+# As on the camera, INFO on a single color turns ALL on, and the label stays Sat. The checks read a descriptor's
+# stream size (+12), which differs per picture: update them when the pictures change.
+U32 = lambda v: v.to_bytes(4, 'little').hex()
+U16 = lambda v: v.to_bytes(2, 'little').hex()
+VDESC = 0xa4cf688c                # the dial label ("Vivid"), 70 x 30
+LABEL_SIZE = {'Sat': 796, 'Hue': 996, 'Lum': 1092, 'Tint': 1028}
+LABEL_IS = lambda name: f'expect:mem:{VDESC + 12:x}={U32(LABEL_SIZE[name])}'
+OPEN_WHEEL = 's1 ok ok down down down wait'
+WHEEL_PAGE_LABELS = (f'{OPEN_WHEEL} {LABEL_IS("Sat")} info wait {LABEL_IS("Sat")} info wait {LABEL_IS("Hue")} '
+                     f'info wait {LABEL_IS("Lum")} info wait {LABEL_IS("Tint")} info wait {LABEL_IS("Tint")} '
+                     f'info wait {LABEL_IS("Sat")} poweroff')
+# On Saturation, GDESC (a single color) reads "Saturation [INFO]" and SDESC (ALL, 175 wide while ours) "Sat. All
+# [INFO]", whether the dial or INFO turned ALL on. Off Saturation, SDESC is the camera's again.
+GDESC, SDESC = 0xa49ecdf8, 0xa49edf88
+SATURATION_GUIDE, SAT_ALL_GUIDE, SDESC_STOCK_SIZE = 4132, 3516, 4471
+SDESC_IS = lambda width, size: f'expect:mem:{SDESC + 2:x}={U16(width)} expect:mem:{SDESC + 12:x}={U32(size)}'
+WHEEL_SAT_GUIDES = (f'{OPEN_WHEEL} expect:mem:{GDESC + 12:x}={U32(SATURATION_GUIDE)} {SDESC_IS(175, SAT_ALL_GUIDE)} '
+                    f'sub+1 wait expect:val:2197=255 {SDESC_IS(175, SAT_ALL_GUIDE)} sub-1 wait '
+                    f'info wait {SDESC_IS(175, SAT_ALL_GUIDE)} info wait {SDESC_IS(180, SDESC_STOCK_SIZE)} poweroff')
+# On Hue, ed_get calls the label code (vl_s). Its caller gets a2 back as it was. v0.20..v0.30.3 handed back the call's
+# return address in a2: the call wrote it over ed_get's saved a2.
+WHEEL_READOUT_KEEPS_A2 = f'keep:{{ed_get}}:{{g_ret}}:a2 {OPEN_WHEEL} info wait info wait wait expect:kept poweroff'
+# The same on Shadows: tn_get calls the label code on its readout.
+TONE_READOUT_KEEPS_A2 = (f'keep:{{tn_get}}:{{t_ret}}:a2 {OPEN_WHEEL} info wait info wait info wait info wait wait '
+                         f'{LABEL_IS("Tint")} expect:kept poweroff')
+# The front dial puts all colors (cursor 255) between slices 1 and 12. On Saturation it stops there, as stock. On Hue
+# (as on Lum and Tint) it steps over: 1 -> 12 -> 1.
+CURSOR = 2197                     # COLOR 1's wheel cursor: slice 1..12, 255 = all colors
+WHEEL_DIAL_SKIPS_ALL = (f'{OPEN_WHEEL} sub+1 wait expect:val:{CURSOR}=255 sub-1 wait expect:val:{CURSOR}=1 '
+                        f'info wait info wait {LABEL_IS("Hue")} sub+1 wait expect:val:{CURSOR}=12 '
+                        f'sub-1 wait expect:val:{CURSOR}=1 poweroff')
+# Left on Hue, the half-press puts the wheel back on Saturation and the camera's "Vivid" back for the other screens.
+# The wheel opens again with Sat.
+VIVID_SIZE = 1660                 # the camera's own dial label picture
+WHEEL_RESET_LABEL = (f'{OPEN_WHEEL} info wait info wait {LABEL_IS("Hue")} menu wait menu wait s1 wait wait '
+                     f'expect:mem:{VDESC + 12:x}={U32(VIVID_SIZE)} {OPEN_WHEEL} {LABEL_IS("Sat")} poweroff')
 
 @dataclass
 class Boot:
@@ -281,6 +318,24 @@ TESTS = {
     'control-panel-dial-keeps-the-record-once-as-it-closes': [
         Boot('s1 wait wait ok wait count:{cm_hp}:*' + ' main+1 wait' * 8 + ' expect:count:{cm_hp}=0 menu wait wait'
              ' expect:count:{cm_hp}=1 s1 wait wait poweroff'),
+    ],
+    'color-wheel-dial-label-follows-the-page': [
+        Boot(WHEEL_PAGE_LABELS),
+    ],
+    'color-wheel-dial-label-resets-with-the-page': [
+        Boot(WHEEL_RESET_LABEL),
+    ],
+    'color-wheel-readout-keeps-the-callers-a2': [
+        Boot(WHEEL_READOUT_KEEPS_A2),
+    ],
+    'color-wheel-front-dial-skips-all-colors-off-saturation': [
+        Boot(WHEEL_DIAL_SKIPS_ALL),
+    ],
+    'color-wheel-tone-readout-keeps-the-callers-a2': [
+        Boot(TONE_READOUT_KEEPS_A2),
+    ],
+    'color-wheel-saturation-guide-names-the-page': [
+        Boot(WHEEL_SAT_GUIDES),
     ],
     'video-boot-after-photo-boot': [
         Boot('s1 wait wait poweroff'),
