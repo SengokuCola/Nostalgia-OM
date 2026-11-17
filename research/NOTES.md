@@ -6628,3 +6628,18 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   5:4, the focus screen probably not opened). Photos XPan 5184 x 1920, 21:9 5184 x 2224, 5:4 4864 x 3888.
 - **Camera-tested so far:** the crops in the files, start-up, the grid in the strip, the AF target, the live
   histogram. Open: the playback label (16:9).
+
+## Crop round 6: the playback label, a diagnosis build (2026-11-17; emulator checks, camera run pending)
+- Not found by analysis: what picks the playback label's entry. The label is the generic picture widget 0x610db0df
+  (its index at +132) over 5-entry lists (4:3 10931, 3:2 10932, 3:4 10933, 16:9 10930, 1:1 10934; elements
+  0x613f8cd4 / 0x613fe9.. / 0x6147d5.., descriptor word 0 = 0x0193 8003). Searched without a hit: a ratio-id -> list
+  position table (u8 / u16 / u32), the five writers of +132 in the GUI (other widgets), code using 0x0193 (403 is a
+  screen id at 0x6037a360), ratio thresholds (cmp 133 / 150 / 177: event code chains), the play module's maker note
+  read 0x618dfcde (sizes only; 0x618e2e66 turns 4:3 into 16:9 for three sizes). XPan and 21:9 read 16:9 but 5:4
+  reads 4:3, so the choice looks shape-based (nearest stock ratio), not a single default.
+- om-emu cannot show it: with the owner's XPan / 21:9 photos on its card, its playback shows no photo details
+  (1/125, -.-, 0mm, 0x0) and never asks for 10930 / 10931.
+- **Round 6 (diagnosis only):** in cr_ic's playback branch (GUI class 5..7), `cr_pbd`: the first request of 10930 or
+  10931 after the first shutter event keeps the picture id, mdr and 48 stack words; the log prints the id, mdr and the
+  words that look like code addresses ("CROP PLAYBACK LABEL (round 6 diagnosis): ..."). Nothing on screen changes.
+  Checked by a direct call in om-emu: saved id 10930 and the stack, d2 / d3 / a1 / sp as on entry, on to ic_get.

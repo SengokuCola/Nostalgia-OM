@@ -346,7 +346,11 @@ cr_ic:                            /* d0 = the id, d1 = its exthu (ar_ic); a0 <- 
  beq 9f
  movbu (a0),d1
  cmp 5,d1
+ bcs 11f
+ cmp 8,d1
  bcc 9f
+ jmp cr_pbd                       /* round 6: playback (class 5..7), the label diagnosis */
+11:
  cmp 3,d1
  beq 9f
  movbu (CR_A1),d1
@@ -530,7 +534,7 @@ cr_dst:
 cr_daf:
  .long 0
 cr_t1:
- .asciz "\r\n\r\nCROP MODES (crop round 5): tag at the first half-press "
+ .asciz "\r\n\r\nCROP MODES (crop round 6): tag at the first half-press "
 cr_t2:
  .asciz ", Image Aspect then "
 cr_t3:
@@ -589,6 +593,7 @@ cr_txt:                           /* `call cr_txt,[d2,d3,a2,a3],24` */
  LGS cr_t16
  mov (cr_hn),d0
  LGD
+ call cr_txt6,[d2,d3,a2,a3],24    /* round 6: the playback label diagnosis */
  ret [d2,d3,a2,a3],24
 
 /* ---- Grid lines inside the strip (crop round 2; camera c5: "the gridlines/guides do not match the framing"). The
@@ -907,3 +912,94 @@ cr_trim:                          /* `call cr_trim,[],0`, a1 -> {x, y, w, h} (u1
  jmp cr_dhm                       /* stock 0x60dc4bb1: movm [d2,d3,a2,a3],(sp); add -256,sp */
  .byte 0xcb
 .section .ext12,"ax"
+
+/* ---- Crop round 6: the playback label, a diagnosis (camera, rounds 2..5: playback labels a crop photo 16:9, or 4:3 at
+ * 5:4; the picture itself is right). Playback draws the ratio label as picture 10930 ("16:9") / 10931 ("4:3") from a
+ * generic picture widget (0x610db0df, its index at +132, chosen by code om-emu does not run: its playback shows no
+ * photo details). cr_pbd: in playback, the first time either picture is asked after the first shutter event, keep the
+ * picture id, mdr and 48 words of the stack (the callers' return addresses), for the log. Nothing on screen changes. */
+ .balign 4
+cr_psi:                           /* the picture asked, mdr then */
+ .long 0
+cr_psm:
+ .long 0
+cr_pss:                           /* 48 stack words */
+ .space 192
+cr_psn:
+ .byte 0
+ .balign 2
+cr_pbd:                           /* jmp from cr_ic (d0 = the id; a0 free; must leave as cr_ic's 9:) */
+ mov d0,d1
+ exthu d1
+ cmp 10930,d1
+ beq 1f
+ cmp 10931,d1
+ bne 9f
+1:
+ movbu (cr_psn),d1
+ cmp 0,d1
+ bne 9f
+ mov 1,d1
+ movbu d1,(cr_psn)
+ add -12,sp
+ mov d2,(0,sp)
+ mov d3,(4,sp)
+ mov a1,(8,sp)
+ mov d0,d2
+ exthu d2
+ mov d2,(cr_psi)
+ mov mdr,d2
+ mov d2,(cr_psm)
+ mov sp,a1
+ add 12,a1                        /* the stack as at entry */
+ mov cr_pss,a0
+ clr d3
+2:
+ mov (d3,a1),d2
+ mov d2,(d3,a0)
+ add 4,d3
+ cmp 192,d3
+ bcs 2b
+ mov (0,sp),d2
+ mov (4,sp),d3
+ mov (8,sp),a1
+ add 12,sp
+9:
+ mov d0,d1                        /* as ar_ic left it */
+ exthu d1
+ jmp ic_get
+
+cr_t17:
+ .asciz "\r\nCROP PLAYBACK LABEL (round 6 diagnosis): picture "
+cr_t18:
+ .asciz ", mdr "
+cr_t19:
+ .asciz ", code words on the stack:"
+cr_t20:
+ .asciz " "
+ .balign 2
+cr_txt6:                          /* `call cr_txt6,[d2,d3,a2,a3],24` from cr_txt */
+ LGS cr_t17
+ mov (cr_psi),d0
+ LGD
+ LGS cr_t18
+ mov (cr_psm),d0
+ call lg_h,[],0
+ LGS cr_t19
+ clr d2
+ mov cr_pss,a2
+1:
+ mov (a2),d0
+ cmp 0x60000000,d0
+ bcs 2f
+ cmp 0x62000000,d0
+ bcc 2f
+ LGS cr_t20
+ mov (a2),d0
+ call lg_h,[],0
+2:
+ add 4,a2
+ inc d2
+ cmp 48,d2
+ bcs 1b
+ ret [d2,d3,a2,a3],24
