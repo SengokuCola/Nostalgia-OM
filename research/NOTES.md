@@ -6001,3 +6001,5 @@ rgb-page-counts-every-click, halation-matches-the-model). Package `test-builds/2
   grain against 244 Off (g2b: 204..218); mean brightness as Off (43.5..46.8 against 45.9, a dark scene). So +136 is
   the texture's Y input offset and +160 its Y minimum, as read from the init (the guess held). Not covered yet: a
   white / bright scene, Glow + grain, video, daylight Halation.
+- **Owner on the g2c photos (2026-11-16): "Looks good"** (owner-approved look; via the main chat). Still untested on
+  the camera: a white / bright scene, Glow with grain, video, Halation in daylight with strong grain.
