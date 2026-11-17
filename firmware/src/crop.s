@@ -26,7 +26,7 @@
 cr_vlist:                         /* validator list of 269 (stock 1,3,2,4,9 at 0x60616696; record 0x6061b670, section 2) */
  .byte 1, 3, 2, 4, 9, 5, 6, 7
 .section .ext1,"ax"
- .balign 2
+ .balign 4                        /* as the stock map's (u16 pairs) */
 cr_rmap:                          /* the stills rule's allowed values (stock 0x605d100c, 6 entries) + 5, 6, 7 (rule
                                      0x605d1134, section 2) */
  .space 9 * 4
