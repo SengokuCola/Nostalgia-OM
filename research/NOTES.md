@@ -5905,3 +5905,30 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   targets to hook_shutter in `LATE_RELEASED`. Not changed here. om-emu shows none of this: it maps every section from
   the first instruction and does not run the stills' or live view's development (no hits at any pipeline site in a
   boot, a half-press and a shot).
+
+## Section gates G1..G3 (2026-11-17; emulator + analysis, camera test pending; branch fix/section-gates)
+- **Owner's OK** (relayed by the main chat): build the start-up gates G1 (colour mix), G2 (tone), G3 (the live-view
+  request), "Section order audit" above. G4 (the stills hooks) left out: `.ext1` has 26 B left after G1..G3.
+- **Code** (d11ecef): three gates in `.ext1` (section 1's tail, in from the first instruction), each `mov
+  (SEC_READY),d0; and 0x20,d0; beq` (the camera's ready bit for section 6), then our code; until the bit is set the
+  stock instructions. d0 is free at all three sites (each target writes it before reading it):
+  - G1 `mx_g` (0x6031ef8c): `.hook_mx` 0x6051485a `jmp mx_g` -> mx_go, else `call mx_row` (0x605144ef) and MX_BACK.
+  - G2 `tn_g` (0x6031efa8): `.hook_tone` 0x605197d7 `call tn_g,[d2,d3,a2,a3],56` -> tone (section 5, which always
+    ends in st_run, section 6), else `mov d3,a0; jmp tone_next` (the stock 0x605197d7 in the same frame).
+  - G3 `lv_g` (0x6031efbf): s_lv `jmp lv_g` -> s_lv6, else `mov 11,d0; jmp lv_skip` (the stock path for a COLOR
+    request: picture mode 11 < 100 -> 0x6046b94f with d0 = 11). A ready-bit gate rather than v0.30.3's `xp`-first
+    order: `.ext2` is one byte short of the inline form, and the check knows this pattern. Same effect: before
+    section 6 is ready the films are not loaded, so the request gets no flags either way.
+  - Hook addresses and lengths unchanged (`hooks.json` as it is). `.ext1` 1718 of 1744 B.
+  - No picture change expected: until the films load (the first half-press, or the early load, both after all ten
+    sections are copied) our three paths give the stock result anyway.
+- **`static:section-order`** keeps walking past each crossing with the later section as the new floor (it missed
+  hook_tone's tone -> st_run), decodes zero bytes (objdump `-z`: a lone `clr d0` was "..." and undecodable), and a
+  gate passes for any section up to its mask's lowest bit. `LATE_RELEASED` drops hook_mx, hook_tone, hook_lv and lists
+  the shutter path's onward targets (fopen .. pf_open, behind `hl_ok` / STATE). Main 78a809e: FAIL (hook_lv, hook_mx,
+  hook_tone x 2); v0.30.3: FAIL (hook_mx, hook_tone x 2); fix/section-gates: pass.
+- **Test `live-view-gates-wait-for-section-6`:** the three sites called directly (ncall) with the ready word at 0x1f
+  (sections 1..5) reach the stock code (lv_skip with d0 = 11), at 0x3f our code. On main 78a809e: `caught` (all
+  three reach our code with section 6 not ready). om-emu cannot show the race itself (every section mapped from the
+  start, no live-view set-up run).
+- **Suite (fix/section-gates, out-sg2, E1479999.BIN of d11ecef):** 35 / 35 pass (om-emu 0819080).
