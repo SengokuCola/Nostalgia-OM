@@ -6593,3 +6593,7 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   picture widget (0x610db0df, index at +132) over 5-entry lists; the five writers of +132 in the GUI belong to other
   widgets. 16:9 for XPan and 21:9 but 4:3 for 5:4 suggests the label is picked by the photo's shape (nearest stock
   ratio). Next: a camera log of the index's writer, or our own label pictures in that list.
+- Round 3 card read (main chat): CROP MODES "... now 6; display 3, 900 x 506; AF pair 0:0, mapped 0, screen specs mapped
+  40": cr_spec ran 40 times; **.hook_cra never ran** (its pair stayed 0:0 from boot), focusing works without it ->
+  removed in round 4 (one hook fewer). Display set-up still id 3, 900 x 506 at XPan. Photos XPan 5184 x 1920, EXIF
+  AFAreas the centre.

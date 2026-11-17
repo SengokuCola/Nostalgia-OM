@@ -34,7 +34,6 @@ LAYOUT = HERE / 'vendor' / 'caduceus-bundles-layout.json'    # Caduceus (Apache-
 HOOKS = {'.hook_color': (0x60518615, bytes.fromhex('cd6cfdf060')),
          '.hook_crs': (0x60061183, bytes.fromhex('470c93cd79fd0000')),   # crop modes: the settings store write (power-off)
          '.hook_crb': (0x6006120e, bytes.fromhex('fccf80d273a3')),       # crop modes: the buffer before the write (menus)
-         '.hook_cra': (0x60882acd, bytes.fromhex('fa024801fa539800fa024c01fa539900')),   # crop round 3: the AF driver's pair copy
          '.hook_crg': (0x611cb24d, bytes.fromhex('5c0870f85309')),       # crop round 3: the GUI screen spec's ratio byte
          '.hook_shutter': (0x60415216, bytes.fromhex('cd2d01f024')),
          '.hook_set': (0x60b8798b, bytes.fromhex('dd04d90200f044')),

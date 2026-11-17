@@ -545,14 +545,8 @@ cr_t7:
  .asciz ", "
 cr_t8:
  .asciz " x "
-cr_t9:
- .asciz "; AF pair "
-cr_t10:
- .asciz ":"
-cr_t11:
- .asciz ", mapped "
 cr_t14:
- .asciz ", screen specs mapped "
+ .asciz "; screen specs mapped "
 cr_t15:
  .asciz "; histogram area "
 cr_t16:
@@ -582,15 +576,6 @@ cr_txt:                           /* `call cr_txt,[d2,d3,a2,a3],24` */
  LGD
  LGS cr_t8
  movhu (CR_DSP + 12),d0
- LGD
- LGS cr_t9                        /* round 3: the AF driver's last pair, pairs and selector keys mapped */
- mov (cr_afw),d0
- LGD
- LGS cr_t10
- mov (cr_afh),d0
- LGD
- LGS cr_t11
- mov (cr_afn),d0
  LGD
  LGS cr_t14
  mov (cr_spn),d0
@@ -793,73 +778,9 @@ cr_gx:
  movhu d0,(6,a3)
  jmp bl_cgb
 
-/* ---- Crop round 3: the AF target (camera, round 2: still not drawn at XPan). Two places on the AF side that om-emu
- * does not run, as the E-P7's fixes for the same symptom (cakelesscoder, docs/ASPECT.md 1i: pr_w, af_sel):
- * (a) The AF driver copies the live view's ratio pair from its message (+328 / +332) into its object (+152 / +153,
- *     0x60882acd); its point-area code (0x60853b..: per AF point, which lie outside the picture) has cases for 4:3,
- *     16:9, 3:2, 6:6 and 3:4 and logs an error for any other pair, writing nothing. cr_afp: after the stock copy, a
- *     crop's pair becomes its base's in the AF object only (65:24, 21:9 -> 16:9; 5:4 -> 4:3); live view keeps its own.
- * (AF_Target_Actuator's ratio key and the target screen helper's read of 269 were mapped too in a first try; with
- * (d) below om-emu draws the same without them, so they are left out.) The stock path plus one byte read before the
- * first shutter event (cr_on). */
- .balign 4
-cr_afn:                           /* (a) pairs mapped this power-on, the last pair seen (w, h) */
- .long 0
-cr_afw:
- .long 0
-cr_afh:
- .long 0
-cr_afp:                           /* jmp from 0x60882acd (a2 = the message, a3 = the AF object; d0 / a0 free) */
- mov (328,a2),d0                  /* the stock copy */
- movbu d0,(152,a3)
- mov d0,(cr_afw)
- mov (332,a2),d0
- movbu d0,(153,a3)
- mov d0,(cr_afh)
- movbu (cr_on),d0
- cmp 0,d0
- beq 9f
- movbu (152,a3),d0
- cmp 65,d0
- beq 6f
- cmp 21,d0
- beq 7f
- cmp 5,d0
- bne 9f
- movbu (153,a3),d0                /* 5:4 -> 4:3 */
- cmp 4,d0
- bne 9f
- mov 4,d0
- movbu d0,(152,a3)
- mov 3,d0
- movbu d0,(153,a3)
- bra 8f
-6:
- movbu (153,a3),d0                /* 65:24 */
- cmp 24,d0
- bne 9f
- bra 5f
-7:
- movbu (153,a3),d0                /* 21:9 */
- cmp 9,d0
- bne 9f
-5:
- mov 16,d0                        /* -> 16:9 */
- movbu d0,(152,a3)
- mov 9,d0
- movbu d0,(153,a3)
-8:
- mov (cr_afn),d0
- inc d0
- mov d0,(cr_afn)
-9:
- jmp cr_afp_back                  /* 0x60882add */
-
-
-.section .hook_cra,"ax"
- jmp cr_afp                       /* stock 0x60882acd: mov (328,a2),d0; movbu d0,(152,a3); mov (332,a2),d0; movbu d0,(153,a3) */
- .byte 0xcb, 0xcb, 0xcb, 0xcb, 0xcb, 0xcb, 0xcb, 0xcb, 0xcb, 0xcb, 0xcb
-.section .ext12,"ax"
+/* ---- Crop round 3: the AF target (camera, round 2: still not drawn at XPan; camera, round 3: drawn and moved).
+ * (A copy of the AF driver's live view pair at 0x60882acd was mapped too; the round 3 camera log showed it never ran,
+ * so round 4 leaves it out.) */
 
 /* (d) Round 3, the cause (pinned om-emu reproduces the camera): the GUI's screen spec builder (0x611cb1c4..) copies
  * Image Aspect (its facade read at 0x611cadba into the object's +1056) into the spec's ratio byte (+9, 0x611cb24d);
