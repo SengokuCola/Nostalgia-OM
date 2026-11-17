@@ -6622,3 +6622,9 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   hook_crs 0x60061183, hook_crb 0x6006120e (save time only), hook_crg 0x611cb24d (the screen spec), hook_crh
   0x60dc4bb1 (the histogram area: before the first shutter event the stock entry plus two stores of our own log
   values and one byte read)) and `static:changed-bytes`.
+- **Camera, round 5 (owner, 2026-11-17): "Histo works!!"** (camera-tested). Card read (main chat): CROP MODES "... now
+  5; display 3, 900 x 506; screen specs mapped 0; histogram area 800 x 600, trimmed 6": cr_dhm ran and trimmed (the
+  main area at 5:4 was 4:3's 800 x 600). Specs mapped 0: no screen spec rebuilt at a crop that power-on (ended on
+  5:4, the focus screen probably not opened). Photos XPan 5184 x 1920, 21:9 5184 x 2224, 5:4 4864 x 3888.
+- **Camera-tested so far:** the crops in the files, start-up, the grid in the strip, the AF target, the live
+  histogram. Open: the playback label (16:9).
