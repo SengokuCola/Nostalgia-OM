@@ -6446,6 +6446,13 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   (Picture Mode, live view at 3:2) identical to border preview 1.
 - Package `test-builds/2026-11-17-crop-round-1` (private folder): E1479999.BIN `a5d4a2ab…aaa7` (commit 47b82ca),
   VERSION "v0.31-alpha-dev (crop round 1: XPan, 21:9, 5:4)", go-back border preview 1 `db1fedfa…a732`.
+- **Camera, round 1 (owner, 2026-11-17; card read by the main chat, checked here):** the owner flashed a5d4a2ab… and
+  took one photo per crop: XPan 5184 x 1920, 5:4 4864 x 3888, 21:9 5184 x 2224 (AspectFrame 0 0 w-1 h-1, S-AF); the
+  crop looks centred vertically. **EXIF AspectRatio reads 7:6 / 5:4 / 6:5**: the maker note keeps ids 6 / 7, which
+  readers know as the hidden 7:6 / 6:5 (with the playback labels: one issue). The kept CADLOG.TXT is a later short
+  power-on (4 shutter events, 0 photos): "tag at the first half-press 00000000, Image Aspect then 0, set to 0, after
+  0, now 6" (no saved crop at that start; XPan picked after the first half-press); the switch-off at XPan / switch-on
+  power-on's log was overwritten. Start-up, black screens and the focus point: the owner's notes not in yet.
 - **Plan for round 2 (analysis):**
   - AF point in S-AF: the E-P7's fix list (cakelesscoder, docs/ASPECT.md section 1i, camera-tested there) names every
     place that looks the ratio up and misses at 6 / 7: the AF selector set-up lists, the AF rows / columns switches and
