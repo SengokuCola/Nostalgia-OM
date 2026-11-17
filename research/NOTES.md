@@ -5949,3 +5949,46 @@ rgb-page-counts-every-click, halation-matches-the-model). Package `test-builds/2
   (private folder): E1479999.BIN `f26ff261…842a` (a rebuild of 466bf47 matches), go-backs v0.30.3 `60b6d954…f546` and
   border test 1c `d8ce3d89…3db3`; TEST-STEPS: the rows, old Low / Med / High -> 2 / 3 / 5, strengths Off / 1 / 3 / 5,
   sizes, Grain + Border 3 together, per film, no-freeze cases, Grainy Film, the log. Emulator only so far.
+
+## Better grain g2b camera result and g2c (2026-11-16; branch feature/better-grain)
+- **g2b camera (owner's OM-3, 2026-11-16; package f26ff261…): camera: halation lost with grain >= ~3, owner-confirmed at
+  4** ("the halation disappears at high grain, level 4"). Files in the private card backups (CADLOG, PB162962..997).
+  Otherwise fine (the main chat's readings): no freeze (38 photos, 150 events, "nothing unusual"); the rows and the
+  NOW line ("4 Coarse"); strength Off / 1 / 3 / 5 clear steps; sizes right; Border 2 = 116 px, 5 = 291..292 px, plain
+  white (std <= 0.4); bursts of 7 and 10 with Grain + Border 5 all saved; grain tiles "made 37, failed 0, last
+  time 428 ms". Not shown by the files: video (none taken), Image Review, ART Grainy Film.
+- **Cause (camera photos, measured):** the grain capped the highlights. Brightest parts (99.99th percentile, inside
+  the border) Off 239, strength 1 239, 3 218, 5 204 (972: 195); the lamp series 977 (no grain) 236, 978 228, 979 212,
+  980 195, 974 183. With no pixel above Halation's threshold (T 200, firmware/halation.py) the grid had no source
+  (research/halation/model.py on the photos: 6.6 % bright cells at 977, 0 at 980 / 974..976). g1 / g2 took the tile's
+  Y mean off as the combiner's output Y offset (+180), but the sum is clamped before that offset: the mean x gain
+  (10-bit 192 at 1024, 288 at 1536) filled the headroom over white (about 83 at 10-bit: strength 1's 75 fitted, so 1
+  was unaffected). The mean brightness stayed (g1's "no brightening"), so it was not noticed before.
+- **The combiner's register image (static analysis, init 0x605047c1 and the set-up cases 0x60504a80..0x605053d0):**
+  per input (first +76.., second = the texture +128..): +84 / +136 input offsets (low Y, high Cb; +88 / +140 Cr):
+  init Y 0, Cb / Cr -512 (how the chroma is centred); +92 / +144 mode; +96 / +148, +100 / +152 gains; +108 / +160 and
+  +112 / +164 clamp minima (init Y 0, Cb / Cr -512); +116 / +168, +120 / +172 maxima (init Y 1023, Cb / Cr 511); output
+  +180 (Y low, Cb high 512), +184 Cr 512. Another set-up (0x6050482f) fills the Y input offset, Y min / max and the
+  output Y offset from a table: a levels step, so the order is (input + offset) clamped, x gain, summed, + output
+  offset (analysis).
+- **g2c fix (xblock.s xb_c1e):** +136 low half = -192 (the tile's Y mean 48 x 4, on the texture's own input), +160 low
+  half = -512 (its Y minimum, so the centred grain keeps its lower half), +180 low half = 0. xb_tbias gone. Expected on
+  the camera: highlights and brightness as with grain Off, Halation's lamp back. If +136 is not the Y input offset,
+  grain photos would come out lighter (the mean added, no output offset): the test says which.
+- Simulation (centred Gaussian grain added to the no-grain photos, the halation model's coverage guard): lamp 977
+  6.6 % -> 7.0 % (sigma 16) / 7.5 % (sigma 24) bright cells: full strength. Daylight 962 / 970 (already 21-22 %,
+  partial): 48-61 % with sigma 16-24 -> Halation off. The guard (COV_U / COV_HI on the threshold-excess grid) counts
+  the grain's bright specks in mid-bright cells (Y ~150..200). Not changed in g2c (Halation's own tuning, owner's
+  call): an average over a few pixels before the threshold would make the grid blind to the grain.
+- **Grain tiles remade per photo (37 for 38):** the texture cache (TXGET) frees an object at its release when no
+  other still holds it (0x604ce397: refcount <= 1 -> buffer back, state 0); a burst's stills develop one after another,
+  so each makes its own tile (about 0.43 s). Keeping it would mean holding a 4.7 MB texture buffer from the camera's
+  pool for good (not done: memory risk); a cheaper tile (columns repeating every 768 as the rows already do) would
+  halve the time. Owner's call; unchanged.
+- om-emu: new test `grain-mix-keeps-the-highlights` (s_c1e on a register image as the init leaves it, strengths 1 / 3
+  / 5 and a tile not written: +96 / +100 the photo's chroma back, +148 / +152 the gains, +136 / +160 / +180 as above);
+  `--without` the g2b build (out-g2e): caught. session_ed1.mjs: W(addr) in ncall expressions (the code block's
+  address, P + XPTR). Suite on 084d088: **30 of 30 pass**. Glow: the camera's Soft Focus works on the developed picture
+  after the grain, so its highlights were capped too; camera-only.
+- Package `test-builds/2026-11-16-grain-g2c` (private folder): E1479999.BIN `317747e1…23a6` (VERSION "v0.30.3-dev
+  (grain g2c: grain centred, highlights kept)"), go-backs v0.30.3 `60b6d954…f546` and border test 1c `d8ce3d89…3db3`.
