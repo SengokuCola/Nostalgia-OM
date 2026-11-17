@@ -5860,8 +5860,8 @@ rgb-page-counts-every-click, halation-matches-the-model). Package `test-builds/2
 - **Camera (owner, 2026-11-17): test 5 on the camera, card read:** debug log "nothing unusual" (57 shutter events, 35
   log writes, 8 shooting-mode changes). Six photos (P, A, S, M; FILM 1 with split toning, a curve and Glow): each
   shows the full look. The movie clip: no split toning, curve or Glow, but dark corners (the film's own camera
-  settings, which PR #73 leaves to video, its note); the S&Q clip: stock. The owner's word on #72 and the wheel
-  labels: pending.
+  settings, which PR #73 leaves to video, its note); the S&Q clip: stock. **Camera-tested (owner, 2026-11-17): #72 and the wheel
+  labels "Both worked".** Test 5 is the v0.30.4 candidate (PR #70's three label-size tests still to settle).
 
 ## Issue #64: the wheel's dial label names the page (2026-11-16; feature/dial-label-per-page; camera-tested)
 - Owner on #64: "I like these changes, if you make a pr with them, I'll merge". This replaces the sp1 request (2026-11-09)
