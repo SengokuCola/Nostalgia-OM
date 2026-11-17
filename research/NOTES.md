@@ -5932,3 +5932,10 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   three reach our code with section 6 not ready). om-emu cannot show the race itself (every section mapped from the
   start, no live-view set-up run).
 - **Suite (fix/section-gates, out-sg2, E1479999.BIN of d11ecef):** 35 / 35 pass (om-emu 0819080).
+- **Test build** (`try/section-gates-blv`, `feature/border-live-view` 27bcd0f + this branch; conflicts only where both
+  added tests and notes, both kept; build name "v0.31-alpha-dev (border preview 1 + section gates, test 1)"):
+  E1479999.BIN 37ba0343…538c, GUIDES.BIN d2db78a3…243e. Suite 44 / 44 pass (om-emu 0819080), the border preview,
+  grain and gate tests included; static:section-order passes on it. om-emu screens (start, half-press, FILM 2,
+  Picture Mode, the Border row, the RGB page) byte for byte as border preview 1's (db1fedfa…). Package
+  `test-builds/2026-11-17-section-gates-1` (private folder), go-back border preview 1 db1fedfa…a732 + its GUIDES.BIN
+  852cb6f2…. Camera test pending: start-up first (on / off several times, EVF, playback), then everyday use.
