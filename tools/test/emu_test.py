@@ -383,6 +383,12 @@ TESTS = {
         Boot(f's1 wait wait {PICK_ASPECT(1)} s1 wait wait {GRID_THIRDS} '
              'expect:pxdiff:300,120,310,120 expect:pxdiff:450,215,450,225 poweroff'),
     ],
+    # crop round 3: the AF target screen at XPan draws its area outline (x 2) and the Single target (x 506..532), as at
+    # 16:9 (the pinned om-emu showed neither before: the GUI's screen spec held ratio 6, which no layout table has).
+    'crop-af-target-drawn-at-xpan': [
+        Boot(f's1 wait wait {PICK_ASPECT(6)} s1 wait wait left wait wait main-1 wait '
+             'expect:pxdiff:2,300,10,300 expect:pxdiff:506,300,500,300 menu wait s1 wait wait poweroff'),
+    ],
     # better grain g2: the Film Grain row steps 0..5 (no step past 5) and keeps the old level byte in step (5 -> High 3,
     # 2 -> Low 1); the Grain Size row (Medium -> Coarse); both kept over a power-off (the debug log's NOW line).
     'grain-rows-strength-and-size-kept': [

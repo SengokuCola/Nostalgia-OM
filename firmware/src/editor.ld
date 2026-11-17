@@ -3,8 +3,7 @@ SECTIONS {
   .hook_crs     0x60061183 : { *(.hook_crs) }   /* crop modes: the settings store write (power-off: M patched in RAM) */
   .hook_crb     0x6006120e : { *(.hook_crb) }   /* crop modes: the buffer before the write (after a menu) */
   .hook_cra     0x60882acd : { *(.hook_cra) }   /* crop round 3: the AF driver's copy of the live view's ratio pair */
-  .hook_crk     0x6119b240 : { *(.hook_crk) }   /* crop round 3: AF_Target_Actuator's ratio key, after its read */
-  .hook_crl     0x61291206 : { *(.hook_crl) }   /* crop EXPERIMENT (CROP_LSX=1 only): the AF screen's layout search */
+  .hook_crg     0x611cb24d : { *(.hook_crg) }   /* crop round 3: the GUI screen spec's ratio byte */
   .hook_shutter 0x60415216 : { *(.hook_shutter) }
   .ext1         0x6031e920 : { *(.ext1) }
   .ext4         0x60a8f100 : { *(.ext4) }
@@ -264,7 +263,4 @@ cr_lr_j       = 0x60bf2d2b;         /* the live view ratio switch: mov d0,(28,sp
 cr_rc_j       = 0x60c0d35f;         /* ratioToConvertSize: mov d0,(4,a1); retf [],0 */
 cr_oa_j       = 0x60c14b95;         /* getOutputAspect: mov d0,(16,sp) */
 cr_afp_back   = 0x60882add;         /* crop round 3: after the AF driver's pair copy */
-cr_afs_back   = 0x6119b246;         /* crop round 3: AF_Target_Actuator, the ratio lists (key not 100) */
-cr_afs_100    = 0x6119b295;         /* and the other list pair (key 100) */
-cr_gw0        = 0x612d7150;         /* crop round 3: the facade read wrapper (d0 id, a0 out) */
-cr_lsx_back   = 0x6129120b;         /* crop EXPERIMENT: the layout search after its first 5 bytes */
+cr_spec_back  = 0x611cb253;         /* crop round 3: after the screen spec's ratio byte */
