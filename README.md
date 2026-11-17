@@ -1,6 +1,6 @@
-> **Branch `feature/better-grain`: camera test (2026-11-16).** Our own colour grain picture (g1) on top of the Border
-> row (`feature/image-borders`), emulator only, not camera-tested; see `research/NOTES.md`, "Better grain g1". The
-> released firmware is on `main`.
+> **Branch `feature/better-grain`: camera test (2026-11-16).** Our own colour grain picture (g1, camera-tested) with
+> the Film Grain slider and Grain Size row (g2, emulator only), on top of the Border row; see `research/NOTES.md`,
+> "Better grain g1" and "g2". The released firmware is on `main`.
 
 <h1 align="center">Caduceus for OM-3</h1>
 

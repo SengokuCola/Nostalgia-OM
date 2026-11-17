@@ -5895,3 +5895,45 @@ rgb-page-counts-every-click, halation-matches-the-model). Package `test-builds/2
     end) & 0x7fffffff) >> 4 x 1049 >> 16 = milliseconds (to 65 s). om-emu: the size-2 full tile still equals the
     model byte for byte, time 0 (g1 gave 4194303 there: the same wrap). VERSION "v0.30.3-dev (grain g1b + borders
     1c)". The time is camera-only (om-emu's counter barely moves), so no suite test for it.
+
+## Better grain g2: Film Grain strength and Grain Size rows (2026-11-16; branch feature/better-grain; emulator only)
+- Owner (via the main chat, after the g1 + borders photos): "Good, keep going": the mockup's settings (2026-11-15):
+  Film Grain a slider Off, 1..5; a Grain Size row Fine / Medium / Coarse under it; films' Low / Med / High -> 2 / 3 / 5.
+- **Storage (no record byte was free: LOOKS / EDITS +0..+62 all used, +63 the own records' '*'):**
+  - slot +53 (record +51) stays the old level, kept in step by `gs_wr` (strength 1-2 -> Low 1, 3 -> Med 2, 4-5 -> High
+    3): older firmware, the CPU grain (`xb_gs`), LookLab and the photo code read it as before; BUNDLES `fgrain` stays
+    0..3, so going back to v0.30.3 keeps the films and settings (strength shows as Low / Med / High there).
+  - strength and size in **the curves record's spare byte** (rgbcurves.inc: each 26-byte slot's last kept byte, "byte 7
+    zero" in docs/FORMATS.md), `G` = live[k] +25 in `cv_ram`: it travels with COLOR k's curves (`cv_cap` / `ck_rec` to
+    and from EDITS records ed[r], films and own settings alike; the per-mode sets `cv_sput` / `cv_sget`; the record in
+    M). v0.30.3's `cv_load` / `cv_pk` copy those 8 bytes without reading them. `G` = 0: strength from the level
+    (`gs_dv` Low 2, Med 3, High 5) and Medium; else 0x80 | size << 3 | strength; `gs_wr` writes 0 whenever the level
+    gives the same, so a film as built has G = 0.
+- **Rows:** `GS_IT` 5388 (class 15, bars `GSB` 0x7e90 + k, a 0..5 slider as Halation: sl_slot, SL_VAL, REAL, sl_cnt,
+  LOWCNT, sl_set0 -> `gs_row`, rw_bar, rv_chk, st_chk, rd_a / rd_b, CHC gs_f; title the camera's "Film Grain Effect"
+  2778, icon 12 = `IC_GR`) and `SZ_IT` 5387 (class 16, bars `SZB` 0x7e98 + k, a 3-choice row as Noise Filter: it_tab
+  sz_l0 titles "Grain Size: Fine / Medium / Coarse", sz_l1 left cells `IC_Z0..+2` "Size" over Fine / Med / Coarse,
+  sz_l2 strip words: the camera's "Fine" 1146, ours "Med" (the camera's "Medium" 1084 was cut off in its cell, om-emu)
+  and "Coarse"; CHC sz_a..sz_f, lc_sz). pm_list: ..., HL_IT, GS_IT, SZ_IT, FR_IT (5400 leaves COLOR's list; MONO keeps
+  it). Ids picked so their keys miss the row switches (5387 / 5388); bars in row 9 (FLB films end at 0x7e83). build.py:
+  it_tab count 31, ic_list choice count 12, the switches' entries (hooks.json: 34 new runs, all inside the row switch
+  tables 0x61536a2c..f2c / 0x615510cc / 0x6155124c, reviewed: menu only, nothing at start-up).
+- '*': `gs_def` (fl_isdef) for the rows (Film Grain against its film's level as a strength, no film: Off; Size against
+  Medium); the film's '*' counts G != 0 (`ck_kset` / `ck_jset`); the whole-profile reset clears G (`gs_zk` in e_rst).
+- Strings `ST_GZT`..`ST_MED` 0x7f0a..0x7f0f; pictures mkicons PICTURES[14..17] (`grain_icon`: a 28 x 28 square of
+  2 x 2 grey specks with a few orange / blue / green ones; "Size" over Fine / Med / Coarse, 100 x 76), ids 0x7f78..
+  (`ic_get`: ic_ent 14..17). `ic_pay` moved to ext13 (22,864 B): ext11 64,208 / 65,536, ext12 239,168, ext13 59,248.
+- **Photo path (block):** `xb_tex` calls `GS_EFF` (editor `gs_eff`) for this COLOR: `xb_tl` = strength 1..5, `xb_tz` =
+  size 1..3 (the tile key 0x80 + size, `TG_OWN`). `xb_c1e`: Y gain 400 / 650 / 1024 / 1280 / 1536 by strength (1024 =
+  g1's, camera: about today's Med; today's Low / High about 0.6 / 1.5 of it), Cb / Cr 0.4375 of it (175..672), the Y
+  offset -(4 x 48 x gain / 1024) = -75..-288 (-192 camera-confirmed; -240 / -288 untested). Debug log NOW: "Film Grain
+  on COLOR 1-4: 3 Medium, Off, ...".
+- **om-emu (out-g2b, bbf50fb):** the rows show and step (slider Off..+5, stops at 5; Size Fine / Med / Coarse, the
+  choice row wraps as the stock ones do), '*' on both, titles follow; the level byte follows (5 -> 3, 2 -> 1);
+  old levels Low / High / Med on COLOR 1-3 read "2 Medium, 5 Medium, 3 Medium"; a film keeps its own (FILM 2 at 4
+  Coarse, to its COLOR's own settings and back: 4 Coarse again). Suite: **29 of 29 pass** (pass recorded on bbf50fb),
+  new `grain-rows-strength-and-size-kept`; `border-row-0-to-5-kept` steps one row further (the 18th). Not in om-emu:
+  the photos (strength, size, colour, brightness at 4 / 5), timing, bursts.
+- Package `test-builds/2026-11-16-grain-g2` (private folder): E1479999.BIN `92ab3c99…10d3`, VERSION "v0.30.3-dev
+  (grain g2: strength + size rows)"; go-backs v0.30.3 `60b6d954…f546` and border test 1c `d8ce3d89…3db3`. The four
+  new pictures went to the owner for approval first (`row-pictures-for-approval.png`).
