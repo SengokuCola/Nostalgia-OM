@@ -6789,6 +6789,15 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   **The diagnosis line: events 0, no read, no label update, none kept, but no data either:** the log was last
   written at shutter event 28, before the playback viewing (none of the 28 events is a playback screen; main chat),
   so it says nothing about whether 0x611509bc or 0x618dfd0f ran. Round 9 does not depend on it.
+- **Camera, round 8, playback done after a half-press (owner, 2026-11-17; card-backups/2026-11-17-crop-round-8-
+  playback3, PB173211 XPan 5184 x 1920 shown, label "16:9"):** "events 2; maker-note AspectRatio reads 0 ...; label
+  updates 2, last 4 (seq code): 1 4 2 4"; photo info A: code 4; item 197's non-zero words are UTF-16 strings
+  (shutter "1/40" at +180, aperture at +196.., the date / time at +260.., the file number at +320..) and the code
+  (+258 = (24,sp) + 78), **no width or height**. **Camera-tested:** the label is set at 0x611509bc from code 4 for an
+  XPan photo; the maker-note AspectRatio read 0x618dfd0f is not on playback's path; the photo info holds no size, so
+  the code is made upstream from the size (the GUI's shape classifier 0x61101381, round 9's analysis). Earlier tries:
+  playback3's order was shoot, shoot, play, shoot; playback2 viewed before the first half-press (cr_on 0: the hooks
+  wait for it), round 8's first log was written before the viewing.
 
 ## Crop round 9: the playback labels, ratio and quality (2026-11-17; analysis + direct calls, camera test pending)
 - **Cause (analysis, reproduced by direct calls of the stock code in om-emu):** playback sorts a photo **by its
