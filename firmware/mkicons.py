@@ -25,9 +25,7 @@ PICTURES = [
     ([('HSL', 26, 44)], 82, 62),   # v0.24 film test 7 (owner): the Color row's cell, stock "Color / Vivid" (82 x 62)
     ([('Glow', 20, 33)], W, H),    # v0.25: the Glow (+) / Clarity (-) slider's icon (owner: named for the + side)
     ([('Halo', 20, 33)], W, H), ([('Bal', 20, 33)], W, H),  # v0.28: the Halation and Tone Balance sliders' icons (Frame Off / On's places)
-    ([('Grain', 20, 33)], W, H),   # better grain g2 (ids 0x7f78..): the Film Grain strength slider's icon (grain_icon)
-    ([('Size', 15, 30), ('Fine', 18, 60)], CW, CH), ([('Size', 15, 30), ('Med', 18, 60)], CW, CH),
-    ([('Size', 15, 30), ('Coarse', 18, 60)], CW, CH),   # g2: the Grain Size row's left cells (as "Noise" over its value)
+    ([('Grain', 20, 33)], W, H),   # better grain g2 (id 0x7f78): the Film Grain strength slider's icon (grain_icon)
 ]
 STYLE = {10: (0.88, (0.20, 0.40, 0.60))}   # width, coverage thresholds (as the FILM cells, matched to the stock lettering)
 

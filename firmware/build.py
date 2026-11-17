@@ -496,7 +496,7 @@ def build(defaults, testfile, out):
     sys.path.insert(0, str(ROOT / 'firmware'))
     import mkicons
     pics = mkicons.streams()
-    assert len(pics) == 18 and sy['IC_END'] - sy['IC_BK'] == 14 and sy['IC_Z0'] + 2 - sy['IC_GR'] == 3 and sy['ic_pay'] % 8 == 0   # g2: + 4 (ids IC_GR..)
+    assert len(pics) == 15 and sy['IC_END'] - sy['IC_BK'] == 14 and sy['ic_pay'] % 8 == 0   # g2: + the Film Grain icon (id IC_GR)
     # film test 7: the Color row (item 5397) cell picture list {u16 type 3, u16 id, ptr} at 0x6154be9c: "Color / Vivid"
     # 11389 -> our "HSL"
     assert struct.unpack_from('<HH', m, o(0x6154be9c)) == (3, 11389)

@@ -2723,10 +2723,10 @@ pm_list:                          /* item ids, in the order the owner reads them
 .set ST_BDR, 0x7f07                 /* borders: "Border" (was "Frame") */
 .set ST_HAL, 0x7f08                 /* v0.28 "Halation" */
 .set ST_TBL, 0x7f09                 /* v0.28 "Tone Balance" */
-.set ST_GZT, 0x7f0a                 /* g2: "Grain Size", then "Grain Size: Fine" / "... Medium" / "... Coarse", "Coarse" */
+.set ST_GZT, 0x7f0a                 /* g2: "Grain Size", then "Grain Size: Fine" / "... Medium" / "... Coarse", "Coarse" (the last one
+                                   * only the tail of the "Coarse" title) */
 .set ST_GZ0, 0x7f0b
 .set ST_CRS, 0x7f0e
-.set ST_MED, 0x7f0f                 /* g2: "Med" (the strip: the camera's "Medium" is too wide for a cell, om-emu) */
 .set IC_BK, 0x7f80                /* our picture ids (ic_get answers them; the camera's table has ~20000 slots) */
 .set IC_WH, 0x7f81
 .set IC_AB, 0x7f82
@@ -2747,8 +2747,7 @@ pm_list:                          /* item ids, in the order the owner reads them
                                    * ic_list 8. b1b tried the camera's Frame picture 832: 82 x 62, too big for the 46 x 46
                                    * slot (owner: "too large and already cut off"); the camera has no smaller one */
 .set IC_END, 0x7f8e
-.set IC_GR, 0x7f78                /* g2: the Film Grain slider icon (mkicons PICTURES[14]), then "Size" over Fine / Med / */
-.set IC_Z0, 0x7f79                /* Coarse (PICTURES[15..17], the left column, 100 x 76): ic_ent entries 14..17 */
+.set IC_GR, 0x7f78                /* g2: the Film Grain slider icon (mkicons PICTURES[14]): ic_ent entry 14 */
 .set IC_WB, 0x7f8f                 /* v0.25 the WB grid row's left cell (wb_desc, drawn at run time) */
 .set FV0, 100                     /* v0.24 film list: picture-mode values FV0 + j for film j (COLOR k = j / 5, look j % 5 + 1) */
 .set NF, 20
@@ -2923,15 +2922,16 @@ sz_l0:                            /* g2 Grain Size: the title with its value */
  OPT 0, 4, ST_GZ0
  OPT 1, 4, ST_GZ0 + 1
  OPT 2, 4, ST_GZ0 + 2
-sz_l1:                            /* the left column: "Size" over Fine / Med / Coarse */
- OPT 0, 3, IC_Z0
- OPT 1, 3, IC_Z0 + 1
- OPT 2, 3, IC_Z0 + 2
-sz_l2:                            /* the strip: the camera's "Fine" (1146), our "Med" (its "Medium", 1084, is too wide for
-                                     a cell, as "Standard" for Noise Filter) and "Coarse" */
- OPT 0, 4, 1146
- OPT 1, 4, ST_MED
- OPT 2, 4, ST_CRS
+sz_l1:                            /* the left column: Film Grain Effect's own Low / Med / High pictures (item 5400's lists,
+                                     the row these replace; owner, 2026-11-16: "reuse the current grain pictures for low,
+                                     med, high"): Fine = Low, Medium = Med, Coarse = High */
+ OPT 0, 3, 14561
+ OPT 1, 3, 14563
+ OPT 2, 3, 14565
+sz_l2:                            /* the strip: the same row's strip pictures */
+ OPT 0, 3, 14562
+ OPT 1, 3, 14564
+ OPT 2, 3, 14566
 nr_s2v:                           /* NR slot value 1..4 (index 0..3) -> Noise Filter value; 0 Camera: the camera's own */
  .byte 0, -1, -2, 1
 nr_v2s:                           /* Noise Filter value -2..+1 (index + 2) -> slot value */
@@ -3024,7 +3024,7 @@ gr_lc:
 st_get:
  cmp ST_GZT,d0                    /* g2: "Grain Size" .. "Coarse" (gs_strs) */
  bcs 50f
- cmp ST_MED + 1,d0
+ cmp ST_CRS + 1,d0
  bcc 50f
  mov d0,d2
  add -ST_GZT,d2
@@ -3147,11 +3147,9 @@ gz2_str:
  .short 71, 114, 97, 105, 110, 32, 83, 105, 122, 101, 58, 32
 crs_str:
  .short 67, 111, 97, 114, 115, 101, 0
-med_str:
- .short 77, 101, 100, 0
  .balign 4
 gs_strs:
- .long gzt_str, gz0_str, gz1_str, gz2_str, crs_str, med_str
+ .long gzt_str, gz0_str, gz1_str, gz2_str, crs_str
  .balign 2
  .balign 16
 std_str:                          /* "Std" */
@@ -4371,9 +4369,9 @@ ic_get:
  add d1,a0
  retf [],0
 20:
- cmp IC_GR,d1                     /* g2: IC_GR .. IC_Z0 + 2 -> ic_ent entries 14..17 */
+ cmp IC_GR,d1                     /* g2: IC_GR -> ic_ent entry 14 */
  bcs 24f
- cmp IC_Z0 + 3,d1
+ cmp IC_GR + 1,d1
  bcc 24f
  add 14 - IC_GR,d1
  asl2 d1
@@ -5273,7 +5271,7 @@ ic_list:
 ic_lend:
 ic_ent:                           /* the slot word of each of our pictures, in firmware/mkicons.py PICTURES order */
  .long ic_d0, ic_d1, ic_d2, ic_d3, ic_d4, ic_d5, ic_d6, ic_d7, ic_d8, ic_d9, ic_d10, ic_d11, ic_d12, ic_d13
- .long ic_d14, ic_d15, ic_d16, ic_d17   /* g2: ids IC_GR, IC_Z0..IC_Z0 + 2 (ic_get) */
+ .long ic_d14                     /* g2: id IC_GR (ic_get) */
 /* descriptors <6H3I> as the stock pictures': format 14, w, h, 8, 0, 0, size, payload, flags; build.py fills w, h,
  * size and payload (the streams from firmware/mkicons.py, packed into ic_pay, by their uncached address 0xa...) */
  .macro ICD n
@@ -5296,9 +5294,6 @@ ic_d\n:
  ICD 12
  ICD 13
  ICD 14
- ICD 15
- ICD 16
- ICD 17
 .balign 8
 /* ------------------------------------------------------------------ v0.28 film WB (w3)
  * Owner: a film (and each COLOR's own settings) remembers the camera's WB last used with it, as its HSL does; one
@@ -5494,7 +5489,7 @@ fw_apply:
 .section .ext13,"ax"               /* g2: moved to ext13 (the GX4-proven reserve; ext12 is nearly full); v0.28: out of the full ext11 */
  .balign 8
 ic_pay:
- .space 22864                     /* v0.25: 14 pictures (build.py checks the fit; A-B blank; v0.28: "Halo" in Frame's place; colour menu test 7: + 256 for the pictures; borders: + 512 for the Border icon in G-M's place); g2: + 5712 for the Film Grain icon and the three Size cells */
+ .space 18024                     /* v0.25: 14 pictures (build.py checks the fit; A-B blank; v0.28: "Halo" in Frame's place; colour menu test 7: + 256 for the pictures; borders: + 512 for the Border icon in G-M's place); g2: + 872 for the Film Grain icon */
 ic_pend:
 .section .ext11,"ax"
 
