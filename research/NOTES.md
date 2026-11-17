@@ -6605,8 +6605,7 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
 ## Crop round 5: the live histogram, the display side (2026-11-17; analysis + a direct-call test, camera test pending)
 - **Camera, round 4 (owner): "the bars in the histo are still there"**; card read (main chat): CROP MODES "... now 6;
   display 3, 900 x 506; screen specs mapped 4; histogram area 0 x 0, trimmed 0": round 4's wrapper (0x60c772c0, the
-  app's histogram main area setter) never ran. The card's DCIM folder was empty although the log counted one photo:
-  being checked with the owner (Erase All?); nothing of ours deletes files.
+  app's histogram main area setter) never ran. (The card's empty DCIM folder: the owner erased the photos.)
 - The display draws the live histogram from Dev_HistogramFactory: **Set_Histogram_CalcMode 0x60dc4bb1** (a method:
   data ref 0x60f16218; entry `movm [d2,d3,a2,a3],(sp); add -256,sp`, ends `add 256,sp; ret [d2,d3,a2,a3],16`; d0 the
   mode 16 / 17 / 32, a1 -> the main area {x, y, w, h}, d1 -> the sub area) copies the areas into the block for
