@@ -5,6 +5,7 @@ card files it needs, the expected checksums, and short notes. No OM firmware is 
 
 | Version | What's new | Status |
 |---|---|---|
+| [v0.30.4](v0.30.4/NOTES.md) | v0.30.3 plus the fix for the reboot when switching films fast (#72), the color wheel's label naming the page (#64, by crombach) and our looks kept out of video and S&Q (#68, by crombach) | Camera-tested |
 | [v0.30.3](v0.30.3/NOTES.md) | v0.30.2 plus faster halation with a smoother fade, every dial click counted on the RGB / Mix pages with faster looks and saves (#69, by crombach), and a debug log that doesn't slow the shutter | Camera-tested |
 | [v0.30.2](v0.30.2/NOTES.md) | v0.30.1 plus one fix: with Image Review on, Glow / Clarity / Halation photos no longer give a black review or freeze live view at the switch to a standard picture mode (#65) | Camera-tested |
 | [v0.30.1](v0.30.1/NOTES.md) | v0.30 plus one fix: no more one-frame flash when leaving the B/W or WB Compensation row (#66, by crombach) | Camera-tested |

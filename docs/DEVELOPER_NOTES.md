@@ -394,6 +394,23 @@ Stock: OLY_E_147_1100_0000_0000_3.BIN sha 8c133084…696d, main 5e8d376e…7d59.
 - The looks are only as good as the preview model (`src/preview.ts`) is of the camera; check a film on the camera
   before trusting it for anything critical.
 
+## v0.30.4 release (try/v0.30.4 = main v0.30.3 + fix/72-record-keep + PR #70 + PR #73; test 5, camera-tested 2026-11-17)
+
+- #72: `gx_map` holds `el_pk` (the group's record keep, `cm_hp`) while the Picture Mode list (GUI state 0x0418) or the
+  super control panel (0x0403) stays open (no state change, or one between the two), and keeps the record once at the
+  state change that closes them. Since v0.30 it ran after every picture-mode change: many record writes a second
+  while films were switched rebooted the camera (camera probe J). Tests `film-list-keeps-the-record-once-as-it-closes`,
+  `control-panel-dial-keeps-the-record-once-as-it-closes` (driver tokens `count:` / `expect:count:`). The full probe
+  record (A..J) is in `research/NOTES.md` "#72".
+- PR #70 (crombach, #64): the wheel's dial labels encoded by build.py (`mklabels`), `fl_mk` copies them to the heap;
+  the front dial skips Color All off Saturation (`ed_l` / `ed_r`); `ed_get`'s a2 fixed on Hue / Lum / Extras. Its
+  label-size tests now take the sizes from the drawing code (raqm and non-raqm builds differ by a few bytes).
+- PR #73 (crombach, #68): `st_run` and `s_lv` leave video and S&Q to the camera (`mx_photo`); `s_lv`'s body moved
+  to `.ext11` (`s_lv6`). Test `video-keeps-the-stock-tables`.
+- `firmware/VERSION` "v0.30.4 (#72 fix + PR #70 + #73; camera-tested)", 47 characters as test 5's: main.bin differs only
+  in that string, the code-block tag and the built-in GUIDES CRC (48 bytes). E1479999.BIN 2814bfde…c0e; `patch.py`
+  makes it by default; `--release v0.30.3` still makes 60b6d954…. Extras as v0.30.3.
+
 ## v0.30.3 release (try/v0.30.3 = main v0.30.2 + feature/faster-halation h7 / h8 + PR #69 + the debug log change; test 3, camera-tested 2026-11-17)
 
 - Halation h7 (`hl_run`, bit-exact with v0.30.2 in om-emu, 54-64 % fewer instructions on night frames; ideas from Caduceus

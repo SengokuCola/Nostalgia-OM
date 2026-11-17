@@ -5902,6 +5902,12 @@ rgb-page-counts-every-click, halation-matches-the-model). Package `test-builds/2
   shows the full look. The movie clip: no split toning, curve or Glow, but dark corners (the film's own camera
   settings, which PR #73 leaves to video, its note); the S&Q clip: stock. **Camera-tested (owner, 2026-11-17): #72 and the wheel
   labels "Both worked".** Test 5 is the v0.30.4 candidate (PR #70's three label-size tests still to settle).
+- PR #70's three label-size tests now take the sizes from the drawing code (1e02ceb): pass with and without raqm.
+- **v0.30.4 released locally (2026-11-17, owner: "lets make two new releases"; with PR #70 and PR #73 merged):** VERSION
+  "v0.30.4 (#72 fix + PR #70 + #73; camera-tested)", 47 characters as test 5's (a first try at 51 characters moved the
+  debug log's strings: 13,002 bytes apart). main.bin vs test 5: 48 bytes (the name, the code-block tag twice, the
+  built-in GUIDES CRC). E1479999.BIN 2814bfde…c0e; patch.py --release v0.30.4 and the default make it; v0.30.3 still
+  60b6d954…f546.
 
 ## Issue #64: the wheel's dial label names the page (2026-11-16; feature/dial-label-per-page; camera-tested)
 - Owner on #64: "I like these changes, if you make a pr with them, I'll merge". This replaces the sp1 request (2026-11-09)
