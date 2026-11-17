@@ -530,7 +530,7 @@ cr_dst:
 cr_daf:
  .long 0
 cr_t1:
- .asciz "\r\n\r\nCROP MODES (crop round 2): tag at the first half-press "
+ .asciz "\r\n\r\nCROP MODES (crop round 3): tag at the first half-press "
 cr_t2:
  .asciz ", Image Aspect then "
 cr_t3:
@@ -545,6 +545,16 @@ cr_t7:
  .asciz ", "
 cr_t8:
  .asciz " x "
+cr_t9:
+ .asciz "; AF pair "
+cr_t10:
+ .asciz ":"
+cr_t11:
+ .asciz ", mapped "
+cr_t12:
+ .asciz ", selector keys mapped "
+cr_t13:
+ .asciz ", target screen reads mapped "
  .balign 2
 cr_txt:                           /* `call cr_txt,[d2,d3,a2,a3],24` */
  LGS cr_t1
@@ -570,6 +580,21 @@ cr_txt:                           /* `call cr_txt,[d2,d3,a2,a3],24` */
  LGD
  LGS cr_t8
  movhu (CR_DSP + 12),d0
+ LGD
+ LGS cr_t9                        /* round 3: the AF driver's last pair, pairs and selector keys mapped */
+ mov (cr_afw),d0
+ LGD
+ LGS cr_t10
+ mov (cr_afh),d0
+ LGD
+ LGS cr_t11
+ mov (cr_afn),d0
+ LGD
+ LGS cr_t12
+ mov (cr_asn),d0
+ LGD
+ LGS cr_t13
+ mov (cr_gwn),d0
  LGD
  ret [d2,d3,a2,a3],24
 
@@ -759,3 +784,168 @@ cr_gx:
  add d1,d0
  movhu d0,(6,a3)
  jmp bl_cgb
+
+/* ---- Crop round 3: the AF target (camera, round 2: still not drawn at XPan). Two places on the AF side that om-emu
+ * does not run, as the E-P7's fixes for the same symptom (cakelesscoder, docs/ASPECT.md 1i: pr_w, af_sel):
+ * (a) The AF driver copies the live view's ratio pair from its message (+328 / +332) into its object (+152 / +153,
+ *     0x60882acd); its point-area code (0x60853b..: per AF point, which lie outside the picture) has cases for 4:3,
+ *     16:9, 3:2, 6:6 and 3:4 and logs an error for any other pair, writing nothing. cr_afp: after the stock copy, a
+ *     crop's pair becomes its base's in the AF object only (65:24, 21:9 -> 16:9; 5:4 -> 4:3); live view keeps its own.
+ * (b) AF_Target_Actuator's ratio path reads 269 (0x6119b23b, facade, -> (24,sp)) and searches lists keyed 1, 3, 2, 4,
+ *     9, 10 (a miss keeps the old style / mask; c6 added records, round 3 maps the key instead). cr_afs: a crop's key
+ *     becomes its base's (5 -> 1, 6 / 7 -> 3), then the stock compare.
+ * Both: the stock path plus one byte read before the first shutter event (cr_on). */
+ .balign 4
+cr_afn:                           /* (a) pairs mapped this power-on, the last pair seen (w, h) */
+ .long 0
+cr_afw:
+ .long 0
+cr_afh:
+ .long 0
+cr_asn:                           /* (b) keys mapped this power-on */
+ .long 0
+cr_afp:                           /* jmp from 0x60882acd (a2 = the message, a3 = the AF object; d0 / a0 free) */
+ mov (328,a2),d0                  /* the stock copy */
+ movbu d0,(152,a3)
+ mov d0,(cr_afw)
+ mov (332,a2),d0
+ movbu d0,(153,a3)
+ mov d0,(cr_afh)
+ movbu (cr_on),d0
+ cmp 0,d0
+ beq 9f
+ movbu (152,a3),d0
+ cmp 65,d0
+ beq 6f
+ cmp 21,d0
+ beq 7f
+ cmp 5,d0
+ bne 9f
+ movbu (153,a3),d0                /* 5:4 -> 4:3 */
+ cmp 4,d0
+ bne 9f
+ mov 4,d0
+ movbu d0,(152,a3)
+ mov 3,d0
+ movbu d0,(153,a3)
+ bra 8f
+6:
+ movbu (153,a3),d0                /* 65:24 */
+ cmp 24,d0
+ bne 9f
+ bra 5f
+7:
+ movbu (153,a3),d0                /* 21:9 */
+ cmp 9,d0
+ bne 9f
+5:
+ mov 16,d0                        /* -> 16:9 */
+ movbu d0,(152,a3)
+ mov 9,d0
+ movbu d0,(153,a3)
+8:
+ mov (cr_afn),d0
+ inc d0
+ mov d0,(cr_afn)
+9:
+ jmp cr_afp_back                  /* 0x60882add */
+
+cr_afs:                           /* jmp from 0x6119b240 (AF_Target_Actuator's frame; the key at (24,sp); d0 free) */
+ movbu (cr_on),d0
+ cmp 0,d0
+ beq 9f
+ mov (24,sp),d0
+ cmp 5,d0
+ bne 1f
+ mov 1,d0
+ bra 3f
+1:
+ cmp 6,d0
+ beq 2f
+ cmp 7,d0
+ bne 9f
+2:
+ mov 3,d0
+3:
+ mov d0,(24,sp)
+ mov (cr_asn),d0
+ inc d0
+ mov d0,(cr_asn)
+9:
+ mov (8,sp),d0                    /* the stock: mov (8,sp),d0; cmp 100,d0; beq 0x6119b295 */
+ cmp 100,d0
+ bne 8f
+ jmp cr_afs_100
+8:
+ jmp cr_afs_back                  /* 0x6119b246 */
+
+.section .hook_cra,"ax"
+ jmp cr_afp                       /* stock 0x60882acd: mov (328,a2),d0; movbu d0,(152,a3); mov (332,a2),d0; movbu d0,(153,a3) */
+ .byte 0xcb, 0xcb, 0xcb, 0xcb, 0xcb, 0xcb, 0xcb, 0xcb, 0xcb, 0xcb, 0xcb
+.section .hook_crk,"ax"
+ jmp cr_afs                       /* stock 0x6119b240: mov (8,sp),d0; cmp 100,d0; beq 0x6119b295 */
+ .byte 0xcb
+.section .ext12,"ax"
+
+/* (c) Round 3: the AF target screen's helper 0x6129215c reads 269 through the facade wrapper 0x612d7150 (call at
+ * 0x61292189, `call 0x612d7150,[d2,a2,a3],20`, a0 -> (24,sp)) and branches on 1, 2, 3, 4, 9 only (0x61292605..):
+ * at 6 / 7 it drew no target (pinned om-emu 0819080 shows it, as the camera: no target, no area outline). That call
+ * -> cr_gw: the stock read, then a crop -> its base (5 -> 1, 6 / 7 -> 3), after the first shutter event. */
+cr_gw:                            /* `call cr_gw,[d2,a2,a3],20` from 0x61292189 (d0 = 269, a0 -> the value) */
+ mov a0,(4,sp)
+ call cr_gw0,[d2,a2,a3],20        /* the stock read */
+ mov d0,d2                        /* its answer, given back */
+ movbu (cr_on),d0
+ cmp 0,d0
+ beq 9f
+ mov (4,sp),a0
+ mov (a0),d0
+ cmp 5,d0
+ bne 1f
+ mov 1,d0
+ bra 3f
+1:
+ cmp 6,d0
+ beq 2f
+ cmp 7,d0
+ bne 9f
+2:
+ mov 3,d0
+3:
+ mov d0,(a0)
+ mov (cr_gwn),d0
+ inc d0
+ mov d0,(cr_gwn)
+9:
+ mov d2,d0
+ ret [d2,a2,a3],20
+ .balign 4
+cr_gwn:                           /* reads mapped this power-on (the log) */
+ .long 0
+
+/* EXPERIMENT (CROP_LSX=1 builds only, emulator): the AF target screen's layout search 0x61291206 (d0 element, d1
+ * ratio; tables of {element, ratio} -> rect for ratios 1, 2, 3, 4, 9, 10). At XPan it gets (1, 6) where 16:9 gets
+ * (3, 3): map a crop's ratio to its base and, for XPan / 21:9, the element by 16:9's offset (+2). */
+cr_lsx:
+ movbu (cr_on),d2
+ cmp 0,d2
+ beq 9f
+ cmp 6,d1
+ beq 1f
+ cmp 7,d1
+ beq 1f
+ cmp 5,d1
+ bne 9f
+ mov 1,d1
+ bra 9f
+1:
+ mov 3,d1
+ add 2,d0
+9:
+ extbu d0                         /* the stock: extbu d0; mov a1,(32,sp); mov d1,(28,sp) */
+ mov a1,(32,sp)
+ mov d1,(28,sp)
+ jmp cr_lsx_back
+.section .hook_crl,"ax"
+ jmp cr_lsx                       /* stock 0x61291206 (EXPERIMENT only) */
+.section .ext12,"ax"

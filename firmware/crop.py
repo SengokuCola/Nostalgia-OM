@@ -250,6 +250,13 @@ def apply(m, o, sy, log=print):
         for i, v in ((5, r43), (6, r169), (7, r169)):
             struct.pack_into('<HH', m, o(t) + 4 * i, *v)
     log('crop: AF point grids: 5:4 as 4:3, XPan / 21:9 as 16:9')
+    # Round 3: the AF target screen's read of 269 through the facade wrapper 0x612d7150 (0x61292189, `call
+    # 0x612d7150,[d2,a2,a3],20`: dd rel32 b0 14) -> cr_gw (crop.s).
+    a = 0x61292189
+    assert m[o(a)] == 0xdd and (a + struct.unpack_from('<i', m, o(a) + 1)[0]) & 0xffffffff == 0x612d7150, hex(a)
+    assert bytes(m[o(a) + 5:o(a) + 7]) == b'\xb0\x14' and bytes(m[o(a) - 6:o(a)]) == bytes.fromhex('2c0d013c2018')
+    struct.pack_into('<i', m, o(a) + 1, sy['cr_gw'] - a)
+    log('crop: AF target screen read of 269 (0x61292189) -> cr_gw')
     # c4: the shooting screen's frame boxes (camera c3: live view still showed the 7:6 / 6:5 box). Four (x0, x1, y0, y1)
     # u16 tables by id at stride 8 in api_rec.c's data, one per screen grid (320, 360, 426, 448 x 240): 0x606291b0 read at
     # 0x6043ff17, 0x60629260 / 0x60629208 / 0x606292b8 picked at 0x60438f58 / 8c / 9f (0x60438e62, by screen mode). The id

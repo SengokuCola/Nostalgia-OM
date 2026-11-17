@@ -6519,3 +6519,33 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   waiting for the owner's OK to record them. Round 2 adds no hook.
 - Package `test-builds/2026-11-17-crop-round-2` (private folder): E1479999.BIN `7a0736fd…8286` (commit d80efbc),
   VERSION "v0.31-alpha-dev (crop round 2: AF target, grid lines)", go-back border preview 1 `db1fedfa…a732`.
+
+## Crop round 3: the AF target reproduced in om-emu, its cause (2026-11-17; emulator + analysis, work in progress)
+- **Camera, round 2 (owner, 2026-11-17):** "still no focus point when moving it. also after taking the pictures it
+  still displays 16:9 instead of the actual crop. the grids look good". Grid lines in the strip: **camera-tested**.
+  The display / AF grid rows of round 2 did not bring the target back. Review after a shot: label or shape, open
+  (a phone photo asked for).
+- **The pinned om-emu (0819080) reproduces the missing target** at XPan, 21:9 and 5:4 (no target, no area outline;
+  16:9 normal), with every round so far. The earlier "om-emu draws it" came from the older om-emu in
+  ~/om3-work/om-emu (96bf756), which shoot.sh used by default (OM3_EMU). Use the pinned one for this screen.
+- Traced on the AF target screen at XPan vs 16:9 (pinned om-emu): the same settings reads in the same order (so
+  the split is in values); an execution-coverage diff of 0x61000000..0x61500000 (a scratch copy of session_ed1 with
+  Debugger.traceExec({from, to})) points at the screen's layout search **0x61291206** (ten callers, e.g. 0x61133aac,
+  0x611721f6, 0x6117346d): d0 = layout element, d1 = ratio, both bytes of the screen's struct (+18, +9), searched
+  in per-mode tables of 12-B entries {u8 element, ., u16, rect ptr, u32 ratio} (e.g. 0x615ee678, pointers / counts
+  set by 0x6129215c's paths into 0x6037e5c8 / cc, d0 / d4) that hold ratios 1, 2, 3, 4, 9, 10 only. Keys at the
+  search: 16:9 (3, 3), XPan **(1, 6)**: no entry, no layout, no target.
+- **Experiment (CROP_LSX=1 builds only, `.hook_crl` at 0x61291206, emulator only):** a crop's ratio -> its base
+  (6 / 7 -> 3, 5 -> 1) and, at XPan / 21:9, element + 2 (16:9's offset in the 1..5 / 8..12 groups): **the target is
+  drawn at XPan and moves**, as at 16:9. So this miss is the cause on this screen. Not for the camera: the element
+  is not always ratio + offset (elements 13..15 exist only for 16:9 / 17:9), so the fix belongs where the struct's
+  +9 / +18 are filled (not found yet: a memory watch saw no store to them after the screen opened; om-emu may
+  copy that struct natively).
+- Also built (commit with this note, not packaged, effect not shown): (a) `.hook_cra` 0x60882acd: the AF driver's
+  copy of the live view pair (+152 / +153 of its object; its point-area code 0x60853b.. has cases for 4:3, 16:9,
+  3:2, 6:6, 3:4 and logs an error otherwise) -> the base's pair; (b) `.hook_crk` 0x6119b240: AF_Target_Actuator's
+  ratio key -> the base's; (c) 0x61292189 (the screen helper's facade read of 269) -> `cr_gw`. With (a)-(c) and
+  without the experiment the target stays missing in om-emu. The CROP MODES log line adds the AF pair and the
+  mapped counts.
+- Next: find the fill of the screen struct's ratio / element (then map the ratio there, so every layout follows
+  16:9's), check (a)-(c) are still needed, then a camera build.
