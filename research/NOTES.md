@@ -5301,6 +5301,11 @@ Owner: "yes, build the noise filter fix" (the row's '*' follows the camera's own
 - Correction: the EXIF "Anti-shock" tag is not the menu's anti-shock mode (owner: "I am not on antishock mode"; drive 0
   is the owner's plain Single and its photos carry the tag too). Likely the electronic first curtain. So drive 11 is
   the owner's usual Sequential and 32 the Sequential whose photos lack the tag (guess: Sequential H, mechanical shutter).
+- **Owner's camera, "Sequential H" try (2026-11-17, test 5, FILM 1 Portra 400 grain changed, f/4, ISO 200, C-AF):** the
+  modes picked were the silent SH2 (30 shots at 1/160, the camera's fastest) and SH1 (12 at 1/15): 42 photos
+  PB173135..176, no gap in the numbers. The log is from a later power-on (no photos). Not reproduced. Tag pattern: on
+  2026-11-16 the owner's Single / Sequential were codes 30 / 32 (no "Anti-shock" tag); today 0 / 11 (tagged), so a
+  camera setting between the two days changes the code; the reporter's 32 is the untagged Sequential.
 
 
 ## LookLab: RGB curves and colour mix (2026-11-15; feature/looklab-rgb-curves; browser-checked, not live)
