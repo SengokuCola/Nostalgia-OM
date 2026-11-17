@@ -6435,8 +6435,28 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
 - **Tests (emu_test.py):** `crop-xpan-starts-as-16-9-and-comes-back` (boot 1 picks XPan, power-off; boot 2: Image
   Aspect 3 and cr_on 0 after start-up, 6 after the first half-press; log "tag at the first half-press 43520006, Image
   Aspect then 3, set to 6, after 6, now 6") and `crop-stock-ratio-left-alone` (16:9 saved as it is, no tag, nothing
-  set).
+  set). `--without` the first build (out-cr1): caught.
+- **Suite** (build of 47b82ca = the package's bytes, om-emu 0819080): **42 pass, 2 FAIL**: `static:hook-list` (the two
+  new hooks, hook_crs 0x60061183 8 B and hook_crb 0x6006120e 6 B, reviewed against the start-up rule above: they run
+  only at a store write, which om-emu shows at power-off and after a menu, never at start-up) and
+  `static:changed-bytes` (crop.py's data patches: validator, rule map, strip / menu records, size tables, jump tables,
+  the 16 call sites, the size text constants). Both pass once tools/test/hooks.json records them, which needs the
+  owner's OK (as border preview's hooks did); not recorded yet.
 - om-emu, round 1: XPan shows in the control panel cell and the top bar (preview); border preview 1's regression shots
   (Picture Mode, live view at 3:2) identical to border preview 1.
-- Package `test-builds/2026-11-17-crop-round-1` (private folder): E1479999.BIN `9d6240dd…b5dd`, VERSION
-  "v0.31-alpha-dev (crop round 1: XPan, 21:9, 5:4)", go-back border preview 1 `db1fedfa…a732`.
+- Package `test-builds/2026-11-17-crop-round-1` (private folder): E1479999.BIN `a5d4a2ab…aaa7` (commit 47b82ca),
+  VERSION "v0.31-alpha-dev (crop round 1: XPan, 21:9, 5:4)", go-back border preview 1 `db1fedfa…a732`.
+- **Plan for round 2 (analysis):**
+  - AF point in S-AF: the E-P7's fix list (cakelesscoder, docs/ASPECT.md section 1i, camera-tested there) names every
+    place that looks the ratio up and misses at 6 / 7: the AF selector set-up lists, the AF rows / columns switches and
+    window table, the AF / live view driver's ratio pair (tracking, iAuto), **the AF frame display geometry, keyed by
+    an object's own copy of the ratio (a miss draws nothing: matches "the point disappears")**, the selected point's
+    validity map (a miss leaves stack garbage for a jump table), metering lists. cr_gv only covers reads through the
+    GUI getter, not copies. Next: find the OM-3's equivalents (om-emu at XPan, trace who copies 269 and which lookups
+    miss), give 6 / 7 the 16:9 entry as the E-P7 did; a phone photo of the screen while moving the point would help.
+  - Grid lines: border preview's line hook (0x611c7922, bl_tail) can draw thirds inside the strip.
+  - Black screens, if one comes back with round 1 (guess, not shown): the save hooks jump from section 1
+    (0x60061183, 0x6006120e) into section 6's extension (.ext12), and the sections are copied 1..10 while the camera
+    starts (SECBITS 0xa32de590). A store write before section 6 is in would run unloaded memory. om-emu maps every
+    section at once and, traced (WATCH 0x60061183 / 0x60045ed5), wrote stores only at power-off (E, then M), so it
+    cannot show this. Fix to try then: enter through a section loaded before 6, checking SECBITS bit 5 first.
