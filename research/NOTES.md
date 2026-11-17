@@ -5937,3 +5937,11 @@ rgb-page-counts-every-click, halation-matches-the-model). Package `test-builds/2
 - Package `test-builds/2026-11-16-grain-g2` (private folder): E1479999.BIN `92ab3c99…10d3`, VERSION "v0.30.3-dev
   (grain g2: strength + size rows)"; go-backs v0.30.3 `60b6d954…f546` and border test 1c `d8ce3d89…3db3`. The four
   new pictures went to the owner for approval first (`row-pictures-for-approval.png`).
+- **g2b (owner, 2026-11-16, on the g2 row pictures: "for the size of grain, I say we reuse the current grain pictures
+  for low, med, high"):** Grain Size's left column = item 5400's own Low / Med / High pictures 14561 / 14563 / 14565,
+  its strip = 14562 / 14564 / 14566 (read from the stock item table 0x6154c2a8, 5400's lists; ids only, no picture in
+  the repo). Our three "Size" cells (mkicons 15..17) and the "Med" string are gone; ic_pay 18,024 B (ext13 54,400).
+  The camera's pictures carry the words Low / Med / High, so the cells read Low / Med / High under the title "Grain
+  Size: Fine / Medium / Coarse" (om-emu). The Film Grain slider icon (`grain_icon`) still waits for the owner's OK.
+  Suite on ff8251b: **29 of 29 pass**. Build f26ff261…842a (VERSION "v0.30.3-dev (grain g2b: strength + size rows)"),
+  not packaged until the icon is approved; g2 (`92ab3c99…`) withdrawn, never flashed.
