@@ -6452,7 +6452,8 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   readers know as the hidden 7:6 / 6:5 (with the playback labels: one issue). The kept CADLOG.TXT is a later short
   power-on (4 shutter events, 0 photos): "tag at the first half-press 00000000, Image Aspect then 0, set to 0, after
   0, now 6" (no saved crop at that start; XPan picked after the first half-press); the switch-off at XPan / switch-on
-  power-on's log was overwritten. Start-up, black screens and the focus point: the owner's notes not in yet.
+  power-on's log was overwritten. **Start-up (owner, 2026-11-17): "no black screens, all start-ups normal"**, after
+  switching off at XPan and in a normal ratio (camera-tested). The AF target at XPan: not drawn (crop round 2).
 - **Plan for round 2 (analysis):**
   - AF point in S-AF: the E-P7's fix list (cakelesscoder, docs/ASPECT.md section 1i, camera-tested there) names every
     place that looks the ratio up and misses at 6 / 7: the AF selector set-up lists, the AF rows / columns switches and
@@ -6467,3 +6468,54 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
     starts (SECBITS 0xa32de590). A store write before section 6 is in would run unloaded memory. om-emu maps every
     section at once and, traced (WATCH 0x60061183 / 0x60045ed5), wrote stores only at power-off (E, then M), so it
     cannot show this. Fix to try then: enter through a section loaded before 6, checking SECBITS bit 5 first.
+
+## Crop round 2: the AF target at XPan, grid lines in the strip (2026-11-17; emulator + analysis, camera test pending)
+- **Camera, round 1 (owner's phone photos, AF target screen at XPan, target mode Single):** the screen shows the
+  XPan strip (full width, centred) on blue, the "Single" box, **no target**, as with c5.
+- **om-emu cannot show it:** at XPan om-emu draws and moves the target in every target mode (Single, Small, Cross,
+  Middle; the main dial steps them on that screen). Traced (WATCH): om-emu never runs ratioToConvertSize 0x60c0d30b,
+  getOutputAspect 0x60c14b28, the pair converter 0x60c13c08 or the live view ratio switch 0x60bf2cc8, and leaves the
+  display set-up's globals (0xa32dd210..) at 0: the live view (through image) and display side is not emulated. Reads
+  of 269 on that screen: AF_Target_Actuator's ratio path 0x6119b23b (facade `calls (a2)`, reached in Single in om-emu:
+  a miss for 6 keeps the old style / mask, c6's lists fixed only that), 0x612d719c's callers, api_rec 0x6040541a; none
+  goes through the GUI getter, so cr_gv does not cover them.
+- **Found (analysis):** two per-ratio tables on the live view side with rows only for the camera's ratios (ids 5..8
+  0 x 0), found by a scan for {u16, u16} tables whose 4:3, 3:2, 16:9, 1:1 and 3:4 rows are shaped by ratio and whose
+  rows 6 / 7 are 0:
+  - The live view display set-up (0x602177c3.., log strings "DISP4-3!", "DISP17-9!", "DISP16-9!", "thr_start!"):
+    (12,sp) = camera setting 0x3081 (getter 0x60063380; om-emu ncall: 1 at 4:3, 3 at 16:9, 6 at XPan: Image Aspect)
+    indexes three 11-entry tables of picture areas, rear 900 x 600 at 0x602ed11e (4:3 800 x 600, 3:2 900 x 600, 16:9
+    900 x 506, 1:1 600 x 600, 3:4 450 x 600, 17:9 900 x 476), 1020 x 690 at 0x602ed152, 1024 x 768 at 0x602ed186,
+    into 0xa32dd21a / 21c (and 22a / 22c by another index). At XPan: 0 x 0, which fits a target scaled to nothing.
+  - The AF module's point grids (0x60903e88: (20,a0) the id; a 0 row logs an error, 0x60068a54 code 2513 / 2528, and
+    takes the 4:3 grid): 39 x 27 at 4:3 (0x60a3cd1e; 3:2 39 x 23, 16:9 and 17:9 39 x 19, 1:1 29 x 27, 3:4 21 x 27) and
+    19 x 13 (0x60a3cd4a). A third (0x60a3cd76) has only 16:9 / 17:9 rows: left alone.
+- **Round 2 (crop.py, data only):** display areas: the crops' true areas, as the camera gives 17:9 (rear XPan
+  900 x 332, 21:9 900 x 386, 5:4 750 x 600; 1020 x 690: 1020 x 376, 1020 x 438, 862 x 690; 1024 x 768: 1024 x 378,
+  1024 x 438, 960 x 768). AF grids: XPan / 21:9 = 16:9's, 5:4 = 4:3's (the stock pairing of 17:9: true area, 16:9
+  grid; the E-P7's af_dim). The CROP MODES log line adds the display set-up's id and area (0xa32dd210, 21a, 21c), so
+  the camera log shows what it used. Not done: AF_Target_Actuator's ratio lists (c6's change; only with a relocation
+  into .ext12, and c6 was the black-screen build).
+- Risk to watch: if the display area is also the live view window, the strip's display could change (the test steps
+  ask). Test: `crop-xpan-display-area-and-af-grid` (the tables in memory; om-emu cannot show the result).
+- **Grid lines in the strip (commit d80efbc):** with a crop set, bl_gv (border preview's read of the stills grid,
+  155 / 2047) calls `cr_gm`, which marks a line grid (thirds 1, 6x4 5, golden 6, or a Border's value) with BL_C 0x200,
+  in photo modes after the first shutter event. The lookup misses it; bl_tail accepts bits 8 / 9, copies v's record
+  (6x4 too when BL_C), and after the thirds record gives the picture's place jumps to `cr_gx`: it maps every line
+  from the picture (16:9 for XPan / 21:9, 4:3 for 5:4: cr_gv) into the strip (full width x 24 / 65 or 9 / 21, or full
+  height x 5 / 4, centred) and hands the strip back as the picture, so a Border's frame (L > 0 only) sits inside it.
+  om-emu (pinned 0819080; the older om-emu in ~/om3-work/om-emu kept the old lines on screen): XPan thirds x 300 / 600
+  over y 134..465 and y 243 / 354; 21:9 y 107..492 and 234 / 363; 5:4 x 324 / 575 over y 0..599, lines x 76..828;
+  16:9 thirds identical to border preview 1; XPan + Border 3: frame x 14 / 885, y 148 / 451, with thirds inside.
+  Tests: `crop-grid-thirds-in-the-xpan-strip` (`--without` the tables build 309293e: caught) and
+  `crop-grid-stock-ratio-unchanged`. The camera's own aspect frame lines (a GUI layer) still show 16:9's at XPan.
+- **Playback labels (lead, not fixed):** the playback info screens draw the ratio through a picture widget
+  (0x610db0df: (136,a0) the list, (132,a0) the index, the picture at +12 of a 16-B entry). Its lists (layouts
+  0x613f8d0c, 0x613fe9d0, 0x6147d56c: `0x502` = 5 entries) are 4:3 10931, 3:2 10932, 3:4 10933, 16:9 10930, 1:1
+  10934 at 0x613f5afc, 0x613fb194, 0x6147bff8. Which index a photo gets (from the maker note's 0x1112) is set in code
+  om-emu does not run (its playback shows no photo details). Next: more entries (our top-bar pictures) and that index.
+- **Suite** (build of d80efbc = the package's bytes, om-emu 0819080): **45 pass, 2 FAIL**, the same two as round 1
+  (`static:hook-list`: hook_crs / hook_crb, round 1's save hooks; `static:changed-bytes`: crop.py's data patches),
+  waiting for the owner's OK to record them. Round 2 adds no hook.
+- Package `test-builds/2026-11-17-crop-round-2` (private folder): E1479999.BIN `7a0736fd…8286` (commit d80efbc),
+  VERSION "v0.31-alpha-dev (crop round 2: AF target, grid lines)", go-back border preview 1 `db1fedfa…a732`.
