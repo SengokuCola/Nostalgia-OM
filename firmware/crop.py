@@ -294,4 +294,13 @@ def apply(m, o, sy, log=print):
         assert m[o(a)] == old_, hex(a)
         m[o(a)] = new_
     log('crop: size text rows (5:4 / XPan / 21:9 L): %s' % ([struct.unpack_from('<17H', rows[0])[i] for i in (6, 7, 8, 14, 15, 16)],))
+    # Round 9: the playback label (GUI element type 2 {u8 2, u8 count, u16 0, list start, list end, ...}, 16-B states
+    # {0xffff, 7, 7, picture}) in its three layouts: 5 states -> crop.s cr_pll's 8 (codes 6..8 = 5:4, XPan, 21:9).
+    for el, st in ((0x613f8d08, 0x613f5afc), (0x613fe9cc, 0x613fb194), (0x6147d568, 0x6147bff8)):
+        assert bytes(m[o(el):o(el) + 4]) == b'\x02\x05\x00\x00' and (u32(el + 4), u32(el + 8)) == (st, st + 80), hex(el)
+        assert [u32(st + 16 * k + 12) for k in range(5)] == [10931, 10932, 10933, 10930, 10934], hex(st)
+        m[o(el) + 1] = 8
+        put32(el + 4, sy['cr_pll']); put32(el + 8, sy['cr_plle'])
+    assert sy['cr_plle'] - sy['cr_pll'] == 128
+    log('crop: playback label lists (3 layouts) -> 8 states')
     log('crop: selection, sizes, 6 live view / playback switches, %d screen reads, labels patched' % len(GV_SITES))

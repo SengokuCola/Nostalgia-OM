@@ -57,10 +57,17 @@ CROPHIST_CASES = {   # name: (Image Aspect, area x, y, w, h asked, area kept)
     '5-4': (5, (0, 0, 640, 480), (20, 0, 600, 480)),
     '16-9-as-it-is': (3, (0, 0, 640, 360), (0, 0, 640, 360)),
 }
-# crop round 8: cr_pbs (the playback label's update, crop.s cr_pbl, 0x611509bc) called directly: the first photo info
-# with a code is kept as A, the same info again is not kept, a different one is kept as B. om-emu's playback never
-# gives its label a code (its photo info is all zeros), so the hook itself does not run there.
-CROPPB = 'crop-playback-info-kept'
+# crop round 9: the playback labels, by direct calls (om-emu's playback gives its photos no size). The GUI's label
+# code by shape (0x61101381): 5:4 6, XPan 7, 21:9 8, the stock ratios as before. The play component's record-mode code
+# (0x60c7c18a, the quality label): a crop takes its base size's code (XPan / 21:9 L -> 16:9 L), a miss stays 57.
+# The three label elements: 8 states.
+CROPPL = 'crop-playback-label-and-quality'
+CROPPL_LABEL = {(5184, 1920): 7, (3200, 1184): 7, (5184, 2224): 8, (4864, 3888): 6, (5184, 2920): 4, (5184, 3888): 1,
+                (5184, 3456): 2, (3888, 3888): 5, (2912, 3888): 3, (5184, 0): 2}   # h 0: 16389, as stock
+CROPPL_QUALITY = {   # (class, compression, w, h): code
+    (1, 1, 5184, 2920): 1, (1, 1, 5184, 1920): 1, (1, 1, 5184, 2224): 1, (1, 5, 5184, 1920): 2, (1, 1, 3200, 1800): 5,
+    (1, 1, 3200, 1184): 5, (0, 1, 5184, 3888): 1, (0, 1, 4864, 3888): 1, (0, 1, 3200, 2400): 5, (3, 1, 1000, 999): 57}
+CROPPL_ELEMENTS = (0x613f8d08, 0x613fe9cc, 0x6147d568)
 GRAIN_GAINS = {1: (400, 175), 3: (1024, 448), 5: (1536, 672)}   # strength -> texture Y gain, Cb / Cr gain (xblock.s)
 REAR_DIAL = 0x9032                               # the rear dial's event (cv_ev); a1 its signed clicks
 # (name, a1): first no clicks (the value as it is), then a fast turn of 3, then one past the range.
@@ -823,57 +830,46 @@ def run_crophist(emu, build, out, card0):
     return CROPHIST, errors
 
 
-def run_croppb(emu, build, out, card0):
-    """cr_pbs three times in one session: info X (code 4) -> A; X again -> nothing; Y (code 1) -> B. Then cr_pmr once:
-    the stock instructions it replaces, and the read kept (seq, id 6, the call's d0, its caller)."""
-    d = out / CROPPB
+def run_croppl(emu, build, out, card0):
+    """0x61101381 for CROPPL_LABEL, 0x60c7c18a for CROPPL_QUALITY (stub calls as the camera's), the elements."""
+    d = out / CROPPL
     d.mkdir(parents=True, exist_ok=True)
     sym = elf_symbols(build / 'p.elf')
-    x = bytes((7 * i + 3) & 255 for i in range(416))
-    y = x[:258] + b'\x06' + x[259:]
-    def call(name, code, info):
-        mem = [['B', 'dd'], ['B+1', f"={sym['cr_pbs']:#x}-B"], ['B+5', 'f018'], ['B+0x400', info.hex()]]
-        return {'name': name, 'pc': 'B', 'stop': ['B+7'], 'max': 50000, 'mem': mem,
-                'regs': {'d0': str(code), 'a0': 'B+0x400'},
-                'read': [[f"{sym['cr_pa']:#x}", 12 + 64 + 416], [f"{sym['cr_pb']:#x}", 12 + 64 + 416]]}
-    read = {'name': 'aspect-read', 'pc': 'B', 'stop': ['0x618dfd19'], 'max': 2000,
-            'mem': [['B', 'dc'], ['B+1', f"={sym['cr_pmr']:#x}-B"], ['SP+44', '78563412'], ['B+0x300', '00']],
-            'regs': {'d0': '6', 'd1': '0x11', 'a1': '0x22', 'd2': '0x1234', 'a3': 'B+0x300'},
-            'read': [[f"{sym['cr_pr']:#x}", 16], [f"{sym['cr_prn']:#x}", 4], ['B+0x300', 1]]}
-    res = run_ncall(emu, build, d, card0, 's1 wait wait ncall',
-                    [call('x', 4, x), call('x-again', 4, x), call('y', 1, y), read])
+    word = lambda v: v.to_bytes(4, 'little').hex()
+    spec = []
+    for (w, h), _ in CROPPL_LABEL.items():
+        spec.append({'name': f'label {w}x{h}', 'pc': 'B', 'stop': ['B+7'], 'max': 5000,
+                     'mem': [['B', 'dd'], ['B+1', '=0x61101381-B'], ['B+5', '8004']], 'regs': {'d0': str(w), 'd1': str(h)}})
+    for (c, k, w, h), _ in CROPPL_QUALITY.items():
+        spec.append({'name': f'quality {c} {k} {w}x{h}', 'pc': 'B', 'stop': ['B+7'], 'max': 5000,
+                     'mem': [['B', 'dd'], ['B+1', '=0x60c7c18a-B'], ['B+5', 'f014'], ['SP+4', word(w)], ['SP+8', word(h)]],
+                     'regs': {'d0': '1', 'd1': str(c), 'a1': str(k)}})
+    pll = sym.get('cr_pll', 0)
+    spec.append({'name': 'elements', 'pc': 'B', 'stop': ['B'], 'read': [[hex(e), 12] for e in CROPPL_ELEMENTS] +
+                 [[f'{pll:#x}', 128]]})
+    res = run_ncall(emu, build, d, card0, 's1 wait wait ncall', spec)
     if isinstance(res, str):
-        return CROPPB, [res]
+        return CROPPL, [res]
     errors = []
-    for n in ('x', 'x-again', 'y'):
-        if res[n]['steps'] >= 50000:
-            errors.append(f'{n}: cr_pbs did not return (out.json)')
-    if errors:
-        return CROPPB, errors
-    rec = lambda n, k: bytes.fromhex(res[n]['mem'][k])
-    head = lambda b: (int.from_bytes(b[:4], 'little'), int.from_bytes(b[4:8], 'little'))
-    a, b = rec('x', 0), rec('x', 1)
-    if head(a)[0] == 0 or head(a)[1] != 4 or a[76:] != x:
-        errors.append(f'x: A is seq / code {head(a)}, its info {"as given" if a[76:] == x else "not as given"}')
-    if head(b)[0] != 0:
-        errors.append('x: B was kept')
-    if head(rec('x-again', 1))[0] != 0:
-        errors.append('x-again: B was kept for the same info')
-    b = rec('y', 1)
-    if head(b)[0] == 0 or head(b)[1] != 1 or b[76:] != y:
-        errors.append(f'y: B is seq / code {head(b)}, its info {"as given" if b[76:] == y else "not as given"}')
-    if rec('y', 0) != a:
-        errors.append('y: A changed')
-    # cr_pmr (0x618dfd0f, the play module's AspectRatio read): the stock store and next two, and the read kept
-    r = res['aspect-read']
-    ring, n, kept = rec('aspect-read', 0), int.from_bytes(rec('aspect-read', 1), 'little'), rec('aspect-read', 2)[0]
-    words = [int.from_bytes(ring[i:i + 4], 'little') for i in range(0, 16, 4)]
-    regs = {k: int(r['regs'][k], 16) for k in ('d0', 'd1', 'a0', 'a1')}
-    if r['steps'] >= 2000 or kept != 6 or regs != {'d0': 5, 'd1': 0x11, 'a0': 0x61997e7b, 'a1': 0x22}:
-        errors.append(f"aspect-read: stored {kept}, registers {r['regs']}")
-    if n != 1 or words[1:] != [6, 0x1234, 0x12345678] or words[0] == 0:
-        errors.append(f'aspect-read: {n} reads kept, the first {words}')
-    return CROPPB, errors
+    for (w, h), want in CROPPL_LABEL.items():
+        r = res[f'label {w}x{h}']
+        got = int(r['regs']['d0'], 16) if r['steps'] < 5000 else 'no return'
+        if got != want:
+            errors.append(f'label {w} x {h}: code {got}, not {want}')
+    for (c, k, w, h), want in CROPPL_QUALITY.items():
+        r = res[f'quality {c} {k} {w}x{h}']
+        got = int(r['regs']['d0'], 16) if r['steps'] < 5000 else 'no return'
+        if got != want:
+            errors.append(f'quality class {c}, compression {k}, {w} x {h}: code {got}, not {want}')
+    mem = res['elements']['mem']
+    for e, got in zip(CROPPL_ELEMENTS, mem[:3]):
+        b = bytes.fromhex(got)
+        if b[:4] != bytes([2, 8, 0, 0]) or b[4:12] != pll.to_bytes(4, 'little') + (pll + 128).to_bytes(4, 'little'):
+            errors.append(f'element {e:#x}: {got}')
+    pics = [int.from_bytes(bytes.fromhex(mem[3])[16 * k + 12:16 * k + 16], 'little') for k in range(8)] if pll else None
+    if pics != [10931, 10932, 10933, 10930, 10934, 0x7fc7, 0x7fc8, 0x7fc9]:
+        errors.append(f'the label states: pictures {pics}')
+    return CROPPL, errors
 
 
 def run_dial(emu, build, out, card0):
@@ -996,7 +992,7 @@ def newest_looks():
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('build', type=pathlib.Path)
-    ap.add_argument('--only', nargs='+', choices=sorted([*TESTS, AUDIT, HALATION, BORDER, ENGINE, DIAL, VIDEO, GRAINMIX, CROPHIST, CROPPB, *STATIC]))
+    ap.add_argument('--only', nargs='+', choices=sorted([*TESTS, AUDIT, HALATION, BORDER, ENGINE, DIAL, VIDEO, GRAINMIX, CROPHIST, CROPPL, *STATIC]))
     ap.add_argument('--jobs', type=lambda v: max(1, int(v)), default=DEFAULT_JOBS)
     ap.add_argument('--out', type=pathlib.Path)
     ap.add_argument('--looks', type=pathlib.Path)
@@ -1019,7 +1015,7 @@ def main():
     looks = (a.looks or newest_looks()).resolve()
     make_card(emu, build, looks, card0)
     fixtures = make_fixtures(out, looks)
-    names = a.only or sorted([*TESTS, AUDIT, HALATION, BORDER, ENGINE, DIAL, VIDEO, GRAINMIX, CROPHIST, CROPPB, *STATIC])
+    names = a.only or sorted([*TESTS, AUDIT, HALATION, BORDER, ENGINE, DIAL, VIDEO, GRAINMIX, CROPHIST, CROPPL, *STATIC])
     stock = static_check.find_stock(a.stock) if any(n in STATIC for n in names) else None
     runs = [(n, k) for n in names for k in range(1, a.repeat + 1)]
     print(f'{len(names)} tests{f" x {a.repeat}" if a.repeat > 1 else ""} on {build}, results in {out}')
@@ -1054,8 +1050,8 @@ def main():
                 return run_grainmix(emu, build, d, card0)
             if n == CROPHIST:
                 return run_crophist(emu, build, d, card0)
-            if n == CROPPB:
-                return run_croppb(emu, build, d, card0)
+            if n == CROPPL:
+                return run_croppl(emu, build, d, card0)
             first = shared.get((k, boot_key(TESTS[n][0])))
             return run_test(n, TESTS[n], emu, build, card0, d, first and first.result(), fixtures)
         except static_check.Skip as e:
