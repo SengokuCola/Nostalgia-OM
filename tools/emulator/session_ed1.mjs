@@ -141,6 +141,15 @@ for (const t of SCRIPT.split(/\s+/).filter(Boolean)) {
     const got = Buffer.from(rd(at >>> 0, hex.length / 2)).toString('hex');
     if (got !== hex.toLowerCase()) { console.error(`expect:mem ${where}: ${got}, not ${hex}`); process.exit(1); }
   }
+  else if (t.startsWith('expect:pxsame:') || t.startsWith('expect:pxdiff:')) {
+    // expect:pxsame:X,Y,X2,Y2 / expect:pxdiff:X,Y,X2,Y2 (border preview, 2026-11-17): the rear screen drawn as shot:
+    // draws it; ends the run with exit 1 unless the pixels at (X, Y) and (X2, Y2) are the same / differ.
+    const same = t.startsWith('expect:pxsame:'), [x, y, x2, y2] = t.slice(14).split(',').map(Number);
+    s.scene_frame(); s.a15_apply('tft'); const comp = lab.compose('tft', true, true);
+    const w = comp.header.width, px = comp.raw, bpp = px.length / (w * comp.header.height);
+    const at = (X, Y) => Buffer.from(px.slice((Y * w + X) * bpp, (Y * w + X) * bpp + 3)).toString('hex');
+    if ((at(x, y) === at(x2, y2)) !== same) { console.error(`${t}: ${at(x, y)} / ${at(x2, y2)}`); process.exit(1); }
+  }
   else if (t.startsWith('keep:')) {
     // keep:ENTRY:EXIT:REG ends the run with exit 1 if REG at EXIT differs from REG at the last ENTRY (hex PCs): a
     // callee-saved register the function must give back. expect:kept checks that EXIT was reached at least once.

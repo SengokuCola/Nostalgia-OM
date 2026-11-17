@@ -20604,3 +20604,262 @@ el_tid:                           /* the GUI task's id, noted by el_go */
 .balign 4
 wl_blk:                           /* the heap copy of wl_tab (fl_mk), 0 = none */
  .long 0
+
+/* ---- Border preview in live view (feature/border-live-view, owner 2026-11-17: "borders don't show up in live view"
+ * -> "Add a live view preview"). With a Border 1..5 on the look on screen (a COLOR picture mode, its slot +50), the
+ * shooting screen's grid shows the border's inner edge as a frame line: where the photo's white border will start
+ * (bd_run's width, 1.5 / 3 / 4.5 / 6 / 7.5 % of the picture's short side). Drawn by the camera's own grid layer on
+ * every screen it has (the four grid builders; the rear screen one at 0x612380bf), at the picture's place for the
+ * aspect (the table's thirds record), so nothing is drawn by us and nothing in live view or capture changes.
+ * Displayed Grid: thirds and golden keep their lines with the frame; Off, 6x4, scale, diagonal and the 16:9 frame show
+ * the frame alone while a Border is set. Photo modes only (mx_photo), after the first shutter event (STATE and
+ * el_hold: the start-up rule); video, S&Q and the movie grid (446) stay stock. research/NOTES.md "Border preview".
+ *
+ * bl_gv <- `call bl_gv,[d2,d3,a2,a3],28` at the four builders' grid read (stock: the GUI's setting read gui_get,
+ * d0 = 155 or 2047 (stills grid) / 446 (movie grid), a0 -> the value; d0 = 0 when read). After the stock read, with a
+ * Border L the value v (0..15) becomes BL_V | L << 4 | v: a line grid (kind 1) that no table holds, so the line lookup
+ * misses and bl_tail draws it. Frame: (0) call slot, (4) id, then the picture mode, (8) -> the value. */
+ .set BL_V, 0x100
+.section .ext12,"ax"
+bl_gv:
+ mov d0,(4,sp)
+ mov a0,(8,sp)
+ call gui_get,[d2,d3,a2,a3],28    /* the stock read */
+ mov d0,d2                        /* its answer, given back */
+ mov (4,sp),d0
+ cmp 155,d0
+ beq 1f
+ cmp 2047,d0
+ bne 9f
+1:
+ call mx_photo,[],0               /* photo modes only (#68): video and S&Q keep their grid */
+ cmp 0,d0
+ beq 9f
+ movbu (el_hold),d0               /* after the early load: not before the first shutter event */
+ cmp 0,d0
+ bne 9f
+ PVAL 9f                          /* a2 = P (STATE is 0 until the films load) */
+ mov 111,d0                       /* the picture mode, through the GUI's own read (ex_live's id) */
+ mov sp,a0
+ add 4,a0
+ call gui_get,[d2,d3,a2,a3],28    /* keeps d2, d3, a2, a3 */
+ cmp 0,d0
+ bne 9f
+ mov (4,sp),d0
+ mov fl_cvt,a0                    /* COLOR k's picture mode value */
+ clr d1
+2:
+ movbu (d1,a0),d3
+ cmp d3,d0
+ beq 3f
+ inc d1
+ cmp 4,d1
+ bcs 2b
+ bra 9f                           /* not COLOR 1..4 */
+3:
+ asl 6,d1
+ add 32,d1
+ add d1,a2                        /* COLOR k's slot */
+ movbu (50,a2),d0                 /* the Border 1..5 (as xb_gs) */
+ cmp 0,d0
+ beq 9f
+ cmp 6,d0
+ bcc 9f
+ mov (8,sp),a0
+ mov (a0),d1                      /* the grid chosen */
+ cmp 16,d1
+ bcc 9f
+ asl 4,d0
+ or d1,d0
+ or BL_V,d0
+ mov d0,(a0)
+9:
+ mov d2,d0
+ ret [d2,d3,a2,a3],28
+
+/* bl_tail <- jmp from the line lookup's loop end 0x611c7922 (`inc d3; add 68,a1; cmp d1,d3; lcs`; frame-lines' hook
+ * site; the lookup 0x611c78c7 runs in its caller's `call ..,[d2,d3,a2,a3],16`, ending with retf). Reached after each
+ * record that is not the value: d0 the value, d1 the count, d3 the index, a1 the record, (20,sp) -> the grid's 5 "V"
+ * rects, (24,sp) -> its 3 "H" rects ({x0, y0, x1, y1} u16; each draws a line from (x0, y0) to (x1, y1), 2 px wide,
+ * om-emu). The loop goes on as stock; at its end a value of ours (BL_V | L << 4 | v) gets: v's lines when v is thirds
+ * (1) or golden (6), then the frame B inside the picture (the thirds record's V[0] y0..y1 and H[0] x0..x1),
+ * B = max(1, min(w, h) 983 L >> 16) as bd_run, in the first empty slots. No calls (the frame has no free word);
+ * returns through the stack (mul uses mdr). */
+bl_tail:
+ inc d3
+ add 68,a1
+ cmp d1,d3
+ bcc 1f
+ jmp gl_loop                      /* 0x611c78cc: the next record */
+1:
+ mov d0,d2
+ and 0xffffff00,d2
+ cmp BL_V,d2
+ beq 2f
+ jmp gl_ret                       /* 0x611c7927: retf (a miss writes nothing, as stock) */
+2:
+ mov d0,(bl_v)
+ mov d1,d3                        /* back to the first record (count >= 1 here) */
+3:
+ add -68,a1
+ add -1,d3
+ bne 3b
+ mov bl_r,a2
+ clr d2
+ clr d3
+4:
+ mov d2,(d3,a2)
+ add 4,d3
+ cmp 64,d3
+ bcs 4b
+ mov (bl_v),d2
+ and 15,d2
+ cmp 1,d2
+ beq 5f
+ cmp 6,d2
+ bne 6f
+5:
+ mov a1,a0                        /* v's record -> bl_r */
+ mov d1,d3
+51:
+ mov (a0),d0
+ cmp d2,d0
+ beq 52f
+ add 68,a0
+ add -1,d3
+ bne 51b
+ bra 6f
+52:
+ add 4,a0
+ clr d3
+53:
+ mov (d3,a0),d0
+ mov d0,(d3,a2)
+ add 4,d3
+ cmp 64,d3
+ bcs 53b
+6:
+ mov a1,a0                        /* the thirds record: the picture's place */
+ mov d1,d3
+61:
+ mov (a0),d0
+ cmp 1,d0
+ beq 62f
+ add 68,a0
+ add -1,d3
+ bne 61b
+ bra 8f                           /* none: no frame */
+62:
+ movhu (44,a0),d0                 /* x0 */
+ movhu (48,a0),d1                 /* x1 */
+ movhu (6,a0),d2                  /* y0 */
+ movhu (10,a0),d3                 /* y1 */
+ mov bl_q,a3
+ movhu d0,(0,a3)
+ movhu d1,(2,a3)
+ movhu d2,(4,a3)
+ movhu d3,(6,a3)
+ sub d0,d1                        /* w */
+ sub d2,d3                        /* h */
+ cmp d1,d3
+ bcc 63f
+ mov d3,d1                        /* the short side */
+63:
+ mov (bl_v),d0
+ lsr 4,d0
+ and 15,d0
+ mov 983,d2
+ mul d2,d0
+ mul d1,d0
+ lsr 16,d0
+ cmp 0,d0
+ bne 64f
+ mov 1,d0                         /* B */
+64:
+ movhu (6,a3),d1                  /* yb = y1 - B (kept where the bottom line's y1 goes) */
+ sub d0,d1
+ movhu d1,(30,a3)
+ movhu (0,a3),d1                  /* xl = x0 + B, xr = x1 - B, yt = y0 + B */
+ add d0,d1
+ movhu (2,a3),d2
+ sub d0,d2
+ movhu (4,a3),d3
+ add d0,d3
+ movhu (30,a3),d0                 /* d1 xl, d2 xr, d3 yt, d0 yb */
+ movhu d1,(0,a3)                  /* bl_q: the 4 lines {left, right, top, bottom} */
+ movhu d3,(2,a3)
+ movhu d1,(4,a3)
+ movhu d0,(6,a3)
+ movhu d2,(8,a3)
+ movhu d3,(10,a3)
+ movhu d2,(12,a3)
+ movhu d0,(14,a3)
+ movhu d1,(16,a3)
+ movhu d3,(18,a3)
+ movhu d2,(20,a3)
+ movhu d3,(22,a3)
+ movhu d1,(24,a3)
+ movhu d0,(26,a3)
+ movhu d2,(28,a3)
+ movhu d0,(30,a3)
+ clr d2                           /* line i * 8 */
+71:
+ clr d3                           /* slot k * 8: the first empty one */
+72:
+ mov a2,a1
+ add d3,a1
+ mov (a1),d0
+ mov (4,a1),d1
+ or d1,d0
+ beq 73f
+ add 8,d3
+ cmp 64,d3
+ bcs 72b
+ bra 8f                           /* no empty slot left */
+73:
+ mov a3,a0
+ add d2,a0
+ mov (a0),d0
+ mov d0,(a1)
+ mov (4,a0),d0
+ mov d0,(4,a1)
+ add 8,d2
+ cmp 32,d2
+ bcs 71b
+8:
+ mov (20,sp),a1                   /* bl_r -> the grid's 5 + 3 rects (halfwords, as the stock lookup) */
+ clr d0
+81:
+ movhu (d0,a2),d1
+ movhu d1,(d0,a1)
+ add 2,d0
+ cmp 40,d0
+ bcs 81b
+ mov (24,sp),a1
+ add 40,a2
+ clr d0
+82:
+ movhu (d0,a2),d1
+ movhu d1,(d0,a1)
+ add 2,d0
+ cmp 24,d0
+ bcs 82b
+ ret [d2,d3,a2,a3],16
+ .balign 4
+bl_r:                             /* the grid's lines: 5 "V" then 3 "H" rects */
+ .space 64
+bl_q:                             /* the picture's x0 x1 y0 y1, then the frame's 4 lines */
+ .space 32
+bl_v:                             /* the value */
+ .long 0
+
+.section .hook_bga,"ax"
+ call bl_gv,[d2,d3,a2,a3],28      /* stock 0x6123825e: call 0x610fd8ef,[d2,d3,a2,a3],28 (grid builder 0x612380bf) */
+.section .hook_bgb,"ax"
+ call bl_gv,[d2,d3,a2,a3],28      /* stock 0x611cb433: the same read (grid builder 0x611cb359) */
+.section .hook_bgc,"ax"
+ call bl_gv,[d2,d3,a2,a3],28      /* stock 0x611e44d7: the same read (grid builder 0x611e4221) */
+.section .hook_bgd,"ax"
+ call bl_gv,[d2,d3,a2,a3],28      /* stock 0x611eae1e: the same read (grid builder 0x611eab68) */
+.section .hook_blk,"ax"
+ jmp bl_tail                      /* stock 0x611c7922: inc d3; add 68,a1; cmp d1,d3; lcs */

@@ -47,6 +47,11 @@ SECTIONS {
   .hook_bar     0x611d1035 : { *(.hook_bar) }
   .hook_rda     0x611d16b4 : { *(.hook_rda) }
   .hook_rdb     0x611d1725 : { *(.hook_rdb) }
+  .hook_bga     0x6123825e : { *(.hook_bga) }   /* border preview: the grid builders' grid read -> bl_gv */
+  .hook_bgb     0x611cb433 : { *(.hook_bgb) }
+  .hook_bgc     0x611e44d7 : { *(.hook_bgc) }
+  .hook_bgd     0x611eae1e : { *(.hook_bgd) }
+  .hook_blk     0x611c7922 : { *(.hook_blk) }   /* border preview: the line lookup's loop end -> bl_tail */
   .ext2         0x607187a8 : { *(.ext2) }
   .ext7         0x6164afd0 : { *(.ext7) }
   .ext3         0x6081fe10 : { *(.ext3) }
@@ -118,6 +123,9 @@ rdb_11        = 0x611d1757;
 
 color_resume  = 0x6051861a;
 getter        = 0x60063380;
+gui_get       = 0x610fd8ef;   /* border preview: the GUI's setting read (its cache, else the settings interface) */
+gl_loop       = 0x611c78cc;   /* border preview: the line lookup's record loop */
+gl_ret        = 0x611c7927;   /* and its retf */
 trig          = 0x60415343;
 trig_resume   = 0x6041521b;
 get_tid       = 0x6003193e;

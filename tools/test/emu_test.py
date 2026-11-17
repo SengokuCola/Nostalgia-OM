@@ -228,6 +228,15 @@ OPEN_RGB = 'ok wait ok wait down wait down wait'
 # borders: Picture Mode's Border row, the 18th (pm_list: after Film Grain and Grain Size, better grain g2); COLOR 1's
 # slot +50 is P + 82
 OPEN_BORDER = 'ok wait ok wait' + ' down wait' * 17
+# border preview (2026-11-17): with a Border on the look, the shooting screen's grid shows the border's inner edge as
+# a frame line. Rear screen 900 x 600, 4:3: the picture x 50..850, y 0..599; Border 3 is 26 px in (bd_run's width), so
+# the left line is on x 75..76 and the top one on y 25..26. Each line is checked against a point beside it on om-emu's
+# blank live view. In video (16:9, y 47..553) the left line would be on x 21..22.
+BORDER_LINE_ON = 'expect:pxdiff:75,300,100,300 expect:pxdiff:200,25,200,40'
+BORDER_LINE_OFF = 'expect:pxsame:75,300,100,300 expect:pxsame:200,25,200,40'
+BORDER_LINE_OFF_VIDEO = 'expect:pxsame:22,250,40,250 expect:pxsame:75,300,100,300'
+BORDER_TO_3 = f'{OPEN_BORDER}' + ' right wait' * 3 + ' expect:p:82=03 menu wait wait s1 wait wait'
+BORDER_TO_0 = f'{OPEN_BORDER}' + ' left wait' * 3 + ' expect:p:82=00 menu wait wait s1 wait wait'
 # better grain g2: the Film Grain strength row, the 16th (Grain Size under it); COLOR 1's level byte +53 is P + 85
 OPEN_GRAIN = 'ok wait ok wait' + ' down wait' * 15
 GRAIN_2_COARSE = '^Film Grain on COLOR 1-4: 2 Coarse, Off, Off, Off$'
@@ -308,6 +317,20 @@ TESTS = {
              ' menu wait wait s1 wait wait poweroff'),
         Boot(f'wait wait s1 wait wait expect:p:82=03 {OPEN_BORDER}' + ' left wait' * 4 + ' expect:p:82=00'
              ' menu wait wait s1 wait wait poweroff'),
+    ],
+    # border preview: the frame line is there at Border 3 and gone at Border 0 (and not there before the Border).
+    'border-preview-on-at-3-off-at-0': [
+        Boot(f's1 wait wait {BORDER_LINE_OFF} {BORDER_TO_3} {BORDER_LINE_ON} {BORDER_TO_0} {BORDER_LINE_OFF} poweroff'),
+    ],
+    # border preview: after a power-off the line waits for the first half-press (the start-up rule), then shows.
+    'border-preview-waits-for-the-first-half-press': [
+        Boot(f's1 wait wait {BORDER_TO_3} {BORDER_LINE_ON} s1 wait wait poweroff'),
+        Boot(f'wait wait {BORDER_LINE_OFF} s1 wait wait {BORDER_LINE_ON} poweroff'),
+    ],
+    # border preview: video keeps its grid as it is (no line with Border 3 on the look, after a half-press).
+    'border-preview-not-in-video': [
+        Boot(f's1 wait wait {BORDER_TO_3} {BORDER_LINE_ON} s1 wait wait poweroff'),
+        Boot(f'wait wait s1 wait wait {BORDER_LINE_OFF_VIDEO} poweroff', photo_switch=PHOTO_SWITCH_VIDEO),
     ],
     # better grain g2: the Film Grain row steps 0..5 (no step past 5) and keeps the old level byte in step (5 -> High 3,
     # 2 -> Low 1); the Grain Size row (Medium -> Coarse); both kept over a power-off (the debug log's NOW line).

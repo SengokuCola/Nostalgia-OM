@@ -76,7 +76,12 @@ HOOKS = {'.hook_color': (0x60518615, bytes.fromhex('cd6cfdf060')),
          '.hook_c1e': (0x605053cc, bytes.fromhex('fa129800dff01c')),
          '.hook_wl': (0x604b8d91, bytes.fromhex('f1ecf000fa08e814')),
          '.hook_trs': (0x604cf156, bytes.fromhex('ddf083d0ffe010')),   # better grain g1: the grain tile's size (texture builder)
-         '.hook_trl': (0x604cf1a4, bytes.fromhex('cd25f5f018'))}   # better grain g1: the grain tile's load -> tg_fill   # ft8: work-list key -> block +136   # ft4: end of combiner 1's set-up -> block +128   # ft3: the combiner set-up's selector call -> block +120   # ft1: still set-up -> code block +112 (grain texture)   # film test 9: the reset keeps the strip's scroll       # v0.23: Blacks / Whites bars top-down          # v0.23: our row title "Vignette Correction"          # v0.23: the bar's dot step   # v0.21 grain: request configuration -> selector
+         '.hook_trl': (0x604cf1a4, bytes.fromhex('cd25f5f018')),
+         '.hook_bga': (0x6123825e, bytes.fromhex('dd9156ecfff01c')),   # border preview: grid builder 0x612380bf's grid read (call 0x610fd8ef,[d2,d3,a2,a3],28)
+         '.hook_bgb': (0x611cb433, bytes.fromhex('ddbc24f3fff01c')),   # the same in grid builder 0x611cb359
+         '.hook_bgc': (0x611e44d7, bytes.fromhex('dd1894f1fff01c')),   # the same in grid builder 0x611e4221
+         '.hook_bgd': (0x611eae1e, bytes.fromhex('ddd12af1fff01c')),   # the same in grid builder 0x611eab68
+         '.hook_blk': (0x611c7922, bytes.fromhex('4c2144a7d4'))}   # border preview: the line lookup's loop end (inc d3; add 68,a1; cmp d1,d3; lcs)   # better grain g1: the grain tile's load -> tg_fill   # ft8: work-list key -> block +136   # ft4: end of combiner 1's set-up -> block +128   # ft3: the combiner set-up's selector call -> block +120   # ft1: still set-up -> code block +112 (grain texture)   # film test 9: the reset keeps the strip's scroll       # v0.23: Blacks / Whites bars top-down          # v0.23: our row title "Vignette Correction"          # v0.23: the bar's dot step   # v0.21 grain: request configuration -> selector
 XB_SRC = HERE / 'src' / 'xblock.s'
 XB_L1, XB_L2 = 0x10000000, 0x12345670          # the code block is linked at both; fields that move = relocations
 ROOT = HERE.parent                               # card files: card/mkguides.py (pictures), card/mklabels.py
