@@ -153,6 +153,12 @@ for (const t of SCRIPT.split(/\s+/).filter(Boolean)) {
     }, { pcs: [E, X] });
   }
   else if (t === 'expect:kept') { if (!kept) { console.error('expect:kept: no keep: check ran'); process.exit(1); } }
+  else if (t.startsWith('expect:p:')) {
+    // expect:p:OFF=HEX: as expect:mem at P + OFF (OFF decimal, as pokep:), e.g. expect:p:82=03 = COLOR 1's slot +50
+    const [o, hex] = t.slice(9).split('='), at = (POOL + u16(STATE) - 1 + parseInt(o, 10)) >>> 0;
+    const got = Buffer.from(rd(at, hex.length / 2)).toString('hex');
+    if (got !== hex.toLowerCase()) { console.error(`expect:p ${o}: ${got}, not ${hex}`); process.exit(1); }
+  }
   else if (t.startsWith('expect:isdef:')) {
     // expect:isdef:FN:ID=V ends the run with exit 1 unless FN (hex, an "is at default" entered as the stock one,
     // `call FN,[d2,d3,a2],24`, d0 id -> d0 1 default) answers V (0 or 1) for ID (hex): a row's '*' is V = 0.
@@ -210,7 +216,8 @@ for (const t of SCRIPT.split(/\s+/).filter(Boolean)) {
     const dd = Debugger.attach(lab.sim, { lab }); const saved = dd.m.getRegs().slice();
     const st = u16(STATE), P = (POOL + st - 1) >>> 0;
     const SP = ((saved[8] - 0x800) & ~3) >>> 0, B = ((SP - 0x6000) & ~0xff) >>> 0;
-    const ev = (x) => (typeof x === 'number' ? x : Function('P', 'SP', 'B', 'return (' + x + ')')(P, SP, B)) >>> 0;
+    // better grain g2c: W(addr) in an expression reads the word there (e.g. the code block: W(P+692) + an offset)
+    const ev = (x) => (typeof x === 'number' ? x : Function('P', 'SP', 'B', 'W', 'return (' + x + ')')(P, SP, B, u32)) >>> 0;
     const RN = ['d0', 'd1', 'd2', 'd3', 'a0', 'a1', 'a2', 'a3', 'sp', 'pc', 'psw', 'mdr'];
     for (const cs of spec) {
       for (const [a, hex] of cs.mem || []) { if (hex.startsWith('=')) { const v = ev(hex.slice(1)); dd.write(ev(a), Uint8Array.from([v & 255, v >> 8 & 255, v >> 16 & 255, v >>> 24])); } else dd.write(ev(a), Uint8Array.from(Buffer.from(hex, 'hex'))); }

@@ -402,6 +402,16 @@ ck_kset:
  mov a3,a1
  mov CK_BSZ,d1
  call ck_cmp,[d2],8
+ cmp 0,d0
+ bne 9f
+ mov d2,d0                        /* better grain g2: a Film Grain strength / Grain Size of its own (G, the slot's spare
+                                     byte +25, not 0) counts too */
+ call cv_lk,[],0
+ movbu (25,a0),d0
+ cmp 0,d0
+ beq 9f
+ mov 1,d0
+9:
  ret [d2,d3,a2,a3],20
 ck_jset:
  mov d0,d3
@@ -437,6 +447,11 @@ ck_jset:
  call ck_cmp,[d2],8
  or d0,d3
 3:
+ movbu (25,a2),d0                 /* better grain g2: a saved Film Grain strength / Grain Size (G != 0) counts too */
+ cmp 0,d0
+ beq 4f
+ mov 1,d3
+4:
  mov d3,d0
  ret [d2,d3,a2,a3],20
 

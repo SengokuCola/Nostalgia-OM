@@ -6038,3 +6038,305 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   "looked stock". So the photo position's movie gets none of our looks. Why is not known: the camera may change the
   mode code while it records, or that movie's frames may not reach `st_run` / `s_lv6` as a COLOR job. That part is
   a guess. No recording flag is needed for now.
+
+## Photo borders b1: a white Border row (2026-11-16; branch feature/image-borders; emulator only, camera test pending)
+- Owner (2026-11-16, reopening 2026-11-12's "Film borders: not planned"): **white**, **adjustable 1..5**, **per film on
+  a Picture Mode row**, **the same width on all sides**. JPEG only (the file keeps its size; the border covers the
+  photo's outer edge); RAW untouched.
+- Route: not the camera's Frame Art Effect (job flag 0x8000, our white frame pictures, v0.20..v0.25: restarts with
+  the fast grain on COLOR's list (ft5 / ft8), "picture error" with Glow + Frame + Grain (rc2b), removed in v0.25).
+  Instead our own pass on the finished picture, `bd_run` (editor.s ext12), run by the block's `xb_gs` after halation
+  and grain, on the Soft Focus route that Halation alone already takes (flag 0x80, `xb_wt` w 1024: the sharp image
+  unchanged; camera-tested h1..h8 with bursts and RAW+JPEG). No new hook, no new job flag (`xb_rv`'s #65 rule covers
+  0x80), nothing at start-up, nothing in live view or video (`xb_lv` unchanged).
+- Storage: the Frame row's old byte, BUNDLES slot **+50** / LOOKS and EDITS record **+48** (0 Off, 1..5). Already in
+  pf_bt (48 <-> slot 50), fl_xr row 11 (FRB: 48, 50), ed_isd0 (+48..+51) and build.py's defaults ('frame'); the camera
+  checks it as -5..5 in every OM-3 firmware, and v0.25..v0.30.3 ignore it (XB_ART 0), so going back keeps the films and
+  shows no border (a film with a border keeps its '*' there). Risk: an old "Frame On" (5) stored on a COLOR or a film in
+  the v0.20..v0.25 era now reads as Border 5 (the debug log does not show the byte: the owner checks the rows).
+- Row: FR_IT 5381 / FRB 0x7eb0 / class 10 turned from the Frame choice row into a 0..5 slider like Halation: sl_slot
+  reads (50,slot), sl_cnt 6, LOWCNT 0 / 6, sl_set0 writes +50 (82 from P + 64k), rw_bar's 0..5 ends, rv_chk / st_chk
+  take FRB, rd_a / rd_b the rd6 readouts. Title "Border" (ST_BDR, string id 0x7f07, was "Frame"), left icon "Bdr"
+  (IC_BD = IC_GM: mkicons PICTURES[3], G-M's unused place, ic_list entry 8; ic_pay +1024 B), the choice-row stubs
+  (fr_a..fr_d, lc_fr, fr_l0..2) gone; build.py registers FR_IT with the slider rows. pm_list: last, after Film Grain
+  (page 4: Film Grain, Border).
+- `bd_run` (`call bd_run,[d2,d3,a2,a3],88`, a0 = buffer record, d0 = 1..5; checks as hl_run: format 0x0c02, W 64..8192
+  and a multiple of 4, memHw >= W, H >= 64): B = max(1, (min(W, H) T) >> 16) rows top and bottom, T = 983 / 1966 /
+  2949 / 3932 / 4915 (1.5 / 3 / 4.5 / 6 / 7.5 % of the short side: 58..291 px on 5184 x 3888), Bp = (B + 1) / 2 pairs
+  left and right; word 0x80ff80ff (Y 255, Cb = Cr = 128). Three bands (top, sides, bottom), K rows per lock with
+  K = max(1, 120000 / (4 pairs + 60)) (BD_LOCKN as HL_LOCKN); rows through `hl_open`, the cached view FLUSHed; a group
+  across the window's edge is retried a row at a time, a row across it a pair at a time (a pair that cannot be
+  mapped is skipped). Exact model `research/border/model.py`; om-emu check `research/border/emu_check.py` (through
+  `research/halation/emu_hl.mjs`, which now takes `fn` / `frame`).
+- om-emu (out-bd1 / out-bd2): **bd_run bit-exact on 9 frames** (4:3, 3:4, 16:9, 1:1, 64 x 64, 1028 x 131 with
+  padding, 8192 x 64, levels 0 and 6 untouched; registers, sp and the bytes after the frame intact); **20 MP at level
+  5: 9.99 M instructions, 89 locks, at most 115 K under one lock** (halation h8: 104..124 M), so ~0.1 s (estimate from
+  halation's rate). Row: page 4 shows "Bdr ±0" under Film Grain, title "Border", the bar from the left; right / the
+  dials step it (main dial: -1 = up), "Bdr +3" with the row's '*'; clamps at 0 and 5; saved at the half-press and
+  kept over a power-off. Code: ext12 +1,576 B (7,088 B left), ext11 -112 B, the block +60 B (6,132 B).
+- Not in om-emu (camera-only): the photo itself; whether buffer 0x1000 is already cut to the aspect (3:2, 16:9, 1:1,
+  3:4) or cut later (then a side would be lost); playback (since #65 the camera's playback preview is one of the
+  shot's small developments without 0x80, so likely no border there, as Glow / Halation); timing and bursts; grain
+  with a border (the look leaves the plain grain path for the Soft Focus route, as Halation + Grain does).
+- Not done: LookLab (the record's +48 is written 0, "Art Effect Off"), the photo code (om3.1 has no border field),
+  docs / CHANGELOG (until the owner's camera test).
+- Suite (build of dd9c6f0, out-bd2): **28 of 28 pass**, incl. the new `border-matches-the-model` and
+  `border-row-0-to-5-kept` (boot 1: right x 7 -> 5, left x 2 -> 3, half-press; boot 2: still 3, left x 4 -> 0) and
+  `static:hook-list` / `static:changed-bytes` (no new hook or patch site).
+- Package: `test-builds/2026-11-16-borders-test1` (private folder): E1479999.BIN `2e6e86fc…13f2`, VERSION
+  "v0.30.3-dev (borders test 1: white Border row 0-5)" (51 characters), go-back v0.30.3 `60b6d954…f546` (patch.py
+  --release v0.30.3), TEST-STEPS (rows, aspects, RAW+JPEG, bursts, Glow + Halation + Grain together, Image Review,
+  video, playback, old Frame values). New camera pictures for the owner's OK: the title "Border", the icon "Bdr".
+- **b1b (owner, 2026-11-16: "can you not use the frame effect icon that already exists in camera?"):** the Border row's
+  left icon is now the camera's own Frame picture, **stock id 832** (82 x 62): item 867 is the Art Effect (values 0..9,
+  value 3 = Frame, string 767), its left-column cells 829..833 (82 x 62) and strip icons 822..826 (100 x 76); sizes from
+  the picture table at *(0x60379740) + 4 id in om-emu. ic_list entry 8 = 832 (`IC_BD`), as the WB row's stock WB±
+  12545; our "Bdr" picture dropped (mkicons PICTURES[3] blank again, ic_pay back to 16640 B), so the build adds no
+  camera picture of ours (the title "Border" is camera-font text). om-emu: 832 and 825 both draw beside the value in
+  the left column ("[frame] +3*"); 832 is the cell the camera itself uses for Frame there and sits a little smaller.
+  VERSION "v0.30.3-dev (borders test 1b: the camera's Frame icon)".
+- b1b suite (build of ecca6b7, out-bd4): **28 of 28 pass**. ext12 254,032 B (8,112 B left), ext11 63,120 B, block
+  6,132 B. Package `test-builds/2026-11-16-borders-test1b` (private folder): E1479999.BIN `14372929…2028`, go-back
+  v0.30.3 `60b6d954…f546`; it replaces test 1 (`2e6e86fc…`, never flashed).
+- **b1c (owner on b1b, 2026-11-16: "the icon is too large and already cut off"):** 832 is drawn at its own 82 x 62 in
+  the 46 x 46 slot. The camera has no smaller Frame picture: a shape search over the 6,916 format-14 pictures in the
+  om-emu picture table (white-ink mask against 832's) finds the Frame icon only as 832 / 825 (the same family as the
+  other Art Effects 818..833, 3450..3453, 125, 156..158, 391 / 392); the small stock rectangles (e.g. 11161, 633) are
+  other functions' icons. Shrinking 832 would put a camera graphic into patch.json (not allowed), so the row gets our
+  own `mkicons.border_icon` (46 x 46, PICTURES[3], `IC_BD` = IC_GM again; ic_pay 17,152 B): a small photo with a 4 px
+  white border, a 1 px dark line, a grey sky and darker hill, the 2 px dark edge of the Glow / Halo / Balance icons.
+  om-emu: whole in the slot beside "+3", about the Film Grain icon's size. New picture: sent to the owner for approval.
+  VERSION "v0.30.3-dev (borders test 1c: own small Border icon)". Suite on c268419: **28 of 28 pass** (pass recorded).
+  ext12 254,544 B (7,600 B left). Package `test-builds/2026-11-16-borders-test1c`: E1479999.BIN `d8ce3d89…3db3`,
+  go-back v0.30.3 `60b6d954…f546`; tests 1 / 1b never flashed (folders moved to the Trash).
+- **Owner approved the Border icon (2026-11-16: "Yes, use it").** Test 1c (`d8ce3d89…3db3`) is ready for the owner's
+  camera test; nothing changed in the firmware.
+- **Test 1c camera-tested (owner's OM-3, 2026-11-16): "that works well!!!".** Flashed by cad from
+  `test-builds/2026-11-16-borders-test1c` (E1479999.BIN sha256 `d8ce3d89…3db3`, checked on the card). The owner's
+  report was overall, not per step: not reported separately are whether playback (or playback zoom) shows the border,
+  the aspect ratios one by one, and whether any old "Frame On" value turned up as Border 5. No DEBUG.TXT on the card,
+  so no log. Not merged, pushed or released (cad does that on the owner's word).
+
+## Better grain g1: our own colour grain tile (2026-11-15; branch feature/better-grain)
+- Owner: "I want better color grain, and I want to be able to set strength and size of grain". Settings mockup
+  (Film Grain Off / 1..5 slider + Grain Size Fine / Medium / Coarse) sent to cad for the owner's choice; g1 is the
+  probe for the texture itself and uses today's Film Grain row (Low / Med / High = size Fine / Medium / Coarse).
+- **Owner's choice (2026-11-15, via cad: "Both, as suggested"):** Film Grain becomes a slider Off, 1..5 (like Halo),
+  replacing Off / Low / Med / High; a new **Grain Size** row under it: Fine / Medium / Coarse; films saved with
+  Low / Med / High become 2 / 3 / 5; colour speckle on for every grain at a fixed amount tuned on the camera (no
+  colour setting for now). The rows follow once g1's grain works on the camera.
+- **How the camera makes Grainy Film's texture (static analysis, OM-3 1.1):**
+  - TXGET 0x604cd921 = a cache of 4 texture objects (116 B each at 0xa32e94b8; +112 refcount, +114 state 0 free /
+    1 being built / 2 ready). Key = obj+0..5 (the 6-byte block of xb_tex), matched by 0x604ce6f0: +0 halfword, +3
+    (TXPF 0x604b77fb: 1 or 3), +2 for some classes; a request with +5 = 1 never matches. On a miss: builder
+    0x604cf0b9. Release 0x604ce397: refcount <= 1 -> the buffer goes back (0x604afeb2) and the state to 0, so the
+    texture is made again for every shot that does not overlap a live one (bursts share it).
+  - Builder 0x604cf0b9: sizes from 0x604cec73; the **source = resource 0x8001**, size 0x601d7546(0x8001), loaded by
+    0x604ce6c9 into a buffer from 0x604afe6b (descriptor at the builder's sp+88: format +16 = 0x0c04 grey, 1536 x
+    1536, size +88 = (resource size + 1151) & -128, id +92 0x11100); texture buffer obj+8 (0x0c02, id 0x1104);
+    a kind-3 request, stage 0xf002 (0x604b5b44), copies the tile in strips of <= 1536 x 1536; DMA copies 0x604b0d0b
+    repeat that band downwards; the source buffer is released. Then the texture's pitch is set to the image width
+    (188) though it was written at (190), a shear, and obj+108 = an offset mask (the attach hook 0x604bc0cf adds
+    job+8312 & obj+108: a random shift per shot). So the camera's grain = one grey 1536 x 1536 tile, repeated,
+    sheared and shifted. The resource table (0xa32da49c) is empty in om-emu: the tile itself could not be read.
+  - Combiner set-up register image (context+8)+7988: the **second input's gains are +148 (low Y, high Cb) and +152
+    (Cr)**, laid out as the photo's +96 / +100 (case 0x60504bad: both inputs 1024 / 1024 / 1024; 0x60504c8c: second
+    115 / 115 / 115; 0x60504c23: second -1024). Combiner 1 (Grainy Film) writes the texture 1024 / 0 / 0 (grey grain)
+    and the photo's chroma 0 (mono); xb_c1e already gives the photo its chroma back.
+  - Analysis (rc1 numbers): the stock texture lifted Y by 26 at gain 1024 with grain std 19.5: 26 / 19.5 = 1.33, a
+    half-normal's mean / std. Reading (guess): the blend adds texture Y as it is (not centred), the camera's tile is
+    non-negative grain. Chroma inputs are centred (the output's chroma offsets are 512, and ft4's photo chroma came
+    through unchanged with gain 1024).
+- **g1 build (firmware only; emulator below):**
+  - Hooks (stock bytes checked by build.py): `.hook_trs` 0x604cf156 `call 0x601d7546,[d2,d3,a2],16` (ddf083d0ffe010)
+    -> `call tr_sz` (same form); `.hook_trl` 0x604cf1a4 `call 0x604ce6c9,[d2,d3,a2,a3],24` (cd25f5f018) -> `jmp tr_ld`
+    (`call tr_ld2,[d2,d3,a2,a3],24`, then back to 0x604cf1a9). Both run the stock call unless `tg_own` != 0.
+  - `xb_tex` (block): the key's 4th byte = 0x80 + size (Grainy Film's own are 1 / 3: neither gets the other's tile
+    from the cache); `tg_own` = size around its TXGET call. TXPF is no longer called there.
+  - With `tg_own`: `tr_sz` sets the source format (the builder's (104,sp)) to 0x0c02 and returns 1536 x 1536 x 2;
+    `tr_ld2` calls `tg_fill` (ext12) with the buffer's bus address instead of loading the camera's tile.
+  - `tg_fill`: Y = 48 + noise, Cb / Cr = 128 + noise, sigma 16 each; noise = a w x w box sum of uniform random bytes
+    (K = 14189 / w), w = size for Y, (w + 1) / 2 for Cb / Cr (half width and, here, half height). Rows repeat every
+    768 (row y + 768 = row y: half the work), columns every 1536; both wrap seamlessly. Column sums kept from row to
+    row (+ entering row, - leaving row, each made again from its own seed: `tg_seed`, xorshift32 streams), running
+    sum along the row (`tg_row`). Work memory: one malloc of 9264 B, used through its cached alias (FLUSH before and
+    after). Rows to the buffer by `tg_put`: `hl_open` (lock + this CPU's bus window, as halation), the window's cached
+    view, FLUSH, UNLOCK; split at the window's 128 MB edges. Failure anywhere -> `tg_bad` = 1.
+  - `xb_c1e`: +148 = Y gain 1024 | Cb gain 448 << 16, +152 = Cr gain 448, +180 low half = -192 (= -(4 x 48 x 1024 /
+    1024): our tile's Y level taken back, if the blend adds texture Y as it is). `tg_bad` -> both gains 0 (no grain
+    rather than a wrong one).
+  - Debug log (`DEBUG.TXT` on the card): "Grain tiles (better grain g1): made N, failed N, last size W, last time
+    (ms) T" (time from the us counter 0x98900284 >> 10).
+  - VERSION "v0.30-dev (better grain g1 probe)".
+- **g1 emulator (om-emu; it cannot develop a photo, so the builder, the image processor and the blend are untested):**
+  boots, half-presses, menus fine; debug log line present ("made 0, failed 0, ..."). `tg_fill` run natively (ncall
+  at tr_ld2's call, buffer at bus 0xb0100000 = the direct DRAM path, FLUSH stubbed: om-emu has no flush-done bit,
+  the first unstubbed run spun in FLUSH and ran node out of memory): sizes 1 and 3, the first 16 rows and their copies
+  768 rows down **equal a numpy model byte for byte** (scratch `models.py`); Y mean 48.0 / sigma 16.0 (size 1: 20..76,
+  size 3: 0..110), Cb / Cr 128 / 16. **Full tile, size 3: all 1536 rows equal the model**; the seams are seamless
+  (mean step across the repeat edges 10.54 / 10.59 = inside 10.54 / 10.52); tg_n 1, tg_bad 0. 66.4 M instructions
+  for a tile (camera time unknown: om-emu has no us counter; the debug log will tell).
+- Package `test-builds/2026-11-15-grain-g1` (outside the repo): E1479999.BIN 0bd7997b…47ac; back 01ea3d14… (v0.29.5).
+  Camera questions: no freeze (plain, RAW+JPEG, Glow, Clarity, Shading, burst); colour speckle; brightness and colour
+  as grain Off (if lighter / darker: the blend centres texture Y after all; if tinted: chroma is not centred); the three
+  sizes; the time per tile (CADLOG.TXT); Grainy Film unchanged.
+- **On hold (owner, 2026-11-15):** after two previews (made outside the repo on a public-domain sample photo:
+  g1's tile added as xb_c1e's gains intend, Y + (tY - 48), C + 0.4375 (tC - 128)), the owner: "our grain is fine
+  for now". g1 was **not** camera-tested. Preview reading (analysis): Fine looks like light film texture, Medium /
+  Coarse colour speckle can read as digital colour noise, Coarse's square box clumps show at 300%. Compared with real
+  film: same amount in every tone (the texture is added as it is: no tone shaping on this route, as far as known),
+  one clump size, even colour speckle, a repeating tile.
+- A film-like variant for later (design preview only, float maths, not built): Y = 0.85 / 0.55 mix of two sizes of
+  noise box-filtered twice both ways (Fine 2 + 1, Medium 3 + 1, Coarse 4 + 2), normalised to sigma 16; Cb / Cr
+  box-filtered twice at half resolution (2 / 3 / 3) with the chroma gain about 0.18 (about 184 / 1024) instead of
+  448. Estimate: 2-3x tg_fill's work. To pick up again: camera-test g1 first (the image processor takes a 0x0c02
+  tile, brightness / tint, time per tile), then the film-like tile and the Strength / Size rows.
+- **Back on (owner, 2026-11-16, via the main chat: "lets now try the new grain settings as well", after border test
+  1c passed): g1 on top of the Border row.** `feature/image-borders` (v0.30.3 + Border, camera-tested test 1c) merged
+  into `feature/better-grain` (2ba7211). Conflicts: VERSION, build.py (make_xblock: BD_RUN and TG_OWN / TG_BAD),
+  editor.s (v0.30.3 rebuilt the debug log: the "Grain tiles" line is now in `lg_sum`'s SUMMARY after the log writes),
+  NOTES (both kept). xb_gs untouched: the texture grain is in the development, `bd_run` after it on the finished
+  picture, so no grain on the border; XB_ART 0 keeps the Border byte (+50) out of xb_tex's Frame test.
+- Hooks reviewed against the start-up rule and added to `tools/test/hooks.json` by hand (not `--write-hooks`):
+  `hook_trs` 0x604cf156 (7 B) and `hook_trl` 0x604cf1a4 (5 B), both in the texture builder 0x604cf0b9 (TXGET's
+  miss path). With `tg_own` 0 they run the stock calls with the same frames; only `xb_tex` sets `tg_own`, around its
+  TXGET for a COLOR still with Grain at the shot. Nothing of ours at start-up.
+- Build (2ba7211): ext12 255,880 B (6,264 B left), ext11 63,120 B, block 6,192 B. Settings: as g1 (Film Grain Low /
+  Med / High = size 1 / 2 / 3 at one strength); the Strength / Size rows need a new per-film byte and row pictures,
+  so they wait for this camera result. Suite (OM3_EMU = the newer om-emu with `bin/card.mjs`): **28 of 28 pass**
+  (pass recorded on 2ba7211). `tg_fill` on this build (ncall at tr_ld2's call, FLUSH stubbed): full tiles, sizes 1
+  and 3, **equal the model byte for byte** (66.3 M / 66.4 M instructions).
+- Package `test-builds/2026-11-16-grain-borders-g1` (private folder): E1479999.BIN `4c026642…555f`, VERSION
+  "v0.30.3-dev (grain g1 + borders 1c)"; go-backs v0.30.3 `60b6d954…f546` (patch.py --release v0.30.3) and border
+  test 1c `d8ce3d89…3db3`. It replaces `2026-11-15-grain-g1` (never flashed). Camera questions as g1, plus Grain +
+  Border 3 (no grain on the white), Halation 5 + grain, bursts with a border, Image Review, video.
+- **First camera result (owner's OM-3, 2026-11-16; emulator + first camera photos, owner's verdict pending).** Package
+  `4c026642…555f`; files in the private card backups (CADLOG, PB162953..956, never in the repo). RAW+JPEG 5184 x 3888,
+  COLOR 1 with its own settings (no film), Border 0: 953 grain Off, 954 / 955 / 956 Low / Med / High (size 1 / 2 / 3).
+  - **No freeze or reboot** (4 photos, 20 shutter events, saves fine, log "nothing unusual"): **the image processor
+    takes our 0x0c02 colour tile** (camera-tested).
+  - The main chat's measurements (high-pass std of the centre 1024 x 1024, 9 x 9 box): Off Y 10.6, Cb 1.9, Cr 1.3;
+    grain on Y 17.3..17.9, Cb 5.6..5.9, Cr 5.1..5.4. Mean Y / Cb / Cr the same as Off within 1 (102 / 128 / 129.5):
+    **no brightening, no tint** (camera-tested), so the blend adds texture Y as it is (the -192 Y offset is right) and
+    the chroma inputs are centred. Sizes fine -> medium -> coarse by eye. The colour speckle is strong: on a blue box
+    at High it reads like digital colour noise (as the preview reading said).
+  - Log: "made 2, failed 0, last size 3, last time (ms) 4193924". **The time was measured the wrong way round:**
+    0x98900284 counts down (timing section, 2026-11-14), and g1 logged (end - start) >> 10, which wrapped:
+    2^22 - 4193924 = 380, so start - end = about 380 x 1024 us = **0.39 s for the last finished tile** (analysis;
+    66 M instructions -> about 170 M per second). **"made 2" with three grain photos:** `tg_w` is set when a tile
+    starts and `tg_n` when it ends; the log was written at event 20, the half-press / release after the 4th photo,
+    and all three grain photos carry our colour speckle (Cb 5.6..5.9 against 1.9), so the size-3 tile was most likely
+    still being made at that write (analysis). That fits the tile being built during the development, after the
+    photo is counted, with a half-press coming while it runs: no harm seen.
+  - **g1b (firmware only; not packaged: the owner's verdict on size, speckle and speed first):** `tg_ms` = ((start -
+    end) & 0x7fffffff) >> 4 x 1049 >> 16 = milliseconds (to 65 s). om-emu: the size-2 full tile still equals the
+    model byte for byte, time 0 (g1 gave 4194303 there: the same wrap). VERSION "v0.30.3-dev (grain g1b + borders
+    1c)". The time is camera-only (om-emu's counter barely moves), so no suite test for it.
+
+## Better grain g2: Film Grain strength and Grain Size rows (2026-11-16; branch feature/better-grain; emulator only)
+- Owner (via the main chat, after the g1 + borders photos): "Good, keep going": the mockup's settings (2026-11-15):
+  Film Grain a slider Off, 1..5; a Grain Size row Fine / Medium / Coarse under it; films' Low / Med / High -> 2 / 3 / 5.
+- **Storage (no record byte was free: LOOKS / EDITS +0..+62 all used, +63 the own records' '*'):**
+  - slot +53 (record +51) stays the old level, kept in step by `gs_wr` (strength 1-2 -> Low 1, 3 -> Med 2, 4-5 -> High
+    3): older firmware, the CPU grain (`xb_gs`), LookLab and the photo code read it as before; BUNDLES `fgrain` stays
+    0..3, so going back to v0.30.3 keeps the films and settings (strength shows as Low / Med / High there).
+  - strength and size in **the curves record's spare byte** (rgbcurves.inc: each 26-byte slot's last kept byte, "byte 7
+    zero" in docs/FORMATS.md), `G` = live[k] +25 in `cv_ram`: it travels with COLOR k's curves (`cv_cap` / `ck_rec` to
+    and from EDITS records ed[r], films and own settings alike; the per-mode sets `cv_sput` / `cv_sget`; the record in
+    M). v0.30.3's `cv_load` / `cv_pk` copy those 8 bytes without reading them. `G` = 0: strength from the level
+    (`gs_dv` Low 2, Med 3, High 5) and Medium; else 0x80 | size << 3 | strength; `gs_wr` writes 0 whenever the level
+    gives the same, so a film as built has G = 0.
+- **Rows:** `GS_IT` 5388 (class 15, bars `GSB` 0x7e90 + k, a 0..5 slider as Halation: sl_slot, SL_VAL, REAL, sl_cnt,
+  LOWCNT, sl_set0 -> `gs_row`, rw_bar, rv_chk, st_chk, rd_a / rd_b, CHC gs_f; title the camera's "Film Grain Effect"
+  2778, icon 12 = `IC_GR`) and `SZ_IT` 5387 (class 16, bars `SZB` 0x7e98 + k, a 3-choice row as Noise Filter: it_tab
+  sz_l0 titles "Grain Size: Fine / Medium / Coarse", sz_l1 left cells `IC_Z0..+2` "Size" over Fine / Med / Coarse,
+  sz_l2 strip words: the camera's "Fine" 1146, ours "Med" (the camera's "Medium" 1084 was cut off in its cell, om-emu)
+  and "Coarse"; CHC sz_a..sz_f, lc_sz). pm_list: ..., HL_IT, GS_IT, SZ_IT, FR_IT (5400 leaves COLOR's list; MONO keeps
+  it). Ids picked so their keys miss the row switches (5387 / 5388); bars in row 9 (FLB films end at 0x7e83). build.py:
+  it_tab count 31, ic_list choice count 12, the switches' entries (hooks.json: 34 new runs, all inside the row switch
+  tables 0x61536a2c..f2c / 0x615510cc / 0x6155124c, reviewed: menu only, nothing at start-up).
+- '*': `gs_def` (fl_isdef) for the rows (Film Grain against its film's level as a strength, no film: Off; Size against
+  Medium); the film's '*' counts G != 0 (`ck_kset` / `ck_jset`); the whole-profile reset clears G (`gs_zk` in e_rst).
+- Strings `ST_GZT`..`ST_MED` 0x7f0a..0x7f0f; pictures mkicons PICTURES[14..17] (`grain_icon`: a 28 x 28 square of
+  2 x 2 grey specks with a few orange / blue / green ones; "Size" over Fine / Med / Coarse, 100 x 76), ids 0x7f78..
+  (`ic_get`: ic_ent 14..17). `ic_pay` moved to ext13 (22,864 B): ext11 64,208 / 65,536, ext12 239,168, ext13 59,248.
+- **Photo path (block):** `xb_tex` calls `GS_EFF` (editor `gs_eff`) for this COLOR: `xb_tl` = strength 1..5, `xb_tz` =
+  size 1..3 (the tile key 0x80 + size, `TG_OWN`). `xb_c1e`: Y gain 400 / 650 / 1024 / 1280 / 1536 by strength (1024 =
+  g1's, camera: about today's Med; today's Low / High about 0.6 / 1.5 of it), Cb / Cr 0.4375 of it (175..672), the Y
+  offset -(4 x 48 x gain / 1024) = -75..-288 (-192 camera-confirmed; -240 / -288 untested). Debug log NOW: "Film Grain
+  on COLOR 1-4: 3 Medium, Off, ...".
+- **om-emu (out-g2b, bbf50fb):** the rows show and step (slider Off..+5, stops at 5; Size Fine / Med / Coarse, the
+  choice row wraps as the stock ones do), '*' on both, titles follow; the level byte follows (5 -> 3, 2 -> 1);
+  old levels Low / High / Med on COLOR 1-3 read "2 Medium, 5 Medium, 3 Medium"; a film keeps its own (FILM 2 at 4
+  Coarse, to its COLOR's own settings and back: 4 Coarse again). Suite: **29 of 29 pass** (pass recorded on bbf50fb),
+  new `grain-rows-strength-and-size-kept`; `border-row-0-to-5-kept` steps one row further (the 18th). Not in om-emu:
+  the photos (strength, size, colour, brightness at 4 / 5), timing, bursts.
+- Package `test-builds/2026-11-16-grain-g2` (private folder): E1479999.BIN `92ab3c99…10d3`, VERSION "v0.30.3-dev
+  (grain g2: strength + size rows)"; go-backs v0.30.3 `60b6d954…f546` and border test 1c `d8ce3d89…3db3`. The four
+  new pictures went to the owner for approval first (`row-pictures-for-approval.png`).
+- **g2b (owner, 2026-11-16, on the g2 row pictures: "for the size of grain, I say we reuse the current grain pictures
+  for low, med, high"):** Grain Size's left column = item 5400's own Low / Med / High pictures 14561 / 14563 / 14565,
+  its strip = 14562 / 14564 / 14566 (read from the stock item table 0x6154c2a8, 5400's lists; ids only, no picture in
+  the repo). Our three "Size" cells (mkicons 15..17) and the "Med" string are gone; ic_pay 18,024 B (ext13 54,400).
+  The camera's pictures carry the words Low / Med / High, so the cells read Low / Med / High under the title "Grain
+  Size: Fine / Medium / Coarse" (om-emu). The Film Grain slider icon (`grain_icon`) still waits for the owner's OK.
+  Suite on ff8251b: **29 of 29 pass**. Build f26ff261…842a (VERSION "v0.30.3-dev (grain g2b: strength + size rows)"),
+  not packaged until the icon is approved; g2 (`92ab3c99…`) withdrawn, never flashed.
+- **Owner approved the Film Grain icon (2026-11-16: "Icon OK").** Package `test-builds/2026-11-16-grain-g2b`
+  (private folder): E1479999.BIN `f26ff261…842a` (a rebuild of 466bf47 matches), go-backs v0.30.3 `60b6d954…f546` and
+  border test 1c `d8ce3d89…3db3`; TEST-STEPS: the rows, old Low / Med / High -> 2 / 3 / 5, strengths Off / 1 / 3 / 5,
+  sizes, Grain + Border 3 together, per film, no-freeze cases, Grainy Film, the log. Emulator only so far.
+
+## Better grain g2b camera result and g2c (2026-11-16; branch feature/better-grain)
+- **g2b camera (owner's OM-3, 2026-11-16; package f26ff261…): camera: halation lost with grain >= ~3, owner-confirmed at
+  4** ("the halation disappears at high grain, level 4"). Files in the private card backups (CADLOG, PB162962..997).
+  Otherwise fine (the main chat's readings): no freeze (38 photos, 150 events, "nothing unusual"); the rows and the
+  NOW line ("4 Coarse"); strength Off / 1 / 3 / 5 clear steps; sizes right; Border 2 = 116 px, 5 = 291..292 px, plain
+  white (std <= 0.4); bursts of 7 and 10 with Grain + Border 5 all saved; grain tiles "made 37, failed 0, last
+  time 428 ms". Not shown by the files: video (none taken), Image Review, ART Grainy Film.
+- **Cause (camera photos, measured):** the grain capped the highlights. Brightest parts (99.99th percentile, inside
+  the border) Off 239, strength 1 239, 3 218, 5 204 (972: 195); the lamp series 977 (no grain) 236, 978 228, 979 212,
+  980 195, 974 183. With no pixel above Halation's threshold (T 200, firmware/halation.py) the grid had no source
+  (research/halation/model.py on the photos: 6.6 % bright cells at 977, 0 at 980 / 974..976). g1 / g2 took the tile's
+  Y mean off as the combiner's output Y offset (+180), but the sum is clamped before that offset: the mean x gain
+  (10-bit 192 at 1024, 288 at 1536) filled the headroom over white (about 83 at 10-bit: strength 1's 75 fitted, so 1
+  was unaffected). The mean brightness stayed (g1's "no brightening"), so it was not noticed before.
+- **The combiner's register image (static analysis, init 0x605047c1 and the set-up cases 0x60504a80..0x605053d0):**
+  per input (first +76.., second = the texture +128..): +84 / +136 input offsets (low Y, high Cb; +88 / +140 Cr):
+  init Y 0, Cb / Cr -512 (how the chroma is centred); +92 / +144 mode; +96 / +148, +100 / +152 gains; +108 / +160 and
+  +112 / +164 clamp minima (init Y 0, Cb / Cr -512); +116 / +168, +120 / +172 maxima (init Y 1023, Cb / Cr 511); output
+  +180 (Y low, Cb high 512), +184 Cr 512. Another set-up (0x6050482f) fills the Y input offset, Y min / max and the
+  output Y offset from a table: a levels step, so the order is (input + offset) clamped, x gain, summed, + output
+  offset (analysis).
+- **g2c fix (xblock.s xb_c1e):** +136 low half = -192 (the tile's Y mean 48 x 4, on the texture's own input), +160 low
+  half = -512 (its Y minimum, so the centred grain keeps its lower half), +180 low half = 0. xb_tbias gone. Expected on
+  the camera: highlights and brightness as with grain Off, Halation's lamp back. If +136 is not the Y input offset,
+  grain photos would come out lighter (the mean added, no output offset): the test says which.
+- Simulation (centred Gaussian grain added to the no-grain photos, the halation model's coverage guard): lamp 977
+  6.6 % -> 7.0 % (sigma 16) / 7.5 % (sigma 24) bright cells: full strength. Daylight 962 / 970 (already 21-22 %,
+  partial): 48-61 % with sigma 16-24 -> Halation off. The guard (COV_U / COV_HI on the threshold-excess grid) counts
+  the grain's bright specks in mid-bright cells (Y ~150..200). Not changed in g2c (Halation's own tuning, owner's
+  call): an average over a few pixels before the threshold would make the grid blind to the grain.
+- **Grain tiles remade per photo (37 for 38):** the texture cache (TXGET) frees an object at its release when no
+  other still holds it (0x604ce397: refcount <= 1 -> buffer back, state 0); a burst's stills develop one after another,
+  so each makes its own tile (about 0.43 s). Keeping it would mean holding a 4.7 MB texture buffer from the camera's
+  pool for good (not done: memory risk); a cheaper tile (columns repeating every 768 as the rows already do) would
+  halve the time. Owner's call; unchanged.
+- om-emu: new test `grain-mix-keeps-the-highlights` (s_c1e on a register image as the init leaves it, strengths 1 / 3
+  / 5 and a tile not written: +96 / +100 the photo's chroma back, +148 / +152 the gains, +136 / +160 / +180 as above);
+  `--without` the g2b build (out-g2e): caught. session_ed1.mjs: W(addr) in ncall expressions (the code block's
+  address, P + XPTR). Suite on 084d088: **30 of 30 pass**. Glow: the camera's Soft Focus works on the developed picture
+  after the grain, so its highlights were capped too; camera-only.
+- Package `test-builds/2026-11-16-grain-g2c` (private folder): E1479999.BIN `317747e1…23a6` (VERSION "v0.30.3-dev
+  (grain g2c: grain centred, highlights kept)"), go-backs v0.30.3 `60b6d954…f546` and border test 1c `d8ce3d89…3db3`.
+- **g2c camera (owner's OM-3, 2026-11-16; package 317747e1…): Halation kept with grain, highlights to white**
+  (camera-tested; the main chat's readings, the owner's view pending). Files in the private card backups (CADLOG,
+  PB163001..008, 8 kept of 11). Log: 11 photos, 56 events, "nothing unusual", no freeze; "Grain tiles: made 6, failed
+  0, last size 3, last time 393 ms"; NOW "Film Grain on COLOR 1-4: 5 Coarse, Off, Off, Off". All 8 the lamp scene with
+  Halation, 001 grain Off, 002..008 grain at several strengths / sizes (Cb high-pass 5.2..8.2): the orange halo in
+  every one (mean R - B near the lamp 74.6 Off, 67..71 with grain; g2b: -4..1 at 3..4); Y 99.9th percentile 251 with
+  grain against 244 Off (g2b: 204..218); mean brightness as Off (43.5..46.8 against 45.9, a dark scene). So +136 is
+  the texture's Y input offset and +160 its Y minimum, as read from the init (the guess held). Not covered yet: a
+  white / bright scene, Glow + grain, video, daylight Halation.
+- **Owner on the g2c photos (2026-11-16): "Looks good"** (owner-approved look; via the main chat). Still untested on
+  the camera: a white / bright scene, Glow with grain, video, Halation in daylight with strong grain.

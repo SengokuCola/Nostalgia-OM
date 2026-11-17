@@ -18,13 +18,14 @@ W, H = 46, 46                      # slider-row icon
 CW, CH = 100, 76                   # choice-row cell picture
 # (lines, width, height): one line = (text, cap height px, baseline row)
 PICTURES = [
-    ([('Blk', 18, 30), ('Wht', 18, 60)], CW, CH), ([], 8, 2), ([], 8, 2), ([], 8, 2),  # v0.28 the Blacks / Whites grid row's left cell before it is drawn with its values (was the Blk / Wht slider icons); A-B / G-M unused (the WB grid row shows the camera's WB± picture)
+    ([('Blk', 18, 30), ('Wht', 18, 60)], CW, CH), ([], 8, 2), ([], 8, 2), ([], W, H),  # v0.28 the Blacks / Whites grid row's left cell before it is drawn with its values (was the Blk / Wht slider icons); A-B unused (the WB grid row shows the camera's WB± picture); borders b1c: the Border row's icon in G-M's place (border_icon)
     ([('Vignette', 15, 30), ('Off', 18, 60)], CW, CH), ([('Vignette', 15, 30), ('On', 18, 60)], CW, CH),
     ([('Noise', 15, 30), ('Off', 18, 60)], CW, CH), ([('Noise', 15, 30), ('Low', 18, 60)], CW, CH),
     ([('Noise', 15, 30), ('Std', 18, 60)], CW, CH), ([('Noise', 15, 30), ('High', 18, 60)], CW, CH),
     ([('HSL', 26, 44)], 82, 62),   # v0.24 film test 7 (owner): the Color row's cell, stock "Color / Vivid" (82 x 62)
     ([('Glow', 20, 33)], W, H),    # v0.25: the Glow (+) / Clarity (-) slider's icon (owner: named for the + side)
     ([('Halo', 20, 33)], W, H), ([('Bal', 20, 33)], W, H),  # v0.28: the Halation and Tone Balance sliders' icons (Frame Off / On's places)
+    ([('Grain', 20, 33)], W, H),   # better grain g2 (id 0x7f78): the Film Grain strength slider's icon (grain_icon)
 ]
 STYLE = {10: (0.88, (0.20, 0.40, 0.60))}   # width, coverage thresholds (as the FILM cells, matched to the stock lettering)
 
@@ -532,7 +533,50 @@ def bal_icon():
     return px
 
 
-CUSTOM = {10: hsl_pie, 11: glow_icon, 12: halo_icon, 13: bal_icon}
+def border_icon():
+    """Border (46 x 46, borders b1c; owner: the camera's own Frame picture is too big for this slot): a small photo
+    with a white border, the same width all round: white frame 4 px, a grey picture inside (light sky, a darker hill),
+    a 1 px dark line between them and a 2 px dark edge round the outside, as the other icons"""
+    px = np.zeros((46, 46), dtype=np.uint8)
+    x0, x1, y0, y1 = 6, 40, 10, 36                 # the print: 34 x 26
+    px[y0:y1, x0:x1] = 10
+    ix0, ix1, iy0, iy1 = x0 + 4, x1 - 4, y0 + 4, y1 - 4
+    px[iy0 - 1:iy1 + 1, ix0 - 1:ix1 + 1] = 7       # the line round the picture
+    px[iy0:iy1, ix0:ix1] = _grey(147)              # sky
+    for x in range(ix0, ix1):                      # a hill: rises from the left, falls to the right
+        top = iy0 + 7 + abs(x - (ix0 + 16)) // 3
+        px[top:iy1, x] = _grey(77)
+    ring = ndimage.binary_dilation(px > 0, structure=np.ones((3, 3)), iterations=2) & (px == 0)
+    px[ring] = 7
+    return px
+
+
+def grain_icon():
+    """Film Grain (46 x 46, better grain g2): a small square of film grain, 2 x 2 specks in greys from dark to white
+    with a few coloured specks (the grain's colour), a 2 px dark edge round it as the other icons"""
+    px = np.zeros((46, 46), dtype=np.uint8)
+    rng = np.random.default_rng(1103)
+    x0, x1, y0, y1 = 9, 37, 9, 37                 # 28 x 28: 14 x 14 specks
+    for y in range(y0, y1, 2):
+        for x in range(x0, x1, 2):
+            v = rng.normal(150, 55)
+            c = _grey(min(254, max(40, v)))
+            r = rng.random()
+            if r < 0.03:
+                c = 55                             # orange
+            elif r < 0.055:
+                c = 53                             # blue
+            elif r < 0.07:
+                c = 41                             # green
+            px[y:y + 2, x:x + 2] = c
+    for (y, x) in ((y0, x0), (y0, x1 - 1), (y1 - 1, x0), (y1 - 1, x1 - 1)):
+        px[y, x] = 0                               # rounded corners
+    ring = ndimage.binary_dilation(px > 0, structure=np.ones((3, 3)), iterations=2) & (px == 0)
+    px[ring] = 7
+    return px
+
+
+CUSTOM = {3: border_icon, 10: hsl_pie, 11: glow_icon, 12: halo_icon, 13: bal_icon, 14: grain_icon}
 
 
 def streams():

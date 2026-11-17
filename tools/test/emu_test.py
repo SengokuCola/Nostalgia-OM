@@ -32,6 +32,10 @@ AUDIT = 'patch-audit'
 HALATION = 'halation-matches-the-model'
 HALATION_CASES = ['fade3', 'odd2', 'small5', 'min5', 'w68', 'odd131', 'clamp5', 'random3', 'day5', 'dark5']
 HALATION_CHECK = REPO / 'research/halation/emu_check.py'
+# borders (2026-11-16): the border pass (editor.s bd_run) called directly on test frames must give every byte of
+# research/border/model.py (research/border/emu_check.py). Small frames, a few seconds.
+BORDER = 'border-matches-the-model'
+BORDER_CHECK = REPO / 'research/border/emu_check.py'
 ENGINE = 'look-tables-match-the-model'
 DIAL = 'rgb-page-counts-every-click'
 # #68: our looks are for photos only. A video pass after a photo pass, the same look (split toning and curves), must
@@ -40,6 +44,11 @@ VIDEO = 'video-keeps-the-stock-tables'
 VIDEO_CASE = 'split-toning-and-curves'
 VIDEO_MODE = 0x0a                                # the mode code of video and S&Q (rc_in + 24, ss_photo)
 PHOTO_MODE = 0x01                                # P's mode code, so the photo pass does not rest on the snapshot's mode
+# better grain g2c: combiner 1's set-up end (s_c1e -> the code block's xb_c1e) on a fake register image. The grain's
+# Y mean (48 x 4) comes off on the texture's own input (+136, its Y clamp minimum +160 opened to -512), not as an
+# output offset (+180): g1 / g2 put it there, after the clamp, and capped the highlights (camera, 2026-11-16).
+GRAINMIX = 'grain-mix-keeps-the-highlights'
+GRAIN_GAINS = {1: (400, 175), 3: (1024, 448), 5: (1536, 672)}   # strength -> texture Y gain, Cb / Cr gain (xblock.s)
 REAR_DIAL = 0x9032                               # the rear dial's event (cv_ev); a1 its signed clicks
 # (name, a1): first no clicks (the value as it is), then a fast turn of 3, then one past the range.
 DIAL_CASES = [('as-is', 0), ('up-3', -3), ('down-20', 20)]
@@ -216,6 +225,12 @@ FIXTURES = {
 }
 # From the shooting screen: the RGB row (the third in Picture Mode), the rear dial once on Red's first point, out.
 OPEN_RGB = 'ok wait ok wait down wait down wait'
+# borders: Picture Mode's Border row, the 18th (pm_list: after Film Grain and Grain Size, better grain g2); COLOR 1's
+# slot +50 is P + 82
+OPEN_BORDER = 'ok wait ok wait' + ' down wait' * 17
+# better grain g2: the Film Grain strength row, the 16th (Grain Size under it); COLOR 1's level byte +53 is P + 85
+OPEN_GRAIN = 'ok wait ok wait' + ' down wait' * 15
+GRAIN_2_COARSE = '^Film Grain on COLOR 1-4: 2 Coarse, Off, Off, Off$'
 EDIT_RGB = f'{OPEN_RGB} main+1 wait menu wait wait'
 
 
@@ -285,6 +300,21 @@ TESTS = {
     'live-dial-turn-holds-the-label': [
         Boot(BOOT1_ASSIGN_C1),
         Boot(LIVE_TURN_HOLDS_THE_LABEL, expect=[P_FILM_LINE], mode_dial=MODE_DIAL_M),
+    ],
+    # borders: the Border row steps 0..5 (right / left; no step past either end) into COLOR 1's slot +50, and the
+    # value is kept over a power-off (saved at the half-press).
+    'border-row-0-to-5-kept': [
+        Boot(f's1 wait wait {OPEN_BORDER}' + ' right wait' * 7 + ' expect:p:82=05 left wait left wait expect:p:82=03'
+             ' menu wait wait s1 wait wait poweroff'),
+        Boot(f'wait wait s1 wait wait expect:p:82=03 {OPEN_BORDER}' + ' left wait' * 4 + ' expect:p:82=00'
+             ' menu wait wait s1 wait wait poweroff'),
+    ],
+    # better grain g2: the Film Grain row steps 0..5 (no step past 5) and keeps the old level byte in step (5 -> High 3,
+    # 2 -> Low 1); the Grain Size row (Medium -> Coarse); both kept over a power-off (the debug log's NOW line).
+    'grain-rows-strength-and-size-kept': [
+        Boot(f's1 wait wait {OPEN_GRAIN}' + ' right wait' * 7 + ' expect:p:85=03 left wait left wait left wait'
+             ' expect:p:85=01 down wait right wait menu wait wait s1 wait wait poweroff', expect=[GRAIN_2_COARSE]),
+        Boot('wait wait s1 wait wait expect:p:85=01 poweroff', expect=[GRAIN_2_COARSE]),
     ],
     'curves-file-kept-in-camera': [
         Boot(f's1 wait wait {PICK_FILM_2} s1 wait wait poweroff', card={'CURVES.BIN': 'CURVES_A'},
@@ -575,6 +605,19 @@ def run_halation(emu, build, out, card):
     if r.returncode == 0:
         return HALATION, []
     return HALATION, [l for l in r.stdout.splitlines() if l.startswith('DIFF')] or [f'emu_check.py exit {r.returncode} (check.log)']
+
+
+def run_border(emu, build, out, card):
+    """bd_run on research/border/emu_check.py's default cases in om-emu: bit-exact with the model, registers and sp
+    back, nothing past the frame, levels 0 and 6 untouched."""
+    d = out / BORDER
+    r = subprocess.run([sys.executable, BORDER_CHECK, build, '--out', d, '--card', card], capture_output=True,
+                       text=True, timeout=BOOT_TIMEOUT_S, env={**os.environ, 'OM3_EMU': emu})
+    d.mkdir(parents=True, exist_ok=True)
+    (d / 'check.log').write_text(r.stdout + r.stderr)
+    if r.returncode == 0:
+        return BORDER, []
+    return BORDER, [l for l in r.stdout.splitlines() if l.startswith('DIFF')] or [f'emu_check.py exit {r.returncode} (check.log)']
 def tone_strength(code):
     """a stored strength code -5..5 -> strength 0..10 (st_run; research/splittone/model.py strength)"""
     return 2 * code if code >= 0 else -2 * code - 1
@@ -610,6 +653,46 @@ def run_ncall(emu, build, d, card0, tokens, spec):
     if r.returncode or not (d / 'out.json').exists():
         return f'driver exit {r.returncode}, no ncall result (boot.log)'
     return {o['name']: o for o in json.loads((d / 'out.json').read_text())['out']}
+
+
+def run_grainmix(emu, build, out, card0):
+    """s_c1e on a register image as the init 0x605047c1 leaves it, for strengths 1 / 3 / 5 and a tile not written."""
+    d = out / GRAINMIX
+    d.mkdir(parents=True, exist_ok=True)
+    sym, xb = elf_symbols(build / 'p.elf'), elf_symbols(build / 'xb10000000.elf')
+    fx1 = f"W(P+{sym['XPTR']})+{xb['xb_fx1'] - 0x10000000:#x}"
+    word = lambda v: (v & 0xffffffff).to_bytes(4, 'little').hex()
+    image = {136: 0xfe000000, 160: 0xfe000000, 180: 0x02000000, 184: 512}    # the init's Y / Cb offsets and minima
+    def case(name, strength, bad):
+        mem = [['B', 'dd'], ['B+1', '=(B+0x10)-B'], ['B+5', 'f01c'], ['B+0x10', 'dc'],
+               ['B+0x11', f"={sym['s_c1e']:#x}-(B+0x10)"], ['B+0x200', '00' * 0x100],
+               *[[f'B+0x200+{o}', word(v)] for o, v in image.items()],
+               [fx1, f'{strength:02x}'], [f"{sym['tg_bad']:#x}", '01' if bad else '00']]
+        return {'name': name, 'pc': 'B', 'stop': ['B+7'], 'max': 20000, 'mem': mem,
+                'regs': {'a2': 'B+0x200', 'd0': '1024'}, 'read': [['B+0x200', 0x100]],
+                'restore': [[f"{sym['tg_bad']:#x}", '00']]}
+    spec = [case(f'strength{s}', s, False) for s in GRAIN_GAINS] + [case('tile-not-written', 3, True)]
+    res = run_ncall(emu, build, d, card0, 's1 wait wait ncall', spec)
+    if isinstance(res, str):
+        return GRAINMIX, [res]
+    errors = []
+    for o in spec:
+        r = res[o['name']]
+        img = bytes.fromhex(r['mem'][0])
+        at = lambda off: int.from_bytes(img[off:off + 4], 'little')
+        if r['steps'] >= 20000:
+            errors.append(f"{o['name']}: s_c1e did not return (out.json)")
+            continue
+        if o['name'] == 'tile-not-written':
+            want = {148: 0, 152: 0, 136: image[136], 160: image[160], 180: image[180]}
+        else:
+            y, c = GRAIN_GAINS[int(o['name'][-1])]
+            want = {96: 0x04000400, 100: 1024, 148: c << 16 | y, 152: c,
+                    136: 0xfe00ff40, 160: 0xfe00fe00, 180: 0x02000000}
+        for off, v in want.items():
+            if at(off) != v:
+                errors.append(f"{o['name']}: register image +{off} is {at(off):#010x}, not {v:#010x}")
+    return GRAINMIX, errors
 
 
 def run_dial(emu, build, out, card0):
@@ -732,7 +815,7 @@ def newest_looks():
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('build', type=pathlib.Path)
-    ap.add_argument('--only', nargs='+', choices=sorted([*TESTS, AUDIT, HALATION, ENGINE, DIAL, VIDEO, *STATIC]))
+    ap.add_argument('--only', nargs='+', choices=sorted([*TESTS, AUDIT, HALATION, BORDER, ENGINE, DIAL, VIDEO, GRAINMIX, *STATIC]))
     ap.add_argument('--jobs', type=lambda v: max(1, int(v)), default=DEFAULT_JOBS)
     ap.add_argument('--out', type=pathlib.Path)
     ap.add_argument('--looks', type=pathlib.Path)
@@ -755,7 +838,7 @@ def main():
     looks = (a.looks or newest_looks()).resolve()
     make_card(emu, build, looks, card0)
     fixtures = make_fixtures(out, looks)
-    names = a.only or sorted([*TESTS, AUDIT, HALATION, ENGINE, DIAL, VIDEO, *STATIC])
+    names = a.only or sorted([*TESTS, AUDIT, HALATION, BORDER, ENGINE, DIAL, VIDEO, GRAINMIX, *STATIC])
     stock = static_check.find_stock(a.stock) if any(n in STATIC for n in names) else None
     runs = [(n, k) for n in names for k in range(1, a.repeat + 1)]
     print(f'{len(names)} tests{f" x {a.repeat}" if a.repeat > 1 else ""} on {build}, results in {out}')
@@ -778,12 +861,16 @@ def main():
                 return run_audit(emu, build, d)
             if n == HALATION:
                 return run_halation(emu, build, d, card0)
+            if n == BORDER:
+                return run_border(emu, build, d, card0)
             if n == ENGINE:
                 return run_engine(emu, build, d, card0)
             if n == DIAL:
                 return run_dial(emu, build, d, card0)
             if n == VIDEO:
                 return run_video(emu, build, d, card0)
+            if n == GRAINMIX:
+                return run_grainmix(emu, build, d, card0)
             first = shared.get((k, boot_key(TESTS[n][0])))
             return run_test(n, TESTS[n], emu, build, card0, d, first and first.result(), fixtures)
         except static_check.Skip as e:

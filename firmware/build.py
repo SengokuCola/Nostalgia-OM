@@ -74,7 +74,9 @@ HOOKS = {'.hook_color': (0x60518615, bytes.fromhex('cd6cfdf060')),
          '.hook_su': (0x604b7730, bytes.fromhex('cdab20f088')),
          '.hook_sel2': (0x60504b5d, bytes.fromhex('dddc830200a00c')),
          '.hook_c1e': (0x605053cc, bytes.fromhex('fa129800dff01c')),
-         '.hook_wl': (0x604b8d91, bytes.fromhex('f1ecf000fa08e814'))}   # ft8: work-list key -> block +136   # ft4: end of combiner 1's set-up -> block +128   # ft3: the combiner set-up's selector call -> block +120   # ft1: still set-up -> code block +112 (grain texture)   # film test 9: the reset keeps the strip's scroll       # v0.23: Blacks / Whites bars top-down          # v0.23: our row title "Vignette Correction"          # v0.23: the bar's dot step   # v0.21 grain: request configuration -> selector
+         '.hook_wl': (0x604b8d91, bytes.fromhex('f1ecf000fa08e814')),
+         '.hook_trs': (0x604cf156, bytes.fromhex('ddf083d0ffe010')),   # better grain g1: the grain tile's size (texture builder)
+         '.hook_trl': (0x604cf1a4, bytes.fromhex('cd25f5f018'))}   # better grain g1: the grain tile's load -> tg_fill   # ft8: work-list key -> block +136   # ft4: end of combiner 1's set-up -> block +128   # ft3: the combiner set-up's selector call -> block +120   # ft1: still set-up -> code block +112 (grain texture)   # film test 9: the reset keeps the strip's scroll       # v0.23: Blacks / Whites bars top-down          # v0.23: our row title "Vignette Correction"          # v0.23: the bar's dot step   # v0.21 grain: request configuration -> selector
 XB_SRC = HERE / 'src' / 'xblock.s'
 XB_L1, XB_L2 = 0x10000000, 0x12345670          # the code block is linked at both; fields that move = relocations
 ROOT = HERE.parent                               # card files: card/mkguides.py (pictures), card/mklabels.py
@@ -386,7 +388,7 @@ def build(defaults, testfile, out):
     for a, c in ((0x611d040d, 0x611d0422), (0x611d0846, 0x611d0859)):
         assert bytes(m[o(a):o(a) + 6]) == b'\xfc\xdc' + struct.pack('<I', IT) and bytes(m[o(c):o(c) + 2]) == b'\xa5\x11', hex(a)
         struct.pack_into('<I', m, o(a) + 2, sy['it_tab'])
-        m[o(c) + 1] = 29                         # v0.25: + Glow / Clarity, Frame; v0.28 + Halation, Tone Balance; rgb-curves + RG_IT; + MX_IT
+        m[o(c) + 1] = 31                         # v0.25: + Glow / Clarity, Frame; v0.28 + Halation, Tone Balance; rgb-curves + RG_IT; + MX_IT; better grain g2 + GS_IT, SZ_IT
     # v0.24 film list: item 111's option lists (title / left column / strip, 48 x 12 B) -> fl_l0..2 (the stock 48, then
     # the films, written by editor.s), and setting 901's value table entry (COLOR 1-4) -> fl_rec, 4 + 20 records
     e = struct.unpack_from('<10I', m, o(sy['it_tab']))
@@ -412,6 +414,7 @@ def build(defaults, testfile, out):
     assert bytes(m[o(0x611c3cae):o(0x611c3cb0)]) == b'\xa5\x08'
     m[o(0x611c3caf)] = 8 + 20
     NR_IT, VF_IT, BK_IT, WH_IT, AB_IT, GM_IT, GL_IT, FR_IT, HL_IT, TB_IT = 5394, 5389, 5386, 5385, 5384, 5383, 5382, 5381, 5380, 5379
+    GS_IT, SZ_IT = 5388, 5387                     # better grain g2: the Film Grain slider, the Grain Size choice row
     def sw_add(base, n, item, target):
         key = item - 6
         ents = [struct.unpack_from('<II', m, o(base) + 8 * i) for i in range(n)]
@@ -446,13 +449,13 @@ def build(defaults, testfile, out):
                     (0x615510cc, 32), (sy['sw11_tab'], 32), (0x6155124c, 32), (sy['sw13_tab'], 32)):
         tg = [t for k, t in (struct.unpack_from('<II', m, o(base) + 8 * i) for i in range(n)) if k == 5394]
         assert len(tg) == 1, hex(base)
-        for item, pre in ((NR_IT, 'nr'), (VF_IT, 'vf'), (FR_IT, 'fr'), (AB_IT, 'wg'), (BK_IT, 'bw')):   # v0.25: AB_IT = the WB grid row; v0.28 BK_IT the Blacks / Whites grid row
+        for item, pre in ((NR_IT, 'nr'), (VF_IT, 'vf'), (AB_IT, 'wg'), (BK_IT, 'bw'), (SZ_IT, 'sz')):   # v0.25: AB_IT = the WB grid row; v0.28 BK_IT the Blacks / Whites grid row (borders: FR_IT is a slider now)
             t = sy[pre + '_' + OWN[base]] if base in OWN else sy['lc_' + pre] if base == 0x6155124c else tg[0]
             sw_add(base, n, item, t)
         # Blacks / Whites: slider rows, as item 7's case (key 1) except the bar object's id (f2c) and the left column
         t7 = [t for k, t in (struct.unpack_from('<II', m, o(base) + 8 * i) for i in range(n)) if k == 1]
         assert len(t7) == 1, hex(base)
-        for item, pre in ((GL_IT, 'gl'), (HL_IT, 'hl'), (TB_IT, 'tb')):   # v0.28 + Halation, Tone Balance (Blacks / Whites: the grid row)
+        for item, pre in ((GL_IT, 'gl'), (HL_IT, 'hl'), (TB_IT, 'tb'), (FR_IT, 'fr'), (GS_IT, 'gs')):   # v0.28 + Halation, Tone Balance (Blacks / Whites: the grid row); borders + Border (Frame's old row)
             t = sy[pre + '_f'] if base == 0x61536f2c else t7[0]     # left column: item 7's slider cell
             sw_add(base, n, item, t)
     # rgb-curves: the RGB row = the H&S row (item 5398, key 5392) in every switch that has it, except the column update's
@@ -501,12 +504,12 @@ def build(defaults, testfile, out):
         at = [i for i in range(o(0x61455000), o(0x61456000), 4) if bytes(m[i:i + 8]) == pat]
         assert len(at) == 1, hex(L)
         struct.pack_into('<II', m, at[0], sy['ic_list'], sy['ic_lend'])
-        assert m[at[0] - 3] == 3, hex(L)          # the record's choice count (object +131): 3 -> 11 (v0.25 + Glow, v0.28 + Halation, Balance)
-        m[at[0] - 3] = 11
+        assert m[at[0] - 3] == 3, hex(L)          # the record's choice count (object +131): 3 -> 12 (v0.25 + Glow, v0.28 + Halation, Balance; g2 + Film Grain)
+        m[at[0] - 3] = 12
     sys.path.insert(0, str(ROOT / 'firmware'))
     import mkicons
     pics = mkicons.streams()
-    assert len(pics) == 14 and sy['IC_END'] - sy['IC_BK'] == 14 and sy['ic_pay'] % 8 == 0
+    assert len(pics) == 15 and sy['IC_END'] - sy['IC_BK'] == 14 and sy['ic_pay'] % 8 == 0   # g2: + the Film Grain icon (id IC_GR)
     # film test 7: the Color row (item 5397) cell picture list {u16 type 3, u16 id, ptr} at 0x6154be9c: "Color / Vivid"
     # 11389 -> our "HSL"
     assert struct.unpack_from('<HH', m, o(0x6154be9c)) == (3, 11389)
@@ -845,7 +848,8 @@ def make_xblock(out, sy, xtag):
                STATE=sy['STATE'], HMAX=sy['HMAX'], POOL=sy['POOL'], MAGIC=sy['MAGIC'], BUFIDX=0x604afdf9, SF_ENT=0x604be2aa, LOCK=0x60075f73, UNLOCK=0x60075fbc, WINMAP=0x60071018, FLUSH=0x60070e69, free=0x6002409a,
                SEL=0x6052cf39, fwrite=0x608d4da9, PF_CAPTO=sy['pf_capto'], PF_CAP=sy['pf_cap'], E_LK=sy['e_lk'], E_RET=sy['e_ret'], E_RST=sy['e_rst'], REFRESH=0x611b20ea, XT_TAB=sy['xt_tab'], EMARK=680, EMAGIC=0x45334d4f,
                FL_HAS=sy['fl_has'], FACADE=0x60b8696a, AGET=0x603f039d, TXGET=0x604cd921, TXATT=0x604bc0cf, TXPF=0x604b77fb, TWO=sy['TWO'], TW_LEN=sy['TW_LEN'], FV0=sy['FV0'],
-               WB_V=sy['wb_v'], wb_wtk=sy['wb_wtk'], wb_wem=sy['wb_wem'], HL_RUN=sy['hl_run'], TYPEMAP=0x60555b58)
+               WB_V=sy['wb_v'], wb_wtk=sy['wb_wtk'], wb_wem=sy['wb_wem'], HL_RUN=sy['hl_run'], BD_RUN=sy['bd_run'], TYPEMAP=0x60555b58,
+               TG_OWN=sy['tg_own'], TG_BAD=sy['tg_bad'], GS_EFF=sy['gs_eff'])
     sys.path.insert(0, str(ROOT / 'firmware'))
     import mkicons                                # v0.25 WB grid row: the left cell's glyphs (xblock xb_wbc)
     inc = ''.join(f'.set {k}, {getattr(mkicons, k)}\n' for k in ('WBC_IX', 'WBC_IY', 'WBC_TY', 'WBC_GH'))
