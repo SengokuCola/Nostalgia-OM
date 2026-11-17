@@ -250,8 +250,8 @@ def PICK_ASPECT(n):
 
 
 def CROP_LINE(tag, then, set_to, after, now):
-    return (rf'^CROP MODES \(crop round 1\): tag at the first half-press {tag}, Image Aspect then {then}, set to {set_to}, '
-            rf'after {after}, now {now}$')
+    return (rf'^CROP MODES \(crop round \d+\): tag at the first half-press {tag}, Image Aspect then {then}, set to {set_to}, '
+            rf'after {after}, now {now};')
 
 
 def CROP_ASPECT_IS(v):                           # Image Aspect in the camera's settings image (M + 0x2c2) is v
@@ -259,7 +259,7 @@ def CROP_ASPECT_IS(v):                           # Image Aspect in the camera's 
 
 
 def CROP_NOW(now):
-    return rf'^CROP MODES \(crop round 1\): .*, now {now}$'
+    return rf'^CROP MODES \(crop round \d+\): .*, now {now};'
 
 
 CK_WORDS = ['none', 'none (its film has some)', "its film's", 'changed']   # has values x 2 + differs from the built-in
@@ -362,6 +362,11 @@ TESTS = {
     'crop-stock-ratio-left-alone': [
         Boot(f's1 wait wait {PICK_ASPECT(1)} s1 wait wait poweroff', expect=[CROP_NOW(3)]),
         Boot('wait wait s1 wait wait poweroff', expect=[CROP_LINE('00000000', 0, 0, 0, 3)]),
+    ],
+    # crop round 2: the live view display set-up's picture area (rear screen, id 6 = XPan: 900 x 332) and the AF point
+    # grid (id 6: 16:9's 39 x 19) have rows for the crops. om-emu does not run that code, so this checks the tables.
+    'crop-xpan-display-area-and-af-grid': [
+        Boot('s1 wait wait expect:mem:602ed136=84034c01 expect:mem:60a3cd36=27001300 poweroff'),
     ],
     # better grain g2: the Film Grain row steps 0..5 (no step past 5) and keeps the old level byte in step (5 -> High 3,
     # 2 -> Low 1); the Grain Size row (Medium -> Coarse); both kept over a power-off (the debug log's NOW line).

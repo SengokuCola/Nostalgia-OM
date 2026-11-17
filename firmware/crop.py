@@ -223,6 +223,33 @@ def apply(m, o, sy, log=print):
     log('crop: live view ratio switches (ratioToConvertSize, getOutputAspect) -> 65:24 / 21:9')
     # c6's AF target selector lists (0x615034f8 / 0x615034e0 + XPan / 21:9) are left out: c6 was the only build with
     # black screens at switch-on, and the owner's S-AF does not read them (research/NOTES.md, crop round 1).
+    # Round 2 (camera, round 1: at XPan the AF target screen showed the strip but no target). Two per-ratio tables the
+    # live view side reads by Image Aspect have rows only for the camera's own ratios (ids 5..8 are 0 x 0); om-emu does
+    # not run this code (research/NOTES.md "Crop round 2").
+    # (a) The live view display set-up (log strings "DISP4-3!" ..; 0x602177c3: (12,sp) = camera setting 0x3081 = Image
+    # Aspect, om-emu ncall: 1, 3, 6 at 4:3, 16:9, XPan) takes each screen's picture area from 11-entry {u16 w, h} tables
+    # by id 0..10: rear 900 x 600 at 0x602ed11e, 1020 x 690 at 0x602ed152, 1024 x 768 at 0x602ed186 (17:9 = its true
+    # area, 900 x 476 on the rear). Our ids get their true areas, as 17:9 has: full width at XPan / 21:9 (height to
+    # the nearest even), full height at 5:4.
+    for t, (sw, sh) in ((0x602ed11e, (900, 600)), (0x602ed152, (1020, 690)), (0x602ed186, (1024, 768))):
+        rows = [struct.unpack_from('<HH', m, o(t) + 4 * k) for k in range(11)]
+        assert rows[0] == (0, 0) and rows[5:9] == [(0, 0)] * 4, (hex(t), rows)
+        assert rows[3][0] == sw and abs(rows[3][1] - sw * 9 / 16) < 3 and rows[10][0] == sw, (hex(t), rows)
+        h4 = rows[1][1]                                   # the 4:3 height = the picture's full height on that screen
+        new = {5: (2 * round(h4 * 5 / 4 / 2), h4), 6: (sw, 2 * round(sw * 24 / 65 / 2)), 7: (sw, 2 * round(sw * 9 / 21 / 2))}
+        for i, (w, h) in new.items():
+            struct.pack_into('<HH', m, o(t) + 4 * i, w, h)
+        log(f'crop: display areas {hex(t)}: 5:4 {new[5]}, XPan {new[6]}, 21:9 {new[7]}')
+    # (b) The AF point grid by id (the AF module, 0x60903e88: (20,a0) = the id; a 0 x 0 row logs an error and takes the
+    # 4:3 grid): {u16 columns, rows}, 39 x 27 points at 4:3 (0x60a3cd1e) and the coarser 19 x 13 (0x60a3cd4a). As the
+    # camera's own 17:9 takes 16:9's grid, XPan / 21:9 take 16:9's (as the E-P7's af_dim), 5:4 takes 4:3's.
+    for t, r43, r169 in ((0x60a3cd1e, (39, 27), (39, 19)), (0x60a3cd4a, (19, 13), (19, 9))):
+        rows = [struct.unpack_from('<HH', m, o(t) + 4 * k) for k in range(11)]
+        assert rows[0] == (0, 0) and rows[1] == r43 and rows[3] == r169 and rows[10] == r169, (hex(t), rows)
+        assert rows[5:9] == [(0, 0)] * 4, (hex(t), rows)
+        for i, v in ((5, r43), (6, r169), (7, r169)):
+            struct.pack_into('<HH', m, o(t) + 4 * i, *v)
+    log('crop: AF point grids: 5:4 as 4:3, XPan / 21:9 as 16:9')
     # c4: the shooting screen's frame boxes (camera c3: live view still showed the 7:6 / 6:5 box). Four (x0, x1, y0, y1)
     # u16 tables by id at stride 8 in api_rec.c's data, one per screen grid (320, 360, 426, 448 x 240): 0x606291b0 read at
     # 0x6043ff17, 0x60629260 / 0x60629208 / 0x606292b8 picked at 0x60438f58 / 8c / 9f (0x60438e62, by screen mode). The id

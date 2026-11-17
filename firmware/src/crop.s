@@ -166,6 +166,7 @@ cr_gvl:
  .set CR_UNC, 0x40000000          /* + this = the uncached alias */
  .set CR_BUF, 0xa373d280
  .set CR_TAGV, 0x43520000
+ .set CR_DSP, 0xa32dd210          /* round 2: the live view display set-up's id (u8), +10 / +12 its picture area (u16) */
  .set CR_GUI, 0x603713a4          /* -> the GUI state (2 bytes: class, state; 0x0108 shooting, 0x0508 playback; om-emu) */
 cr_sin:                           /* jmp from 0x60061183 (its frame; d2, d3, a2 not live yet) */
  mov a1,(12,sp)                   /* the stock instructions */
@@ -529,7 +530,7 @@ cr_dst:
 cr_daf:
  .long 0
 cr_t1:
- .asciz "\r\n\r\nCROP MODES (crop round 1): tag at the first half-press "
+ .asciz "\r\n\r\nCROP MODES (crop round 2): tag at the first half-press "
 cr_t2:
  .asciz ", Image Aspect then "
 cr_t3:
@@ -538,6 +539,12 @@ cr_t4:
  .asciz ", after "
 cr_t5:
  .asciz ", now "
+cr_t6:                            /* round 2: the live view display set-up's id and picture area (0xa32dd210, 21a, 21c) */
+ .asciz "; display "
+cr_t7:
+ .asciz ", "
+cr_t8:
+ .asciz " x "
  .balign 2
 cr_txt:                           /* `call cr_txt,[d2,d3,a2,a3],24` */
  LGS cr_t1
@@ -554,5 +561,14 @@ cr_txt:                           /* `call cr_txt,[d2,d3,a2,a3],24` */
  LGD
  LGS cr_t5
  movbu (CR_A1),d0
+ LGD
+ LGS cr_t6
+ movbu (CR_DSP),d0
+ LGD
+ LGS cr_t7
+ movhu (CR_DSP + 10),d0
+ LGD
+ LGS cr_t8
+ movhu (CR_DSP + 12),d0
  LGD
  ret [d2,d3,a2,a3],24
