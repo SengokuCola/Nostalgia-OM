@@ -277,6 +277,11 @@ TESTS = {
              ' right wait' * 6 + ' expect:count:{cm_hp}=0 ok wait wait expect:count:{cm_hp}=1 menu wait wait'
              ' s1 wait wait poweroff'),
     ],
+    # #72: the super control panel's dials step the films too: no record keep while it stays open, one as it closes.
+    'control-panel-dial-keeps-the-record-once-as-it-closes': [
+        Boot('s1 wait wait ok wait count:{cm_hp}:*' + ' main+1 wait' * 8 + ' expect:count:{cm_hp}=0 menu wait wait'
+             ' expect:count:{cm_hp}=1 s1 wait wait poweroff'),
+    ],
     'video-boot-after-photo-boot': [
         Boot('s1 wait wait poweroff'),
         Boot(VIDEO_BOOT, expect=VIDEO_BOOT_LINES, photo_switch=PHOTO_SWITCH_VIDEO),
