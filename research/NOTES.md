@@ -5269,6 +5269,13 @@ Owner: "yes, build the noise filter fix" (the row's '*' follows the camera's own
   tele-converter (x2), COLOR 3 FILM 15 single. Not in the files: RAW only, Live ND, multiple exposure, focus stacking,
   silent single. CADLOG: "nothing unusual", photos counted 87 (counted once per EXIF fill; the 33 above the 54 saved
   shots are likely the multi-frame modes' frames: guess).
+- Reporter's log on v0.30.3 (2026-11-17): A, f/4, ISO 200, 1/1.6..1/2.5 s, FILM 1, Drive [32], AF [1] (C-AF), face / eye
+  [6]; 4 photos counted in 57 events, nothing unusual.
+- **Owner's camera, test 5 (2026-11-17; camera-tested): not reproduced with their exposure and AF.** FILM 1 (changed),
+  M, f/4, ISO 200, 1/2 s, C-AF, face / eye [6], Drive [11]: 18 shots PB173018..035, all saved (JPG + ORF): 5 single
+  presses, a 6-shot burst with anti-shock, a 7-shot burst (EXIF "Sequential, Fast"). Left: the drive mode. Code 32 is
+  one of the owner's bursts too (the 10-shot "Sequential, Fast" burst at the end of grain g2b, 2026-11-16, COLOR 1, no
+  grain), but its EXIF reads the same as code 11's, so which menu mode it is is not known.
 
 
 ## LookLab: RGB curves and colour mix (2026-11-15; feature/looklab-rgb-curves; browser-checked, not live)
