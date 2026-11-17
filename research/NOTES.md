@@ -5276,6 +5276,13 @@ Owner: "yes, build the noise filter fix" (the row's '*' follows the camera's own
   presses, a 6-shot burst with anti-shock, a 7-shot burst (EXIF "Sequential, Fast"). Left: the drive mode. Code 32 is
   one of the owner's bursts too (the 10-shot "Sequential, Fast" burst at the end of grain g2b, 2026-11-16, COLOR 1, no
   grain), but its EXIF reads the same as code 11's, so which menu mode it is is not known.
+- **Owner's camera, every drive mode with grain (2026-11-17, test 5, FILM 1 changed, A, 1/40 or 1/160 s):** 82 photos
+  PB173037..118 saved (EXIF list in the private card backup). Drive codes from the log's photo counts against the
+  EXIF: 11 Sequential + anti-shock, **32 Sequential (plain: PB173042-043, 2 shots, saved)**, 40 SH1, 41 SH2, 39 Pro
+  Capture, 42 Pro Capture SH1, 43 Pro Capture SH2 (single and single + anti-shock before them). Two loose ends: the
+  log counts 83 photos this power-on but PB173036 (the first after switch-on) is not on the card; and the last mode
+  tried (code 0, events 49-54) counted no photo and wrote none. The reporter's exact combination (code 32 at about
+  1/2 s) is still untested.
 
 
 ## LookLab: RGB curves and colour mix (2026-11-15; feature/looklab-rgb-curves; browser-checked, not live)
