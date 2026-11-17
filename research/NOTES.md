@@ -6340,3 +6340,11 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   white / bright scene, Glow + grain, video, daylight Halation.
 - **Owner on the g2c photos (2026-11-16): "Looks good"** (owner-approved look; via the main chat). Still untested on
   the camera: a white / bright scene, Glow with grain, video, Halation in daylight with strong grain.
+
+## v0.31 alpha (2026-11-17; try/v0.31-alpha; emulator only, camera test pending)
+- Owner: "make a .31 alpha that uses the changes in 30.4 with our border and grain additions. I want to test that one
+  first before we put it up as an alpha".
+- **Test 1** (bb4f788 = main v0.30.4 46b059a + feature/better-grain ee80f9d: borders test 1c + grain g2c): conflicts
+  only where both sides added lines (NOTES, emu_test.py: VIDEO and GRAINMIX both kept, session_ed1.mjs: keep: and
+  expect:p: both kept) and VERSION ("v0.31-alpha-dev (test 1: v0.30.4 + borders + grain g2c)"). xblock.s merged on
+  its own (PR #70 and grain). om-emu: 39 / 39. E1479999.BIN `9622a965…2576`. Camera test pending.
