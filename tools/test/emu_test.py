@@ -57,6 +57,10 @@ CROPHIST_CASES = {   # name: (Image Aspect, area x, y, w, h asked, area kept)
     '5-4': (5, (0, 0, 640, 480), (20, 0, 600, 480)),
     '16-9-as-it-is': (3, (0, 0, 640, 360), (0, 0, 640, 360)),
 }
+# crop round 8: cr_pbs (the playback label's update, crop.s cr_pbl, 0x611509bc) called directly: the first photo info
+# with a code is kept as A, the same info again is not kept, a different one is kept as B. om-emu's playback never
+# gives its label a code (its photo info is all zeros), so the hook itself does not run there.
+CROPPB = 'crop-playback-info-kept'
 GRAIN_GAINS = {1: (400, 175), 3: (1024, 448), 5: (1536, 672)}   # strength -> texture Y gain, Cb / Cr gain (xblock.s)
 REAR_DIAL = 0x9032                               # the rear dial's event (cv_ev); a1 its signed clicks
 # (name, a1): first no clicks (the value as it is), then a fast turn of 3, then one past the range.
@@ -819,6 +823,59 @@ def run_crophist(emu, build, out, card0):
     return CROPHIST, errors
 
 
+def run_croppb(emu, build, out, card0):
+    """cr_pbs three times in one session: info X (code 4) -> A; X again -> nothing; Y (code 1) -> B. Then cr_pmr once:
+    the stock instructions it replaces, and the read kept (seq, id 6, the call's d0, its caller)."""
+    d = out / CROPPB
+    d.mkdir(parents=True, exist_ok=True)
+    sym = elf_symbols(build / 'p.elf')
+    x = bytes((7 * i + 3) & 255 for i in range(416))
+    y = x[:258] + b'\x06' + x[259:]
+    def call(name, code, info):
+        mem = [['B', 'dd'], ['B+1', f"={sym['cr_pbs']:#x}-B"], ['B+5', 'f018'], ['B+0x400', info.hex()]]
+        return {'name': name, 'pc': 'B', 'stop': ['B+7'], 'max': 50000, 'mem': mem,
+                'regs': {'d0': str(code), 'a0': 'B+0x400'},
+                'read': [[f"{sym['cr_pa']:#x}", 12 + 64 + 416], [f"{sym['cr_pb']:#x}", 12 + 64 + 416]]}
+    read = {'name': 'aspect-read', 'pc': 'B', 'stop': ['0x618dfd19'], 'max': 2000,
+            'mem': [['B', 'dc'], ['B+1', f"={sym['cr_pmr']:#x}-B"], ['SP+44', '78563412'], ['B+0x300', '00']],
+            'regs': {'d0': '6', 'd1': '0x11', 'a1': '0x22', 'd2': '0x1234', 'a3': 'B+0x300'},
+            'read': [[f"{sym['cr_pr']:#x}", 16], [f"{sym['cr_prn']:#x}", 4], ['B+0x300', 1]]}
+    res = run_ncall(emu, build, d, card0, 's1 wait wait ncall',
+                    [call('x', 4, x), call('x-again', 4, x), call('y', 1, y), read])
+    if isinstance(res, str):
+        return CROPPB, [res]
+    errors = []
+    for n in ('x', 'x-again', 'y'):
+        if res[n]['steps'] >= 50000:
+            errors.append(f'{n}: cr_pbs did not return (out.json)')
+    if errors:
+        return CROPPB, errors
+    rec = lambda n, k: bytes.fromhex(res[n]['mem'][k])
+    head = lambda b: (int.from_bytes(b[:4], 'little'), int.from_bytes(b[4:8], 'little'))
+    a, b = rec('x', 0), rec('x', 1)
+    if head(a)[0] == 0 or head(a)[1] != 4 or a[76:] != x:
+        errors.append(f'x: A is seq / code {head(a)}, its info {"as given" if a[76:] == x else "not as given"}')
+    if head(b)[0] != 0:
+        errors.append('x: B was kept')
+    if head(rec('x-again', 1))[0] != 0:
+        errors.append('x-again: B was kept for the same info')
+    b = rec('y', 1)
+    if head(b)[0] == 0 or head(b)[1] != 1 or b[76:] != y:
+        errors.append(f'y: B is seq / code {head(b)}, its info {"as given" if b[76:] == y else "not as given"}')
+    if rec('y', 0) != a:
+        errors.append('y: A changed')
+    # cr_pmr (0x618dfd0f, the play module's AspectRatio read): the stock store and next two, and the read kept
+    r = res['aspect-read']
+    ring, n, kept = rec('aspect-read', 0), int.from_bytes(rec('aspect-read', 1), 'little'), rec('aspect-read', 2)[0]
+    words = [int.from_bytes(ring[i:i + 4], 'little') for i in range(0, 16, 4)]
+    regs = {k: int(r['regs'][k], 16) for k in ('d0', 'd1', 'a0', 'a1')}
+    if r['steps'] >= 2000 or kept != 6 or regs != {'d0': 5, 'd1': 0x11, 'a0': 0x61997e7b, 'a1': 0x22}:
+        errors.append(f"aspect-read: stored {kept}, registers {r['regs']}")
+    if n != 1 or words[1:] != [6, 0x1234, 0x12345678] or words[0] == 0:
+        errors.append(f'aspect-read: {n} reads kept, the first {words}')
+    return CROPPB, errors
+
+
 def run_dial(emu, build, out, card0):
     """The RGB page open: one rear-dial event carrying several clicks (a fast turn on the camera) moves the selected
     value by all of them, clamped to -7..+7. om-emu's dial tokens send one click an event, so the test calls cv_ev."""
@@ -939,7 +996,7 @@ def newest_looks():
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('build', type=pathlib.Path)
-    ap.add_argument('--only', nargs='+', choices=sorted([*TESTS, AUDIT, HALATION, BORDER, ENGINE, DIAL, VIDEO, GRAINMIX, CROPHIST, *STATIC]))
+    ap.add_argument('--only', nargs='+', choices=sorted([*TESTS, AUDIT, HALATION, BORDER, ENGINE, DIAL, VIDEO, GRAINMIX, CROPHIST, CROPPB, *STATIC]))
     ap.add_argument('--jobs', type=lambda v: max(1, int(v)), default=DEFAULT_JOBS)
     ap.add_argument('--out', type=pathlib.Path)
     ap.add_argument('--looks', type=pathlib.Path)
@@ -962,7 +1019,7 @@ def main():
     looks = (a.looks or newest_looks()).resolve()
     make_card(emu, build, looks, card0)
     fixtures = make_fixtures(out, looks)
-    names = a.only or sorted([*TESTS, AUDIT, HALATION, BORDER, ENGINE, DIAL, VIDEO, GRAINMIX, CROPHIST, *STATIC])
+    names = a.only or sorted([*TESTS, AUDIT, HALATION, BORDER, ENGINE, DIAL, VIDEO, GRAINMIX, CROPHIST, CROPPB, *STATIC])
     stock = static_check.find_stock(a.stock) if any(n in STATIC for n in names) else None
     runs = [(n, k) for n in names for k in range(1, a.repeat + 1)]
     print(f'{len(names)} tests{f" x {a.repeat}" if a.repeat > 1 else ""} on {build}, results in {out}')
@@ -997,6 +1054,8 @@ def main():
                 return run_grainmix(emu, build, d, card0)
             if n == CROPHIST:
                 return run_crophist(emu, build, d, card0)
+            if n == CROPPB:
+                return run_croppb(emu, build, d, card0)
             first = shared.get((k, boot_key(TESTS[n][0])))
             return run_test(n, TESTS[n], emu, build, card0, d, first and first.result(), fixtures)
         except static_check.Skip as e:

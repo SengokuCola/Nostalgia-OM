@@ -4,6 +4,8 @@ SECTIONS {
   .hook_crb     0x6006120e : { *(.hook_crb) }   /* crop modes: the buffer before the write (after a menu) */
   .hook_crg     0x611cb24d : { *(.hook_crg) }   /* crop round 3: the GUI screen spec's ratio byte */
   .hook_crh     0x60dc4bb1 : { *(.hook_crh) }   /* crop round 5: the live histogram's area (Set_Histogram_CalcMode) */
+  .hook_crl     0x611509bc : { *(.hook_crl) }   /* crop round 8: the playback label's update (diagnosis) */
+  .hook_crm     0x618dfd0f : { *(.hook_crm) }   /* crop round 8: the play module's AspectRatio read (diagnosis) */
   .hook_shutter 0x60415216 : { *(.hook_shutter) }
   .ext1         0x6031e920 : { *(.ext1) }
   .ext4         0x60a8f100 : { *(.ext4) }
@@ -259,6 +261,8 @@ cr_gv0        = 0x610fd8ef;         /* the GUI getter (d0 id, a0 out) */
 cr_ef         = 0x60060eff;         /* the store write's first call (replayed by cr_sin) */
 cr_sin_back   = 0x6006118b;
 cr_sb_back    = 0x60061214;
+cr_pbl_back   = 0x611509c2;         /* crop round 8: after the label code's index */
+cr_pmr_back   = 0x618dfd19;         /* crop round 8: after the AspectRatio store's next two */
 cr_lr_j       = 0x60bf2d2b;         /* the live view ratio switch: mov d0,(28,sp) (the height) */
 cr_rc_j       = 0x60c0d35f;         /* ratioToConvertSize: mov d0,(4,a1); retf [],0 */
 cr_oa_j       = 0x60c14b95;         /* getOutputAspect: mov d0,(16,sp) */

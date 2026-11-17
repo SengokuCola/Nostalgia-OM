@@ -559,7 +559,7 @@ cr_dst:
 cr_daf:
  .long 0
 cr_t1:
- .asciz "\r\n\r\nCROP MODES (crop round 7b): tag at the first half-press "
+ .asciz "\r\n\r\nCROP MODES (crop round 8): tag at the first half-press "
 cr_t2:
  .asciz ", Image Aspect then "
 cr_t3:
@@ -618,6 +618,7 @@ cr_txt:                           /* `call cr_txt,[d2,d3,a2,a3],24` */
  LGS cr_t16
  mov (cr_hn),d0
  LGD
+ call cr_txt8,[d2,d3,a2,a3],24    /* round 8: the playback label diagnosis */
  ret [d2,d3,a2,a3],24
 
 /* ---- Grid lines inside the strip (crop round 2; camera c5: "the gridlines/guides do not match the framing"). The
@@ -1011,3 +1012,301 @@ cr_bdc:
 
 /* ---- (Crop round 7's playback info diagnosis, cr_pbi at 0x6057fb1b, is removed: that hook sat in section 2 and jumped
  * into section 6's extension, and the camera boot-looped. research/NOTES.md "Crop round 7: the boot loop".) */
+
+/* ---- Crop round 8: the playback label, a diagnosis (2026-11-17). The label (item 34) is set at 0x611509bc from the
+ * screen's photo info byte (24,sp) + 78 (0x611509c2: index code - 1 of 4:3, 3:2, 3:4, 16:9, 1:1); an XPan photo
+ * gets code 4, a 5:4 photo code 1. The photo's own file says the crop (maker note AspectRatio 0x1112 = 6 for XPan,
+ * read at 0x618dfcde), but om-emu runs neither that read nor the play app's info fill, and item 197 (the info) is
+ * all zeros there. So this build only looks, nothing changes on screen: from the first half-press on, cr_pmr keeps
+ * the last four AspectRatio reads (seq, id, the call's d0, its caller) and cr_pbl the last four label updates
+ * (seq, code); the first label update with a code keeps item 197 (416 B, the screen's copy at (32,sp)) in cr_pa,
+ * the next with a different item 197 in cr_pb, each with the reads as they were. The log prints them (cr_txt8).
+ * Both hooks are in sections loaded after section 6 (7: the GUI, 9: the play module). */
+ .balign 4
+cr_pq:                            /* the event counter (reads and label updates) */
+ .long 0
+cr_prn:                           /* reads so far */
+ .long 0
+cr_pr:                            /* the last four reads: {seq, id, d0, caller} */
+ .space 4 * 16
+cr_pln:                           /* label updates so far */
+ .long 0
+cr_pl:                            /* the last four: {seq, code} */
+ .space 4 * 8
+cr_psv:                           /* cr_pmr: d1, a1 */
+ .space 8
+cr_pa:                            /* {seq, code, prn, the 4 reads (64 B), item 197 (416 B)} */
+ .space 12 + 64 + 416
+cr_pb:
+ .space 12 + 64 + 416
+
+cr_pmr:                           /* jmp from 0x618dfd0f (0x618dfcde: d0 = the AspectRatio byte read, a3 = its place,
+                                     d2 = the function's d0; (44,sp) = its caller) */
+ movbu d0,(a3)                    /* the stock */
+ mov d1,(cr_psv)
+ mov a1,(cr_psv + 4)
+ movbu (cr_on),d1
+ cmp 0,d1
+ beq 9f
+ mov (cr_prn),d1
+ and 3,d1
+ asl 4,d1
+ mov d1,a1
+ add cr_pr,a1
+ mov (cr_pq),d1
+ inc d1
+ mov d1,(cr_pq)
+ mov d1,(a1)
+ movbu (a3),d1
+ mov d1,(4,a1)
+ mov d2,(8,a1)
+ mov (44,sp),d1
+ mov d1,(12,a1)
+ mov (cr_prn),d1
+ inc d1
+ mov d1,(cr_prn)
+9:
+ mov (cr_psv),d1
+ mov (cr_psv + 4),a1
+ mov 5,d0                         /* the stock */
+ mov 0x61997e7b,a0
+ jmp cr_pmr_back                  /* 0x618dfd19 */
+.section .hook_crm,"ax"
+ jmp cr_pmr                       /* stock 0x618dfd0f: movbu d0,(a3); mov 5,d0; mov 0x61997e7b,a0 */
+ .byte 0xcb, 0xcb, 0xcb, 0xcb, 0xcb
+.section .ext12,"ax"
+
+cr_pbl:                           /* jmp from 0x611509bc (a3 = &the code, a2 = the label widget; (32,sp) = item 197) */
+ movbu (cr_on),d0
+ cmp 0,d0
+ beq 9f
+ movbu (a3),d0
+ cmp 0,d0
+ beq 9f
+ mov (32,sp),a0
+ call cr_pbs,[d2,d3,a2,a3],24
+9:
+ movbu (a3),d0                    /* the stock */
+ mov a2,a0
+ add -1,d0
+ extbu d0
+ jmp cr_pbl_back                  /* 0x611509c2 */
+.section .hook_crl,"ax"
+ jmp cr_pbl                       /* stock 0x611509bc: movbu (a3),d0; mov a2,a0; add -1,d0; extbu d0 */
+ .byte 0xcb
+.section .ext12,"ax"
+
+cr_pbs:                           /* `call cr_pbs,[d2,d3,a2,a3],24`: d0 = the code, a0 = item 197 */
+ mov d0,d3
+ mov a0,a2
+ mov (cr_pq),d2
+ inc d2
+ mov d2,(cr_pq)
+ mov (cr_pln),d1                  /* the label ring */
+ and 3,d1
+ asl 3,d1
+ mov d1,a1
+ add cr_pl,a1
+ mov d2,(a1)
+ mov d3,(4,a1)
+ mov (cr_pln),d1
+ inc d1
+ mov d1,(cr_pln)
+ mov cr_pa,a3
+ mov (a3),d0
+ cmp 0,d0
+ beq 5f                           /* A is free */
+ mov cr_pb,a3
+ mov (a3),d0
+ cmp 0,d0
+ bne 9f                           /* both kept */
+ clr d1                           /* B: only if item 197 differs from A's */
+ mov cr_pa + 76,a0
+1:
+ mov (d1,a0),d0
+ mov (d1,a2),a1
+ cmp a1,d0
+ bne 5f
+ add 4,d1
+ cmp 416,d1
+ bcs 1b
+ bra 9f
+5:
+ mov d2,(a3)
+ mov d3,(4,a3)
+ mov (cr_prn),d0
+ mov d0,(8,a3)
+ clr d1
+ mov cr_pr,a0
+ add 12,a3
+6:
+ mov (d1,a0),d0                   /* the reads */
+ mov d0,(d1,a3)
+ add 4,d1
+ cmp 64,d1
+ bcs 6b
+ add 64,a3
+ clr d1
+7:
+ mov (d1,a2),d0                   /* item 197 */
+ mov d0,(d1,a3)
+ add 4,d1
+ cmp 416,d1
+ bcs 7b
+9:
+ ret [d2,d3,a2,a3],24
+
+cr_t31:
+ .asciz "\r\nCROP PLAYBACK (round 8 diagnosis): events "
+cr_t32:
+ .asciz "; maker-note AspectRatio reads "
+cr_t33:
+ .asciz ", last 4 (seq id d0 caller):"
+cr_t34:
+ .asciz "; label updates "
+cr_t35:
+ .asciz ", last 4 (seq code):"
+cr_t36:
+ .asciz "\r\n  photo info A: seq "
+cr_t37:
+ .asciz "\r\n  photo info B: seq "
+cr_t38:
+ .asciz ", code "
+cr_t39:
+ .asciz ", reads then "
+cr_t40:
+ .asciz "; words not 0 (offset:hex):"
+cr_t41:
+ .asciz "; words not as A's:"
+cr_t42:
+ .asciz " "
+cr_t43:
+ .asciz ":"
+cr_t44:
+ .asciz "; none kept"
+ .balign 2
+cr_txt8:                          /* `call cr_txt8,[d2,d3,a2,a3],24` from cr_txt */
+ LGS cr_t31
+ mov (cr_pq),d0
+ LGD
+ LGS cr_t32
+ mov (cr_prn),d0
+ LGD
+ LGS cr_t33
+ clr d2
+ mov cr_pr,a2
+1:
+ LGS cr_t42
+ mov (a2),d0
+ LGD
+ LGS cr_t42
+ mov (4,a2),d0
+ LGD
+ LGS cr_t42
+ mov (8,a2),d0
+ call lg_h,[],0
+ LGS cr_t42
+ mov (12,a2),d0
+ call lg_h,[],0
+ add 16,a2
+ inc d2
+ cmp 4,d2
+ bcs 1b
+ LGS cr_t34
+ mov (cr_pln),d0
+ LGD
+ LGS cr_t35
+ clr d2
+ mov cr_pl,a2
+2:
+ LGS cr_t42
+ mov (a2),d0
+ LGD
+ LGS cr_t42
+ mov (4,a2),d0
+ LGD
+ add 8,a2
+ inc d2
+ cmp 4,d2
+ bcs 2b
+ mov cr_pa,a3
+ mov (a3),d0
+ cmp 0,d0
+ bne 3f
+ LGS cr_t44
+ bra 9f
+3:
+ LGS cr_t36                       /* A: its seq, code, reads so far, the non-zero words */
+ mov cr_pa,a3
+ call cr_pbh,[d2,d3,a2,a3],24
+ LGS cr_t40
+ clr d2
+ mov cr_pa + 76,a2
+4:
+ mov (d2,a2),d0
+ cmp 0,d0
+ beq 5f
+ LGS cr_t42
+ mov d2,d0
+ LGD
+ LGS cr_t43
+ mov (d2,a2),d0
+ call lg_h,[],0
+5:
+ add 4,d2
+ cmp 416,d2
+ bcs 4b
+ mov cr_pb,a3                     /* B: the words not as A's */
+ mov (a3),d0
+ cmp 0,d0
+ beq 9f
+ LGS cr_t37
+ mov cr_pb,a3
+ call cr_pbh,[d2,d3,a2,a3],24
+ LGS cr_t41
+ clr d2
+ mov cr_pb + 76,a2
+ mov cr_pa + 76,a3
+6:
+ mov (d2,a2),d0
+ mov (d2,a3),d1
+ cmp d1,d0
+ beq 7f
+ LGS cr_t42
+ mov d2,d0
+ LGD
+ LGS cr_t43
+ mov (d2,a2),d0
+ call lg_h,[],0
+7:
+ add 4,d2
+ cmp 416,d2
+ bcs 6b
+9:
+ ret [d2,d3,a2,a3],24
+
+cr_pbh:                           /* `call cr_pbh,[d2,d3,a2,a3],24`: a3 = a kept record: seq, code, reads, the reads */
+ mov a3,a2
+ mov (a2),d0
+ LGD
+ LGS cr_t38
+ mov (4,a2),d0
+ LGD
+ LGS cr_t39
+ mov (8,a2),d0
+ LGD
+ clr d2
+ mov a2,a3
+ add 12,a3
+1:
+ LGS cr_t42
+ mov (4,a3),d0
+ LGD
+ LGS cr_t43
+ mov (12,a3),d0
+ call lg_h,[],0
+ add 16,a3
+ inc d2
+ cmp 4,d2
+ bcs 1b
+ ret [d2,d3,a2,a3],24
