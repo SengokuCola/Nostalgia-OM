@@ -18,7 +18,7 @@
  .endif
 
 .section .hook_mx,"ax"
- jmp mx_go                        /* stock 0x6051485a: call 0x605144ef,[d2,d3,a2,a3],20 */
+ jmp mx_g                         /* stock 0x6051485a: call 0x605144ef,[d2,d3,a2,a3],20. mx_g (editor.s): mx_go once section 6 is in */
 
 .section .ext12,"ax"
 /* mx_go <- .hook_mx, in the matrix function's frame F (84: (84,F) its return address, (96,F) the request R for the
