@@ -6597,3 +6597,7 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   40": cr_spec ran 40 times; **.hook_cra never ran** (its pair stayed 0:0 from boot), focusing works without it ->
   removed in round 4 (one hook fewer). Display set-up still id 3, 900 x 506 at XPan. Photos XPan 5184 x 1920, EXIF
   AFAreas the centre.
+- **Round 4 suite** (build of c4f97cb = the package `test-builds/2026-11-17-crop-round-4`, E1479999.BIN
+  `b443539a…`, om-emu 0819080): **47 pass, 2 FAIL**: `static:hook-list` (three crop hooks for the owner's OK:
+  hook_crs 0x60061183, hook_crb 0x6006120e (save time only), hook_crg 0x611cb24d (the screen spec)) and
+  `static:changed-bytes` (crop.py's data patches and call-site redirects, cr_hist's included).
