@@ -1010,8 +1010,17 @@ xb_c1e:
  asl 16,d0
  or d0,d1
  mov d1,(148,a2)
- movhu (20,a0),d1                 /* the output's Y offset (+180 low half; rc2a: camera-confirmed as Y): our tile's
-                                     Y sits at 48 (8-bit), added as it is -> -(4 x 48 x Y gain / 1024) (10-bit) */
+ mov -4 * 48,d1                   /* g2c: our tile's Y mean 48 (8-bit; x 4 in the combiner's 10-bit) taken off on the
+                                     texture's own input, before its gain: +136 low half, its Y input offset (the init
+                                     0x605047c1 writes 0 there and -512 for Cb / Cr, which is how the chroma is centred) */
+ movhu d1,(136,a2)
+ mov -512,d1                      /* its Y clamp minimum (+160 low half; init 0, as the chroma's -512): the centred grain
+                                     keeps its lower half */
+ movhu d1,(160,a2)
+ clr d1                           /* no output Y offset (+180 low half) any more. g1 / g2 took the mean off there, after
+                                     the sum is clamped: the grain's mean (48 x gain) filled the headroom over white, so
+                                     highlights stopped near 218 at strength 3 and 204 at 5 (camera, PB162962..980) and
+                                     Halation (Y > 200) lost its lamps */
  movhu d1,(180,a2)
 9:
  rets
@@ -1021,8 +1030,6 @@ xb_tgain:                         /* g2: Y gain by the Film Grain strength 1..5 
  .hword 400, 650, 1024, 1280, 1536
 xb_tcgain:                        /* Cb / Cr gain: 0.4375 of Y's, as g1 (our tile's chroma sigma 16 -> 7 at 3) */
  .hword 175, 284, 448, 560, 672
-xb_tbias:                         /* -(4 x 48 x Y gain / 1024), 16 bits (g1, camera: -192 kept the brightness) */
- .hword -75 & 0xffff, -122 & 0xffff, -192 & 0xffff, -240 & 0xffff, -288 & 0xffff
 
 /* xb_wl (ft8): `calls` from s_wl in the work-list builder 0x604b8cf7, a0 = job, before it picks the list by the
  * job's key (job+5352). A COLOR still (11) that already has our texture (job+8324, made at the set-up) and whose

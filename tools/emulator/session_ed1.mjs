@@ -179,7 +179,8 @@ for (const t of SCRIPT.split(/\s+/).filter(Boolean)) {
     const dd = Debugger.attach(lab.sim, { lab }); const saved = dd.m.getRegs().slice();
     const st = u16(STATE), P = (POOL + st - 1) >>> 0;
     const SP = ((saved[8] - 0x800) & ~3) >>> 0, B = ((SP - 0x6000) & ~0xff) >>> 0;
-    const ev = (x) => (typeof x === 'number' ? x : Function('P', 'SP', 'B', 'return (' + x + ')')(P, SP, B)) >>> 0;
+    // better grain g2c: W(addr) in an expression reads the word there (e.g. the code block: W(P+692) + an offset)
+    const ev = (x) => (typeof x === 'number' ? x : Function('P', 'SP', 'B', 'W', 'return (' + x + ')')(P, SP, B, u32)) >>> 0;
     const RN = ['d0', 'd1', 'd2', 'd3', 'a0', 'a1', 'a2', 'a3', 'sp', 'pc', 'psw', 'mdr'];
     for (const cs of spec) {
       for (const [a, hex] of cs.mem || []) { if (hex.startsWith('=')) { const v = ev(hex.slice(1)); dd.write(ev(a), Uint8Array.from([v & 255, v >> 8 & 255, v >> 16 & 255, v >>> 24])); } else dd.write(ev(a), Uint8Array.from(Buffer.from(hex, 'hex'))); }

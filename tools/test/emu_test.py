@@ -38,6 +38,11 @@ BORDER = 'border-matches-the-model'
 BORDER_CHECK = REPO / 'research/border/emu_check.py'
 ENGINE = 'look-tables-match-the-model'
 DIAL = 'rgb-page-counts-every-click'
+# better grain g2c: combiner 1's set-up end (s_c1e -> the code block's xb_c1e) on a fake register image. The grain's
+# Y mean (48 x 4) comes off on the texture's own input (+136, its Y clamp minimum +160 opened to -512), not as an
+# output offset (+180): g1 / g2 put it there, after the clamp, and capped the highlights (camera, 2026-11-16).
+GRAINMIX = 'grain-mix-keeps-the-highlights'
+GRAIN_GAINS = {1: (400, 175), 3: (1024, 448), 5: (1536, 672)}   # strength -> texture Y gain, Cb / Cr gain (xblock.s)
 REAR_DIAL = 0x9032                               # the rear dial's event (cv_ev); a1 its signed clicks
 # (name, a1): first no clicks (the value as it is), then a fast turn of 3, then one past the range.
 DIAL_CASES = [('as-is', 0), ('up-3', -3), ('down-20', 20)]
@@ -571,6 +576,46 @@ def run_ncall(emu, build, d, card0, tokens, spec):
     return {o['name']: o for o in json.loads((d / 'out.json').read_text())['out']}
 
 
+def run_grainmix(emu, build, out, card0):
+    """s_c1e on a register image as the init 0x605047c1 leaves it, for strengths 1 / 3 / 5 and a tile not written."""
+    d = out / GRAINMIX
+    d.mkdir(parents=True, exist_ok=True)
+    sym, xb = elf_symbols(build / 'p.elf'), elf_symbols(build / 'xb10000000.elf')
+    fx1 = f"W(P+{sym['XPTR']})+{xb['xb_fx1'] - 0x10000000:#x}"
+    word = lambda v: (v & 0xffffffff).to_bytes(4, 'little').hex()
+    image = {136: 0xfe000000, 160: 0xfe000000, 180: 0x02000000, 184: 512}    # the init's Y / Cb offsets and minima
+    def case(name, strength, bad):
+        mem = [['B', 'dd'], ['B+1', '=(B+0x10)-B'], ['B+5', 'f01c'], ['B+0x10', 'dc'],
+               ['B+0x11', f"={sym['s_c1e']:#x}-(B+0x10)"], ['B+0x200', '00' * 0x100],
+               *[[f'B+0x200+{o}', word(v)] for o, v in image.items()],
+               [fx1, f'{strength:02x}'], [f"{sym['tg_bad']:#x}", '01' if bad else '00']]
+        return {'name': name, 'pc': 'B', 'stop': ['B+7'], 'max': 20000, 'mem': mem,
+                'regs': {'a2': 'B+0x200', 'd0': '1024'}, 'read': [['B+0x200', 0x100]],
+                'restore': [[f"{sym['tg_bad']:#x}", '00']]}
+    spec = [case(f'strength{s}', s, False) for s in GRAIN_GAINS] + [case('tile-not-written', 3, True)]
+    res = run_ncall(emu, build, d, card0, 's1 wait wait ncall', spec)
+    if isinstance(res, str):
+        return GRAINMIX, [res]
+    errors = []
+    for o in spec:
+        r = res[o['name']]
+        img = bytes.fromhex(r['mem'][0])
+        at = lambda off: int.from_bytes(img[off:off + 4], 'little')
+        if r['steps'] >= 20000:
+            errors.append(f"{o['name']}: s_c1e did not return (out.json)")
+            continue
+        if o['name'] == 'tile-not-written':
+            want = {148: 0, 152: 0, 136: image[136], 160: image[160], 180: image[180]}
+        else:
+            y, c = GRAIN_GAINS[int(o['name'][-1])]
+            want = {96: 0x04000400, 100: 1024, 148: c << 16 | y, 152: c,
+                    136: 0xfe00ff40, 160: 0xfe00fe00, 180: 0x02000000}
+        for off, v in want.items():
+            if at(off) != v:
+                errors.append(f"{o['name']}: register image +{off} is {at(off):#010x}, not {v:#010x}")
+    return GRAINMIX, errors
+
+
 def run_dial(emu, build, out, card0):
     """The RGB page open: one rear-dial event carrying several clicks (a fast turn on the camera) moves the selected
     value by all of them, clamped to -7..+7. om-emu's dial tokens send one click an event, so the test calls cv_ev."""
@@ -658,7 +703,7 @@ def newest_looks():
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('build', type=pathlib.Path)
-    ap.add_argument('--only', nargs='+', choices=sorted([*TESTS, AUDIT, HALATION, BORDER, ENGINE, DIAL, *STATIC]))
+    ap.add_argument('--only', nargs='+', choices=sorted([*TESTS, AUDIT, HALATION, BORDER, ENGINE, DIAL, GRAINMIX, *STATIC]))
     ap.add_argument('--jobs', type=lambda v: max(1, int(v)), default=DEFAULT_JOBS)
     ap.add_argument('--out', type=pathlib.Path)
     ap.add_argument('--looks', type=pathlib.Path)
@@ -681,7 +726,7 @@ def main():
     looks = (a.looks or newest_looks()).resolve()
     make_card(emu, build, looks, card0)
     fixtures = make_fixtures(out, looks)
-    names = a.only or sorted([*TESTS, AUDIT, HALATION, BORDER, ENGINE, DIAL, *STATIC])
+    names = a.only or sorted([*TESTS, AUDIT, HALATION, BORDER, ENGINE, DIAL, GRAINMIX, *STATIC])
     stock = static_check.find_stock(a.stock) if any(n in STATIC for n in names) else None
     runs = [(n, k) for n in names for k in range(1, a.repeat + 1)]
     print(f'{len(names)} tests{f" x {a.repeat}" if a.repeat > 1 else ""} on {build}, results in {out}')
@@ -710,6 +755,8 @@ def main():
                 return run_engine(emu, build, d, card0)
             if n == DIAL:
                 return run_dial(emu, build, d, card0)
+            if n == GRAINMIX:
+                return run_grainmix(emu, build, d, card0)
             first = shared.get((k, boot_key(TESTS[n][0])))
             return run_test(n, TESTS[n], emu, build, card0, d, first and first.result(), fixtures)
         except static_check.Skip as e:
