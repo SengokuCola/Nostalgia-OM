@@ -347,6 +347,7 @@ emulator test as proposed here would have failed. "Maybe" means it depends on a 
 | e9b954f | Start-up path overwrote its caller's saved registers | Yes | Boot smoke, register watch |
 | v0.28–v0.30.1, #65 (#27) | With Image Review on, a Glow or Halation photo gives a black review picture, then the Creative Dial to a standard picture mode freezes live view | No | None, om-emu develops no photos (the review picture is one of the shot's small extra developments) |
 | v0.30, menu-flicker | Leaving Blacks / Whites or WB compensation flashes the old row's bottom bar for a frame | No | None, om-emu draws only after the screen update. `grid-row-gives-the-bottom-bar-back` checks the bar comes back |
+| v0.30–v0.30.3, #72 | Switching films fast in the Picture Mode list (holding the arrow, or FILM 1 <-> FILM 2) reboots the camera | Yes | om-emu does not reboot; the cause (the group's record kept at every step, camera probe J) is counted: `film-list-keeps-the-record-once-as-it-closes`, `control-panel-dial-keeps-the-record-once-as-it-closes` |
 | 331691c | Custom mode showed the previous mode's films until a half-press | Yes | Custom modes |
 | 6438628, ea8b97c | A film picked with no half-press was lost at power-off | Yes | Film picked before the first half-press |
 | v0.29.2, #41 | C1–C5 mixed films with saved settings, `*` leaked | Yes | Custom modes |
