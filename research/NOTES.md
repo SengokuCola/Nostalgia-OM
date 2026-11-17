@@ -6749,3 +6749,9 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   every crop test, crop-save-waits-for-section-6 and static:section-order; 2 FAIL, as in every crop round:
   static:hook-list (crs, crb, crg, crh not in hooks.json) and static:changed-bytes (crop.py's data sites), waiting
   for the owner's OK to record them. Package `test-builds/2026-11-17-crop-round-7b` (private folder).
+- **Camera, round 7b (owner, 2026-11-17, 85af7365… flashed): "Ok. borders work. Now we just need to fix that label
+  when you review the image".** Start-ups normal (no loop; the camera ran normally all session). Card
+  (card-backups/2026-11-17-crop-round-7b-tested, main chat): CADLOG 19 writes, 38 shutter events, nothing unusual;
+  PB173202..206 all XPan 5184 x 1920; 203..206 have the white Border on all four edges (edge means 255), 202 none
+  (taken before the Border was set). CROP MODES line: "... now 6; display 3, 900 x 506; screen specs mapped 0;
+  histogram area 800 x 600, trimmed 14". **Camera-tested: the Border inside the crop, and round 7b's start-up.**
