@@ -6373,7 +6373,7 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   lookup misses; its loop end (0x611c7922, frame-lines' hook site) -> `bl_tail`: for our values, v's own lines when v is
   thirds or golden, then the frame B inside the picture (the table's thirds record: V[0] y0..y1, H[0] x0..x1),
   B = max(1, min(w, h) 983 L >> 16) (bd_run's width), into the first empty slots; other values as stock. Other grids
-  (Off, 6x4, scale, diagonal, 16:9 frame) show the frame alone while a Border is set. ext12 +488 B.
+  (Off, 6x4, scale, diagonal, 16:9 frame) show the frame alone while a Border is set. ext12 +592 B (239,760 of 262,144).
 - om-emu (rear screen, 4:3: picture x 50..850, y 0..599): Border 3 -> lines on x 75..76 / 823..824, y 25..26 (the
   bottom line at 573 under the info bar); Border 5 -> x 93..94, y 43..44; Border 1 -> x 58; thirds + Border kept both;
   Border 0 -> no line; after a power-off with Border 3, no line before the first half-press (el_hold 1 after the early
@@ -6381,7 +6381,9 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   video grid only. Not seen in om-emu: the EVF and the other screens (their builders are hooked the same way).
 - Tests (emu_test.py): `border-preview-on-at-3-off-at-0`, `border-preview-waits-for-the-first-half-press`,
   `border-preview-not-in-video`, through the driver's new `expect:pxsame` / `expect:pxdiff` (the rear screen as shot:
-  two pixels the same / different). On v0.31 alpha test 1 the first is `FAIL` (no line).
+  two pixels the same / different). `--without` v0.31 alpha test 1: the first two `caught`.
+- Suite (build of 7af273c, the package's bytes): **41 of 42 pass**, the new three included, patch-audit and
+  static:changed-bytes pass; `static:hook-list` FAILs only for the five new hooks, not yet in hooks.json.
 - Hooks (reviewed for the start-up rule: before the first shutter event bl_gv is the stock read plus a few memory reads,
   bl_tail is the stock loop for every value but ours): hook_bga 0x6123825e, hook_bgb 0x611cb433, hook_bgc 0x611e44d7,
   hook_bgd 0x611eae1e (7 B each, call target only), hook_blk 0x611c7922 (5 B). Not yet in tools/test/hooks.json.
