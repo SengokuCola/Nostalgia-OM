@@ -6601,3 +6601,20 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   `b443539a…`, om-emu 0819080): **47 pass, 2 FAIL**: `static:hook-list` (three crop hooks for the owner's OK:
   hook_crs 0x60061183, hook_crb 0x6006120e (save time only), hook_crg 0x611cb24d (the screen spec)) and
   `static:changed-bytes` (crop.py's data patches and call-site redirects, cr_hist's included).
+
+## Crop round 5: the live histogram, the display side (2026-11-17; analysis + a direct-call test, camera test pending)
+- **Camera, round 4 (owner): "the bars in the histo are still there"**; card read (main chat): CROP MODES "... now 6;
+  display 3, 900 x 506; screen specs mapped 4; histogram area 0 x 0, trimmed 0": round 4's wrapper (0x60c772c0, the
+  app's histogram main area setter) never ran. The card's DCIM folder was empty although the log counted one photo:
+  being checked with the owner (Erase All?); nothing of ours deletes files.
+- The display draws the live histogram from Dev_HistogramFactory: **Set_Histogram_CalcMode 0x60dc4bb1** (a method:
+  data ref 0x60f16218; entry `movm [d2,d3,a2,a3],(sp); add -256,sp`, ends `add 256,sp; ret [d2,d3,a2,a3],16`; d0 the
+  mode 16 / 17 / 32, a1 -> the main area {x, y, w, h}, d1 -> the sub area) copies the areas into the block for
+  0x6041847b and starts the calculation (0x604188e4 via 0x60dc54c2). The other callers of those two (0x60c1ee4f..
+  0x60c1f06a) are CapPlh, the playback histogram.
+- **Round 5:** `.hook_crh` 0x60dc4bb1 -> cr_dhm: the stock entry, `call cr_trim,[],0` on the main area, then the
+  stock body (jmp 0x60dc4bb7). cr_trim (d2, d3, a2, mdr only; d0 / d1 / a0 / a1 kept): with a crop set after the first
+  shutter event, an area larger than the crop is trimmed to it, centred. Round 4's wrapper removed. If the method runs
+  only when the histogram starts, it needs a restart at XPan (INFO, a menu): the test steps ask for it; the log shows
+  the area seen ("histogram area w x h, trimmed n").
+- Test `crop-histogram-area-trimmed` now calls cr_trim (same cases and results).

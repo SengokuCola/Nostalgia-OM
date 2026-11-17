@@ -530,7 +530,7 @@ cr_dst:
 cr_daf:
  .long 0
 cr_t1:
- .asciz "\r\n\r\nCROP MODES (crop round 4): tag at the first half-press "
+ .asciz "\r\n\r\nCROP MODES (crop round 5): tag at the first half-press "
 cr_t2:
  .asciz ", Image Aspect then "
 cr_t3:
@@ -822,74 +822,88 @@ cr_spn:                           /* specs mapped this power-on (the log) */
  .byte 0xcb
 .section .ext12,"ax"
 
-/* ---- Crop round 4: the live histogram (camera, round 3: at XPan "one tall spike at black above a low curve": the
- * dark bands above and below the strip counted). The live view's histogram main area {x, y, w, h} is set at
- * 0x60c772c0 (`call 0x60bcd668,[a2],28`, app_background_set_histogram_main_area; the rect at the callee's (32,sp)),
- * from the live view's own geometry (camera-only, not run by om-emu). That call -> cr_hist: with a crop set (after
- * the first shutter event), the area is trimmed to the crop's shape, centred (XPan / 21:9: full width; 5:4: full
- * height) when it is larger, then the camera's own setter runs (jmp, same frame). The log keeps the area asked. */
+/* ---- Crop round 5: the live histogram (camera, round 3: at XPan "one tall spike at black above a low curve": the
+ * dark bands above and below the strip counted; round 4's wrapper on 0x60c772c0 never ran: "histogram area 0 x 0").
+ * The live histogram's area is handed to the display by Dev_HistogramFactory's Set_Histogram_CalcMode (0x60dc4bb1,
+ * a method: entry `movm [d2,d3,a2,a3],(sp); add -256,sp`, d0 the mode, a1 -> the main area {x, y, w, h}, d1 -> the sub
+ * area; it copies them for 0x6041847b). cr_dhm at its entry: the stock entry, then cr_trim on the main area, then the
+ * stock body. cr_trim: with a crop set (after the first shutter event), an area larger than the crop is trimmed to
+ * it, centred (XPan / 21:9: full width; 5:4: full height). Camera-only (om-emu does not run the live view). */
  .balign 4
-cr_hw:                            /* the last area asked (w, h), areas trimmed this power-on */
+cr_hw:                            /* the last main area asked (w, h), areas trimmed this power-on */
  .long 0
 cr_hh:
  .long 0
 cr_hn:
  .long 0
-cr_hist:                          /* `call cr_hist,[a2],28`; d0, d1, a1, mdr free (the setter returns through the stack) */
- movhu (36,sp),d0
- mov d0,(cr_hw)
- movhu (38,sp),d0
- mov d0,(cr_hh)
- movbu (cr_on),d0
- cmp 0,d0
+cr_dhm:                           /* jmp from 0x60dc4bb1 */
+ movm [d2,d3,a2,a3],(sp)          /* the stock entry */
+ add -256,sp
+ cmp 0,a1
  beq 9f
- movbu (CR_A1),d0
- cmp 5,d0
+ call cr_trim,[],0                /* d0, d1, a0, a1 kept (the method's inputs) */
+9:
+ jmp cr_dhm_back                  /* 0x60dc4bb7 */
+
+cr_trim:                          /* `call cr_trim,[],0`, a1 -> {x, y, w, h} (u16); uses d2, d3, a2, mdr only */
+ movhu (4,a1),d2
+ mov d2,(cr_hw)
+ movhu (6,a1),d2
+ mov d2,(cr_hh)
+ movbu (cr_on),d2
+ cmp 0,d2
+ beq 9f
+ movbu (CR_A1),d3
+ cmp 5,d3
  beq 5f
- cmp 6,d0
+ cmp 6,d3
  beq 6f
- cmp 7,d0
+ cmp 7,d3
  bne 9f
- mov 9,d1                         /* 21:9: h' = w x 9 / 21 */
- mov 21,a1
+ mov 9,d2                         /* 21:9: h' = w x 9 / 21 */
+ mov 21,a2
  bra 7f
 6:
- mov 24,d1                        /* XPan: h' = w x 24 / 65 */
- mov 65,a1
+ mov 24,d2                        /* XPan: h' = w x 24 / 65 */
+ mov 65,a2
 7:
- movhu (36,sp),d0
- mul d1,d0
- clr d1
- mov d1,mdr
- mov a1,d1
- divu d1,d0                       /* d0 = h' */
- movhu (38,sp),d1                 /* h */
- cmp d1,d0
+ movhu (4,a1),d3
+ mul d2,d3
+ clr d2
+ mov d2,mdr
+ mov a2,d2
+ divu d2,d3                       /* d3 = h' */
+ movhu (6,a1),d2                  /* h */
+ cmp d2,d3
  bcc 9f                           /* not larger than the crop: as it is */
- movhu d0,(38,sp)
- sub d0,d1
- lsr 1,d1
- movhu (34,sp),d0
- add d1,d0
- movhu d0,(34,sp)                 /* y + (h - h') / 2 */
+ movhu d3,(6,a1)
+ sub d3,d2
+ lsr 1,d2
+ movhu (2,a1),d3
+ add d2,d3
+ movhu d3,(2,a1)                  /* y + (h - h') / 2 */
  bra 8f
 5:
- movhu (38,sp),d0                 /* 5:4: w' = h x 5 / 4 */
- mov 5,d1
- mul d1,d0
- lsr 2,d0
- movhu (36,sp),d1
- cmp d1,d0
+ movhu (6,a1),d3                  /* 5:4: w' = h x 5 / 4 */
+ mov 5,d2
+ mul d2,d3
+ lsr 2,d3
+ movhu (4,a1),d2
+ cmp d2,d3
  bcc 9f
- movhu d0,(36,sp)
- sub d0,d1
- lsr 1,d1
- movhu (32,sp),d0
- add d1,d0
- movhu d0,(32,sp)                 /* x + (w - w') / 2 */
+ movhu d3,(4,a1)
+ sub d3,d2
+ lsr 1,d2
+ movhu (0,a1),d3
+ add d2,d3
+ movhu d3,(0,a1)                  /* x + (w - w') / 2 */
 8:
- mov (cr_hn),d0
- inc d0
- mov d0,(cr_hn)
+ mov (cr_hn),d2
+ inc d2
+ mov d2,(cr_hn)
 9:
- jmp cr_hset                      /* 0x60bcd668 */
+ ret [],0
+.section .hook_crh,"ax"
+ jmp cr_dhm                       /* stock 0x60dc4bb1: movm [d2,d3,a2,a3],(sp); add -256,sp */
+ .byte 0xcb
+.section .ext12,"ax"

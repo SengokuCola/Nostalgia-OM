@@ -48,9 +48,8 @@ PHOTO_MODE = 0x01                                # P's mode code, so the photo p
 # Y mean (48 x 4) comes off on the texture's own input (+136, its Y clamp minimum +160 opened to -512), not as an
 # output offset (+180): g1 / g2 put it there, after the clamp, and capped the highlights (camera, 2026-11-16).
 GRAINMIX = 'grain-mix-keeps-the-highlights'
-# crop round 4: cr_hist (the live histogram's main area, set at 0x60c772c0) called directly with a crop set: the area
-# is trimmed to the crop's shape, centred, before the camera's own setter keeps it (app + 3452). om-emu does not run
-# the live view, so the call is made on a scratch app object.
+# crop round 5: cr_trim (the live histogram's main area at Set_Histogram_CalcMode's entry, crop.s cr_dhm) called
+# directly with a crop set: the area is trimmed to the crop's shape, centred. om-emu does not run the live view.
 CROPHIST = 'crop-histogram-area-trimmed'
 CROPHIST_CASES = {   # name: (Image Aspect, area x, y, w, h asked, area kept)
     'xpan': (6, (0, 0, 640, 360), (0, 62, 640, 236)),
@@ -786,16 +785,16 @@ def run_grainmix(emu, build, out, card0):
 
 
 def run_crophist(emu, build, out, card0):
-    """cr_hist for each CROPHIST_CASES entry: `call cr_hist,[a2],28` with the area at the caller's (4,sp)."""
+    """cr_trim for each CROPHIST_CASES entry: `call cr_trim,[],0` with a1 -> the area."""
     d = out / CROPHIST
     d.mkdir(parents=True, exist_ok=True)
     sym = elf_symbols(build / 'p.elf')
     hw = lambda v: b''.join(x.to_bytes(2, 'little') for x in v).hex()
     def case(name, aspect, area):
-        mem = [['B', 'dd'], ['B+1', f"={sym['cr_hist']:#x}-B"], ['B+5', '201c'], ['SP+4', hw(area)],
-               ['B+0x400', '00' * 0xe00], ['0x629209c2', f'{aspect:02x}'], [f"{sym['cr_on']:#x}", '01']]
-        return {'name': name, 'pc': 'B', 'stop': ['B+7'], 'max': 20000, 'mem': mem, 'regs': {'a0': 'B+0x400'},
-                'read': [['B+0x400+3452', 8]], 'restore': [[f"{sym['cr_on']:#x}", '00']]}
+        mem = [['B', 'dd'], ['B+1', f"={sym['cr_trim']:#x}-B"], ['B+5', '0000'], ['B+0x400', hw(area)],
+               ['0x629209c2', f'{aspect:02x}'], [f"{sym['cr_on']:#x}", '01']]
+        return {'name': name, 'pc': 'B', 'stop': ['B+7'], 'max': 20000, 'mem': mem, 'regs': {'a1': 'B+0x400'},
+                'read': [['B+0x400', 8]], 'restore': [[f"{sym['cr_on']:#x}", '00']]}
     spec = [case(n, a, area) for n, (a, area, _) in CROPHIST_CASES.items()]
     res = run_ncall(emu, build, d, card0, 's1 wait wait ncall', spec)
     if isinstance(res, str):
@@ -804,12 +803,12 @@ def run_crophist(emu, build, out, card0):
     for n, (_, _, want) in CROPHIST_CASES.items():
         r = res[n]
         if r['steps'] >= 20000:
-            errors.append(f'{n}: cr_hist did not return (out.json)')
+            errors.append(f'{n}: cr_trim did not return (out.json)')
             continue
         got = bytes.fromhex(r['mem'][0])
         got = tuple(int.from_bytes(got[2 * i:2 * i + 2], 'little') for i in range(4))
         if got != want:
-            errors.append(f'{n}: area kept {got}, not {want}')
+            errors.append(f'{n}: area {got}, not {want}')
     return CROPHIST, errors
 
 

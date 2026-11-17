@@ -250,12 +250,6 @@ def apply(m, o, sy, log=print):
         for i, v in ((5, r43), (6, r169), (7, r169)):
             struct.pack_into('<HH', m, o(t) + 4 * i, *v)
     log('crop: AF point grids: 5:4 as 4:3, XPan / 21:9 as 16:9')
-    # Round 4: the live histogram's main area, set at 0x60c772c0 (`call 0x60bcd668,[a2],28`: dd rel32 20 1c) -> cr_hist.
-    a = 0x60c772c0
-    assert m[o(a)] == 0xdd and (a + struct.unpack_from('<i', m, o(a) + 1)[0]) & 0xffffffff == 0x60bcd668, hex(a)
-    assert bytes(m[o(a) + 5:o(a) + 7]) == b'\x20\x1c'
-    struct.pack_into('<i', m, o(a) + 1, sy['cr_hist'] - a)
-    log('crop: live histogram main area (0x60c772c0) -> cr_hist')
     # c4: the shooting screen's frame boxes (camera c3: live view still showed the 7:6 / 6:5 box). Four (x0, x1, y0, y1)
     # u16 tables by id at stride 8 in api_rec.c's data, one per screen grid (320, 360, 426, 448 x 240): 0x606291b0 read at
     # 0x6043ff17, 0x60629260 / 0x60629208 / 0x606292b8 picked at 0x60438f58 / 8c / 9f (0x60438e62, by screen mode). The id
