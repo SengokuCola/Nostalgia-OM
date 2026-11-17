@@ -12,6 +12,26 @@
    "addr": "0x611d1035",
    "len": 12
   },
+  "hook_bga": {
+   "addr": "0x6123825e",
+   "len": 7
+  },
+  "hook_bgb": {
+   "addr": "0x611cb433",
+   "len": 7
+  },
+  "hook_bgc": {
+   "addr": "0x611e44d7",
+   "len": 7
+  },
+  "hook_bgd": {
+   "addr": "0x611eae1e",
+   "len": 7
+  },
+  "hook_blk": {
+   "addr": "0x611c7922",
+   "len": 5
+  },
   "hook_c1e": {
    "addr": "0x605053cc",
    "len": 7

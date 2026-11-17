@@ -6383,10 +6383,12 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   `border-preview-not-in-video`, through the driver's new `expect:pxsame` / `expect:pxdiff` (the rear screen as shot:
   two pixels the same / different). `--without` v0.31 alpha test 1: the first two `caught`.
 - Suite (build of 7af273c, the package's bytes): **41 of 42 pass**, the new three included, patch-audit and
-  static:changed-bytes pass; `static:hook-list` FAILs only for the five new hooks, not yet in hooks.json.
+  static:changed-bytes pass; `static:hook-list` failed only for the five new hooks until they were recorded, then
+  passed with the other static checks: **42 of 42**.
 - Hooks (reviewed for the start-up rule: before the first shutter event bl_gv is the stock read plus a few memory reads,
   bl_tail is the stock loop for every value but ours): hook_bga 0x6123825e, hook_bgb 0x611cb433, hook_bgc 0x611e44d7,
-  hook_bgd 0x611eae1e (7 B each, call target only), hook_blk 0x611c7922 (5 B). Not yet in tools/test/hooks.json.
+  hook_bgd 0x611eae1e (7 B each, call target only), hook_blk 0x611c7922 (5 B). Recorded in tools/test/hooks.json
+  with the owner's OK (2026-11-17, "Yes, record them"); only these five entries were added.
 - Clash: feature/frame-lines (XPan / 21:9, not merged) uses the same loop-end site 0x611c7922 and values 2 / 3: merging
   both needs one tail that handles both.
 - Package `test-builds/2026-11-17-border-preview-1` (private folder): E1479999.BIN `db1fedfa…a732`, VERSION
