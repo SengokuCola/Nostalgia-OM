@@ -32,6 +32,8 @@ class P:                                   # toolchain and stock identity (set f
 
 LAYOUT = HERE / 'vendor' / 'caduceus-bundles-layout.json'    # Caduceus (Apache-2.0) bundle-table layout
 HOOKS = {'.hook_color': (0x60518615, bytes.fromhex('cd6cfdf060')),
+         '.hook_crs': (0x60061183, bytes.fromhex('470c93cd79fd0000')),   # crop modes: the settings store write (power-off)
+         '.hook_crb': (0x6006120e, bytes.fromhex('fccf80d273a3')),       # crop modes: the buffer before the write (menus)
          '.hook_shutter': (0x60415216, bytes.fromhex('cd2d01f024')),
          '.hook_set': (0x60b8798b, bytes.fromhex('dd04d90200f044')),
          '.hook_pmod': (0x6129ba07, bytes.fromhex('0cfcde10ec')),
@@ -382,6 +384,8 @@ def build(defaults, testfile, out):
     struct.pack_into('<I', m, o(0x60045e9c), EXT12[1])   # v0.27: to the end of ext12 (GX3: 0x60f99800 loads)
     m[o(EXT11[0]):o(EXT11[0]) + len(blobs['.ext11'])] = blobs['.ext11']
     m[o(EXT12[0]):o(EXT12[0]) + len(blobs['.ext12'])] = blobs['.ext12']
+    import crop                          # custom crop modes (feature/crop-modes): tables after the code is in place
+    crop.apply(m, o, sy, log=lambda t: print(t, file=sys.stderr))
     b13 = blobs['.ext13']                                # v0.30 test 10: the debug log (GX4-proven reserve to 0x6103f000)
     print('SIZE .ext13', len(b13), EXT13[1] - EXT13[0], file=sys.stderr)
     assert EXT13[0] + len(b13) <= EXT13[1] and set(m[o(EXT13[0]):o(EXT13[1])]) <= {0xff}, len(b13)

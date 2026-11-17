@@ -1,5 +1,7 @@
 SECTIONS {
   .hook_color   0x60518615 : { *(.hook_color) }
+  .hook_crs     0x60061183 : { *(.hook_crs) }   /* crop modes: the settings store write (power-off: M patched in RAM) */
+  .hook_crb     0x6006120e : { *(.hook_crb) }   /* crop modes: the buffer before the write (after a menu) */
   .hook_shutter 0x60415216 : { *(.hook_shutter) }
   .ext1         0x6031e920 : { *(.ext1) }
   .ext4         0x60a8f100 : { *(.ext4) }
@@ -244,3 +246,17 @@ dl_none       = 0x610ba054;         /* #37: the walk's return (d0 = found) */
 ex_back       = 0x60457580;         /* v0.27 EXIF: after the hook's 8 bytes */
 ds_get        = 0x610cd5ac;         /* #54: the camera's data store, read: a0 buffer, d0 item, d1 length (call [],4) */
 ds_put        = 0x610cd5c4;         /* #54: and write, marking the item changed: a1 0 as the camera's (call [d2,a2],16) */
+/* custom crop modes (crop.s): where the stock switch cases continue after setting width and height */
+cr_os_j       = 0x60c14d28;
+cr_ta_j       = 0x60c15156;
+cr_sa_j       = 0x60c0670e;
+cr_sb_j       = 0x60c28c7b;
+cr_sc_j       = 0x60c2ab68;
+cr_pb_j       = 0x60c66889;
+cr_gv0        = 0x610fd8ef;         /* the GUI getter (d0 id, a0 out) */
+cr_ef         = 0x60060eff;         /* the store write's first call (replayed by cr_sin) */
+cr_sin_back   = 0x6006118b;
+cr_sb_back    = 0x60061214;
+cr_lr_j       = 0x60bf2d2b;         /* the live view ratio switch: mov d0,(28,sp) (the height) */
+cr_rc_j       = 0x60c0d35f;         /* ratioToConvertSize: mov d0,(4,a1); retf [],0 */
+cr_oa_j       = 0x60c14b95;         /* getOutputAspect: mov d0,(16,sp) */

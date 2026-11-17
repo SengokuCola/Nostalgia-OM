@@ -243,6 +243,21 @@ GRAIN_2_COARSE = '^Film Grain on COLOR 1-4: 2 Coarse, Off, Off, Off$'
 EDIT_RGB = f'{OPEN_RGB} main+1 wait menu wait wait'
 
 
+# crop modes: from 4:3 on the shooting screen, the super control panel's Image Aspect cell, the main dial n steps along
+# the camera's list 4:3, 16:9, 3:2, 1:1, 3:4, then ours 5:4, XPan, 21:9 (n = 1 16:9, 6 XPan, 7 21:9).
+def PICK_ASPECT(n):
+    return 'ok down down right right' + ' main+1 wait' * n
+
+
+def CROP_LINE(tag, then, set_to, after, now):
+    return (rf'^CROP MODES \(crop round 1\): tag at the first half-press {tag}, Image Aspect then {then}, set to {set_to}, '
+            rf'after {after}, now {now}$')
+
+
+def CROP_NOW(now):
+    return rf'^CROP MODES \(crop round 1\): .*, now {now}$'
+
+
 CK_WORDS = ['none', 'none (its film has some)', "its film's", 'changed']   # has values x 2 + differs from the built-in
 
 
@@ -331,6 +346,17 @@ TESTS = {
     'border-preview-not-in-video': [
         Boot(f's1 wait wait {BORDER_TO_3} {BORDER_LINE_ON} s1 wait wait poweroff'),
         Boot(f'wait wait s1 wait wait {BORDER_LINE_OFF_VIDEO} poweroff', photo_switch=PHOTO_SWITCH_VIDEO),
+    ],
+    # crop modes: XPan (Image Aspect 6) is saved as 16:9 with our tag, so the camera starts on 16:9; the first half-press
+    # puts XPan back (the start-up rule: nothing of ours before it).
+    'crop-xpan-starts-as-16-9-and-comes-back': [
+        Boot(f's1 wait wait {PICK_ASPECT(6)} s1 wait wait poweroff', expect=[CROP_NOW(6)]),
+        Boot('wait wait s1 wait wait poweroff', expect=[CROP_LINE('43520006', 3, 6, 6, 6)]),
+    ],
+    # crop modes: a stock ratio (16:9) is saved as it is, with no tag, and nothing is set at the first half-press.
+    'crop-stock-ratio-left-alone': [
+        Boot(f's1 wait wait {PICK_ASPECT(1)} s1 wait wait poweroff', expect=[CROP_NOW(3)]),
+        Boot('wait wait s1 wait wait poweroff', expect=[CROP_LINE('00000000', 0, 0, 0, 3)]),
     ],
     # better grain g2: the Film Grain row steps 0..5 (no step past 5) and keeps the old level byte in step (5 -> High 3,
     # 2 -> Low 1); the Grain Size row (Medium -> Coarse); both kept over a power-off (the debug log's NOW line).

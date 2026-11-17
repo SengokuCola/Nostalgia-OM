@@ -860,3 +860,44 @@ def dial_streams():
     for p in [dial_label(t) for t in DIAL_WORDS] + [value_picture(t) for t in dial_value_words()]:
         out.append((p.shape[1], p.shape[0], encode11(bytes(p.flatten().tolist()), p.shape[1], p.shape[0])))
     return out
+
+
+# Custom crop modes (feature/composition-guides): the SCP aspect strip's pictures for the new ratios, 100 x 76 as the
+# stock ones (471 / 472 / ...: white figures about 31 px tall, a 2 px dark edge, baseline row 53, measured from the
+# camera's "4:3"). Our drawing in DejaVu Sans Condensed; crop.py puts them at CR_IC0 + 0..2.
+CROP_LABELS = ('5:4', 'XPan', '21:9')
+
+
+def crop_pictures():
+    return [picture([(t, 31, 53)], CW, CH) for t in CROP_LABELS]
+
+
+def crop_streams():
+    return [(CW, CH, encode11(bytes(p.flatten()), CW, CH)) for p in crop_pictures()]
+
+
+# c2: the current-value labels. Top bar (46 x 34, as 10930 "16:9" / 10931 "4:3": figures rows 5..28 inside a 2 px
+# dark edge) and the SCP cell (160 x 48, as 5859 / 5863: no edge, fill 13, edge shades 14 / 15, rows 8..39).
+def cell_quant(cov):
+    px = np.zeros(cov.shape, dtype=np.uint8)
+    px[cov >= 0.15] = 15
+    px[cov >= 0.40] = 14
+    px[cov >= 0.66] = 13
+    return px
+
+
+def cell_picture(txt, w=160, h=48, cap=32, base=39):
+    small, b = word(txt, cap, w - 20)
+    cov = np.zeros((h, w))
+    y0, x0 = int(round(base - b)), (w - small.shape[1]) // 2
+    sh = cov[y0:y0 + small.shape[0], x0:x0 + small.shape[1]]
+    cov[y0:y0 + small.shape[0], x0:x0 + small.shape[1]] = small[:sh.shape[0], :sh.shape[1]]
+    return cell_quant(cov)
+
+
+def crop_label_streams():
+    """[(w, h, stream)]: the strip's 3 (100 x 76), the top bar's 3 (46 x 34), the SCP cell's 3 (160 x 48)."""
+    out = list(crop_streams())
+    out += [(46, 34, encode11(bytes(picture([(t, 24, 28)], 46, 34).flatten()), 46, 34)) for t in CROP_LABELS]
+    out += [(160, 48, encode11(bytes(cell_picture(t).flatten()), 160, 48)) for t in CROP_LABELS]
+    return out

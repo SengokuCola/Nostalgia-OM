@@ -3136,6 +3136,8 @@ st_get:
 4:
  jmp fl_tt
 st_stk:
+ jmp cr_str                        /* crop modes: our labels (crop.s), then cr_stk */
+cr_stk:
  mov d0,d2
  call str_lang,[],0
  jmp str_back
@@ -10458,6 +10460,7 @@ lg_write:                         /* frame 40: (0) call slot, (4) handle */
  call lg_svt,[d2,d3,a2,a3],24     /* SAVES */
  call lg_cmc,[d2,d3,a2,a3],24     /* CUSTOM MODES (the same) */
  call lg_btc,[d2,d3,a2,a3],24     /* BUTTONS AND DIALS (the same) */
+ call cr_txt,[d2,d3,a2,a3],24     /* CROP MODES (crop.s) */
  call lg_evt,[d2,d3,a2,a3],24     /* the last 32 events, newest first */
  mov (lg_cur),a0                  /* camera: fopen "w" does not truncate (dl3, 2026-11-10): always the same length, */
  mov lg_bend,a1                   /* spaces after the text, CR LF last; dl8: only up to where the last report's text */
@@ -14441,7 +14444,7 @@ ar_ic:                            /* .hook_ic: our ▲ / ◀ / ▲◀▶▼ pict
  add d1,a0
  retf [],0
 1:
- jmp ic_get
+ jmp cr_ic                        /* crop modes: our labels (crop.s), then ic_get */
  .set AR_IC0, 0x7fe0              /* clear of Caduceus' 0x7f80..0x7fc3 (PR #26's ▲ id) */
  .balign 4
 ar_ent:
@@ -14950,6 +14953,7 @@ ex_out:                           /* the record as coded (ex_cd1) */
 nm_ex:
  call nm_load,[d2,d3,a2,a3],36
  call ex_live,[d2,d3,a2,a3],48
+ call cr_rst,[d2,d3,a2,a3],20     /* crop modes: cr_on, and the crop back (crop.s) */
  ret [d2,d3,a2,a3],36
 
 /* ex_live: `call ex_live,[d2,d3,a2,a3],48` at each half-press (the first: sd_load via nm_ex; then lg_pr after the editor's save),
@@ -20863,3 +20867,5 @@ bl_v:                             /* the value */
  call bl_gv,[d2,d3,a2,a3],28      /* stock 0x611eae1e: the same read (grid builder 0x611eab68) */
 .section .hook_blk,"ax"
  jmp bl_tail                      /* stock 0x611c7922: inc d3; add 68,a1; cmp d1,d3; lcs */
+
+ .include "crop.s"                /* custom crop modes (feature/crop-modes) */
