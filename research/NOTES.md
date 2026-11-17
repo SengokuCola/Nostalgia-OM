@@ -5936,3 +5936,48 @@ rgb-page-counts-every-click, halation-matches-the-model). Package `test-builds/2
   - **Camera (crombach, 2026-11-16, E1479999.BIN ec545b42…, GUIDES.BIN e433434b…): "Testing is good."** The front
     dial skips Color All off Saturation, "Sat. All [INFO]" from the dial and from INFO, no wheel label on the other
     screens after MENU / OK, the half-press reset, photos, video and films.
+
+## #68: our looks for photos only, video and S&Q stock (2026-11-16; camera-tested; branch feature/video-curves-68)
+Issue #68: in video, `st_run` skipped `cv_set` but still ran when the look had split toning, and read `cv_pp`, which
+still held the last photo pass's curve blocks. crombach: none of the custom settings are meant for video or S&Q.
+- **`st_run`:** `mx_photo` right after the COLOR key gate, so video and S&Q (mode code 10, or switch position 1 / 0
+  while the code is 0) leave the tables stock. Split toning, Tone Balance and RGB curves are now photos only. Before
+  this, split toning reached video (since v0.26, see "Split toning"). `cv_set` now runs on every pass that gets that far.
+- **`s_lv` (live view / movie request flags):** `mx_photo` first, so video and S&Q get no Glow or Art Effect flag.
+  The body moved to `.ext11` as `s_lv6`, because `.ext2` had 7 B too few. The v0.24-era changelog line "Movies
+  recorded with such a look get the effect too" no longer holds.
+- **Unchanged:** Colour Mix (already `mx_photo`), grain and halation (stills only). Films still reach video through the
+  COLOR block the camera keeps. Keeping them out means writes at the photo-to-video switch, the path behind #53.
+- **B:** `mx_photo` has no `MC_B` check, unlike `ss_photo`. On the camera B reads code 0 and the switch gives photo,
+  so B keeps its looks. In om-emu B reads 62 and would count as video. Analysis only.
+- Test `video-keeps-the-stock-tables` (emu_test.py): the fake COLOR job of `look-tables-match-the-model`, a photo
+  pass then a video pass (rc_in's mode code 10) of a look with split toning and curves. The video tables must equal
+  the camera's. On upstream main (v0.30.3) it is `caught` (entry 1: 145, camera 78). Suite 27 of 27 on the fix. The
+  Glow gate has no om-emu test: the live view request path is camera-only.
+- Camera check: video and S&Q with a look that has split toning, curves and Glow, after a photo in the same power-on.
+  The image must look stock. Photos in P / A / S / M / B and a custom mode must keep the full look.
+- **Camera, first try (crombach, 2026-11-16; build `bdfe521e…abf3`, GUIDES `0df6729b…86ed`, on top of
+  `feature/dial-label-per-page`): one quick reboot** while switching films in the Picture Mode menu. The screen went
+  black and the shutter closed, then it came back. crombach: it looks like the v0.30 test 12 reboot ("Test 12 camera,
+  first report", and "Reboot when resetting many films before a half-press"). The card's CADLOG.TXT was still the
+  15:32 one from v0.30.3: no release came after the flash. Cause unknown. It is not tied to this branch yet.
+- **Reproduced (crombach, camera, 2026-11-16):** scroll through the films in the Picture Mode menu with the right
+  arrow, held or pressed quickly, until the camera reboots. It happens every time. No film reset or edited, only the
+  films' defaults. Moving between films is much slower than between COLOR profiles with no film (a leak? guess). The
+  CADLOG after it has only the next power-on (the log is written at a release). Its films with changes read
+  "none", where the 15:32 log had 3. crombach says no film was reset, so how they were cleared is not known.
+- om-emu (P, the Picture Mode list, `right` with no waits): 60 and 120 presses are clean ("nothing unusual") on this
+  build. At 300 the om-emu node process is killed (exit -9, no log, about 1.4 GB). The same happens on upstream main
+  (v0.30.3 code), so the stop is not from this branch. Whether it is om-emu's own memory or the camera's code is not
+  known.
+- **Also on the v0.30.3 release (crombach, camera, 2026-11-16; `60b6d954…f546` from `patch.py --release v0.30.3`):
+  the same scrolling reboots it.** So it is older than this branch. Filed as #72. The #68 build is back on the card
+  for the video test.
+- **Camera-tested (crombach, 2026-11-16; on `feature/dial-label-per-page` c430a40, E1479999.BIN `3beac2ce…`, GUIDES.BIN
+  `56e88eeb…`): "Looks good. I didn't run into any issues, and the video and S&Q look normal."** Video and S&Q
+  stay stock. Photos keep their looks.
+- **A movie from the photo position (crombach, camera, 2026-11-16): stock.** A button mapped to recording in the photo
+  Button Function menu starts a movie with the switch at photo (CB161282.MOV; CADLOG: M, mode code 0, switch 2). It
+  "looked stock". So the photo position's movie gets none of our looks. Why is not known: the camera may change the
+  mode code while it records, or that movie's frames may not reach `st_run` / `s_lv6` as a COLOR job. That part is
+  a guess. No recording flag is needed for now.

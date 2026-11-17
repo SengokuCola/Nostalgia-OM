@@ -34,6 +34,12 @@ HALATION_CASES = ['fade3', 'odd2', 'small5', 'min5', 'w68', 'odd131', 'clamp5', 
 HALATION_CHECK = REPO / 'research/halation/emu_check.py'
 ENGINE = 'look-tables-match-the-model'
 DIAL = 'rgb-page-counts-every-click'
+# #68: our looks are for photos only. A video pass after a photo pass, the same look (split toning and curves), must
+# leave the camera's tables as they are (st_run: mx_photo 0). v0.30.3 kept split toning and the photo's curves.
+VIDEO = 'video-keeps-the-stock-tables'
+VIDEO_CASE = 'split-toning-and-curves'
+VIDEO_MODE = 0x0a                                # the mode code of video and S&Q (rc_in + 24, ss_photo)
+PHOTO_MODE = 0x01                                # P's mode code, so the photo pass does not rest on the snapshot's mode
 REAR_DIAL = 0x9032                               # the rear dial's event (cv_ev); a1 its signed clicks
 # (name, a1): first no clicks (the value as it is), then a fast turn of 3, then one past the range.
 DIAL_CASES = [('as-is', 0), ('up-3', -3), ('down-20', 20)]
@@ -626,12 +632,8 @@ def run_dial(emu, build, out, card0):
     return DIAL, errors
 
 
-def run_engine(emu, build, out, card0):
-    """The look engine in om-emu, called on a fake COLOR job: the camera's RGB stage, then our tone hook (st_run).
-    The tables must match look_model, and sd_crc zlib's CRC-32."""
-    d = out / ENGINE
-    d.mkdir(parents=True, exist_ok=True)
-    sym = elf_symbols(build / 'p.elf')
+def engine_job(sym):
+    """-> (the fake COLOR job's memory, its tables' read, cv_ram's live[0] address, a look's calls(name, look, mem))"""
     # The fake COLOR still of research/splittone/probe_test.py: at B the calls (stage, then tone), context C at B+0x200
     # (C+4 request R at B+0x400, C+12 output O at B+0x1000, C+48 11), R+8 its id with key 11 (COLOR), R+14 0x1000.
     job = [['B', 'dd'], ['B+1', f'={RGB_STAGE:#x}-B'], ['B+5', 'f010'],
@@ -641,13 +643,27 @@ def run_engine(emu, build, out, card0):
            ['B+0x408', '00000b00'], ['B+0x40e', '0010'], ['B+0x400+1660', '40143018' * 2]]
     tables = ['B+0x1000+1252', 3 * TABLE_BYTES]
     live0 = f'{sym["cv_ram"] + CV_LIVE:#x}'
-    spec = []
-    for name, (slot, balance, curves) in ENGINE_CASES.items():
+    def calls(name, look, extra=()):
+        slot, balance, curves = look
         cv = bytes(v & 255 for ch in curves for v in ch) + bytes(CV_SLOTS - 18)
-        mem = job + [['P+87', slot.hex()], ['P+65', f'{balance & 255:02x}'], [live0, cv.hex()]]
+        mem = job + [['P+87', slot.hex()], ['P+65', f'{balance & 255:02x}'], [live0, cv.hex()], *extra]
         base = {'pc': 'B', 'regs': {'a0': 'B+0x200', 'd3': 'B+0x200'}, 'max': 5000000, 'mem': mem, 'read': [tables]}
-        spec += [{**base, 'name': name + ':stage', 'stop': ['B+7']},
-                 {**base, 'name': name, 'stop': [hex(TONE_NEXT)], 'read': [tables, [f'{sym["st_k"]:#x}', 36]]}]
+        return [{**base, 'name': name + ':stage', 'stop': ['B+7']},
+                {**base, 'name': name, 'stop': [hex(TONE_NEXT)], 'read': [tables, [f'{sym["st_k"]:#x}', 36]]}]
+    return job, tables, live0, calls
+
+
+u16s = lambda h: list(struct.unpack(f'<{len(h) // 4}H', bytes.fromhex(h)))
+
+
+def run_engine(emu, build, out, card0):
+    """The look engine in om-emu, called on a fake COLOR job: the camera's RGB stage, then our tone hook (st_run).
+    The tables must match look_model, and sd_crc zlib's CRC-32."""
+    d = out / ENGINE
+    d.mkdir(parents=True, exist_ok=True)
+    sym = elf_symbols(build / 'p.elf')
+    job, tables, live0, calls = engine_job(sym)
+    spec = [c for name, look in ENGINE_CASES.items() for c in calls(name, look)]
     spec.append({'name': 'reset', 'pc': 'B', 'stop': ['B'], 'max': 1,
                  'mem': [['P+87', '00000000'], ['P+65', '00'], [live0, bytes(CV_SLOTS).hex()]]})
     crc_data = bytes((i * 151 + 7) & 255 for i in range(CRC_BYTES))
@@ -658,7 +674,6 @@ def run_engine(emu, build, out, card0):
     res = run_ncall(emu, build, d, card0, 's1 ncall', spec)
     if isinstance(res, str):
         return ENGINE, [res]
-    u16s = lambda h: list(struct.unpack(f'<{len(h) // 4}H', bytes.fromhex(h)))
     errors = []
     for name, (slot, balance, curves) in ENGINE_CASES.items():
         before, after = u16s(res[name + ':stage']['mem'][0]), u16s(res[name]['mem'][0])
@@ -676,6 +691,30 @@ def run_engine(emu, build, out, card0):
     return ENGINE, errors
 
 
+def run_video(emu, build, out, card0):
+    """#68: a photo pass of a look with split toning and curves, then a video pass of it (rc_in pointing at a mode
+    block with code 10). The video pass must leave the RGB stage's tables unchanged."""
+    d = out / VIDEO
+    d.mkdir(parents=True, exist_ok=True)
+    sym = elf_symbols(build / 'p.elf')
+    calls = engine_job(sym)[3]
+    look = ENGINE_CASES[VIDEO_CASE]
+    # the mode block in the free gap between context C (B+0x200, 0x100 B) and request R (B+0x400)
+    mode = lambda code: [[f'{sym["rc_in"]:#x}', '=B+0x300'], ['B+0x300', '00' * 32], ['B+0x300+24', f'{code:02x}']]
+    res = run_ncall(emu, build, d, card0, 's1 ncall',
+                    calls('photo', look, mode(PHOTO_MODE)) + calls('video', look, mode(VIDEO_MODE)))
+    if isinstance(res, str):
+        return VIDEO, [res]
+    errors = []
+    before, after = u16s(res['video:stage']['mem'][0]), u16s(res['video']['mem'][0])
+    if u16s(res['photo']['mem'][0]) == u16s(res['photo:stage']['mem'][0]):
+        errors.append('the photo pass left the tables unchanged: the look did not run (out.json)')
+    if after != before:
+        bad = next(i for i in range(len(before)) if after[i] != before[i])
+        errors.append(f'video: table entry {bad} is {after[bad]}, the camera wrote {before[bad]} (out.json)')
+    return VIDEO, errors
+
+
 def newest_looks():
     def key(d):
         n, _, pre = d.name.lstrip('v').partition('-')
@@ -687,7 +726,7 @@ def newest_looks():
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('build', type=pathlib.Path)
-    ap.add_argument('--only', nargs='+', choices=sorted([*TESTS, AUDIT, HALATION, ENGINE, DIAL, *STATIC]))
+    ap.add_argument('--only', nargs='+', choices=sorted([*TESTS, AUDIT, HALATION, ENGINE, DIAL, VIDEO, *STATIC]))
     ap.add_argument('--jobs', type=lambda v: max(1, int(v)), default=DEFAULT_JOBS)
     ap.add_argument('--out', type=pathlib.Path)
     ap.add_argument('--looks', type=pathlib.Path)
@@ -710,7 +749,7 @@ def main():
     looks = (a.looks or newest_looks()).resolve()
     make_card(emu, build, looks, card0)
     fixtures = make_fixtures(out, looks)
-    names = a.only or sorted([*TESTS, AUDIT, HALATION, ENGINE, DIAL, *STATIC])
+    names = a.only or sorted([*TESTS, AUDIT, HALATION, ENGINE, DIAL, VIDEO, *STATIC])
     stock = static_check.find_stock(a.stock) if any(n in STATIC for n in names) else None
     runs = [(n, k) for n in names for k in range(1, a.repeat + 1)]
     print(f'{len(names)} tests{f" x {a.repeat}" if a.repeat > 1 else ""} on {build}, results in {out}')
@@ -737,6 +776,8 @@ def main():
                 return run_engine(emu, build, d, card0)
             if n == DIAL:
                 return run_dial(emu, build, d, card0)
+            if n == VIDEO:
+                return run_video(emu, build, d, card0)
             first = shared.get((k, boot_key(TESTS[n][0])))
             return run_test(n, TESTS[n], emu, build, card0, d, first and first.result(), fixtures)
         except static_check.Skip as e:

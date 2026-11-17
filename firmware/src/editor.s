@@ -2578,12 +2578,7 @@ xp:                               /* also Z = (a1 == 0) for the ext2 stubs (v0.2
  retf [],0
 
 s_lv:                             /* d0 = 11, a2 = request, a3 = record+248; d3 live */
- call xp,[],0
- beq 9f
- add 16,a1
- jmp (a1)
-9:
- jmp lv_skip                      /* 0x6046b94f */
+ jmp s_lv6                        /* #68: the body is in .ext11 (.ext2 is full) */
 
 s_nr:                             /* the site's `call ...,[d2,d3],12` frame; d0 key, d1, a0 as for the getter */
  mov d0,d3
@@ -8322,6 +8317,18 @@ s_wl:
  * each entry also gets its channel's curve delta D(t); a COLOR with curves and no split toning runs with K = 0).
  * Stores: own stack frame, O+1252..O+3171, cv_pb / cv_pp. */
 .section .ext11,"ax"
+/* s_lv6: s_lv's body. #68: no Glow / Art Effect flags in video or S&Q (recording, its live view), as mx_photo. */
+s_lv6:
+ call mx_photo,[],0
+ cmp 0,d0
+ beq 9f
+ call xp,[],0
+ beq 9f
+ add 16,a1
+ jmp (a1)
+9:
+ jmp lv_skip                      /* 0x6046b94f */
+
 st_run:
  add -100,sp
  mov d0,(64,sp)
@@ -8345,6 +8352,9 @@ st_run:
  cmp 0,d0
  bne s9
 1:
+ call mx_photo,[],0               /* #68: photo modes only; video (recording, its live view) stays stock */
+ cmp 0,d0
+ beq s9
  .if ST_STILL
  movhu (14,a1),d0                 /* sp2: still development only (R+14 0x1000, column 0 of the curve rows) */
  cmp 0x1000,d0
@@ -8442,15 +8452,8 @@ st_run:
  cmp 91,d3                        /* then Highlights: slot +57 / +58 */
  bne 2b
  mov d2,(56,sp)                   /* rgb-curves: COLOR k's curves (blocks, cv_pp), as a mask */
- call mx_photo,[],0               /* colour mix test 2 (owner: "Photos only"): the curves in photo modes only, video */
- cmp 0,d0                         /* stays as it was (split toning unchanged) */
- beq 341f
  mov (96,sp),d0
  call cv_set,[d2,d3,a2,a3],20
- bra 342f
-341:
- clr d0
-342:
  mov d0,(96,sp)
  mov (56,sp),d2
  or d0,d2
