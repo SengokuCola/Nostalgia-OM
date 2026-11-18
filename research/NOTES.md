@@ -7518,3 +7518,18 @@ camera's own info-display settings, with show / hide per item, several set-ups, 
   `bne 8f`. Scan of firmware/src: four such (xb_sh's bne; the Border write's `blt 7f`, 8906f3d; the A-B / G-M write's
   `blt 7f`, older; a `mov d1,(4,sp)` in the disabled XB_SHG block). Put back (2671e69); new `static:comment-swallow`.
 - Test 4 `test-builds/2026-11-18-v0.41-dev-test4`: `f3e4929e…7c56` (2671e69), a second build matches; suite 71 of 71.
+
+## v0.41-dev test 4 on the camera; test 5 = the border past the cut sides (2026-11-18; test 5 emulator, on the card)
+- **Test 4 camera (owner): "on portrait orientation the border doesnt go all the way to the edge of the frame"; "the
+  shading is slowwwwww. It takes forever to save. Also, 0 to 1 is too large of a jump".** Photos PB183445..464 and the
+  log in the private card backups. Black borders right in every photo at every ratio (291 / 218 / 259 / 143 / 166 px
+  as white). The full-size photos reach every edge; the 1600 px preview the camera stores in each JPEG (the last
+  embedded JPEG: 1600 x 1200, 1536 x 864, 1584 x 1056, 1200 x 1200, 880 x 1176, 1440 x 1152, 1600 x 592, 1600 x 688)
+  has a 1 px line of picture at its cut edges at every ratio but 4:3, level and upright alike. Matching the preview
+  against the photo: it covers about 7 px more of the buffer on each cut side. Log: "Shading (gentler s1): photos 1,
+  taken over 2, capture byte differed 0, last level -1, last time (ms) 2328" -> the Shading session (s2: faster,
+  gentler low levels, the 1 vs 2).
+- Test 5 (d709d91): cr_bdc gives bd_run a margin past a crop's cut sides (cr_mr rows / cr_mp pairs, at most 32 px,
+  as far as the buffer goes); bd_run widens the painted area and B / Bp by it, so the photo keeps its widths and the
+  preview's edge is border. emu_check 24 of 24 exact; test 4's build `caught`. Suite 71 of 71. Package
+  `test-builds/2026-11-18-v0.41-dev-test5` `1e0d279e…6a9` (second build matches), on the owner's card.
