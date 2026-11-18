@@ -7886,3 +7886,7 @@ Test driver tools/emulator/focus_stacking.mjs runs this routine with controlled 
   build.
 - Build `f032d80e…c02c` (a second build matches); static checks all pass (hook_rr from #82 in the list, #79's patch
   site 0x6090199e:2); suite **88 of 88**. Package `test-builds/2026-11-18-v0.41-dev-test6`. Camera test pending.
+- **Test 6 camera-tested 2026-11-18** (owner: "this looks good, except turn the shading back to standard so it is as
+  quick as normal (the +2, -2)"); log clean; s1 at -5 took 2737 ms. **Test 7** (eaf07c7): XB_SH 0, the camera's own
+  Shading at every level (as p1 / p3 ran on the camera); build `94fbd976…2fab` (a second build matches), suite 88 of
+  88; package `test-builds/2026-11-18-v0.41-dev-test7`.
