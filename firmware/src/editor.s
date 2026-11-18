@@ -11836,6 +11836,30 @@ lg_sum:
  LGS tg_l5                        /* g3: tiles made the fast way */
  mov (tg_nf),d0
  LGD
+ LGS vg_l1                        /* gentler Shading s1: our vignettes */
+ mov (vg_n),d0
+ LGD
+ LGS vg_l2
+ mov (vg_nt),d0
+ LGD
+ LGS vg_l3
+ mov (vg_nd),d0
+ LGD
+ LGS vg_l4
+ movbu (vg_lvc),d0
+ extb d0
+ cmp 0,d0
+ bge 177f
+ LGS vg_mi
+ movbu (vg_lvc),d0
+ extb d0
+ not d0
+ inc d0
+177:
+ LGD
+ LGS vg_l5
+ mov (vg_ms),d0
+ LGD
  LGS lg_y0                        /* now: mode, exposure, WB, picture, screen */
  call lg_new,[],0
  movbu (14,a3),d0
@@ -21372,3 +21396,5 @@ bl_v:                             /* the value */
  .include "crop.s"                /* custom crop modes (feature/crop-modes) */
 
  .include "screeninfo.s"          /* screen info: hook, handlers, tables (ext12) */
+
+ .include "shading.s"             /* gentler Shading s1 (#22): our own vignette on stills (ext13) */

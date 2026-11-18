@@ -36,6 +36,14 @@ HALATION_CHECK = REPO / 'research/halation/emu_check.py'
 # research/border/model.py (research/border/emu_check.py). Small frames, a few seconds.
 BORDER = 'border-matches-the-model'
 BORDER_CHECK = REPO / 'research/border/emu_check.py'
+# gentler Shading s1 (#22, 2026-11-18): the vignette pass (shading.s vg_run) called directly on test frames must give
+# every byte of firmware/shading.py's model (research/shading/emu_check.py: darker and lighter, every level, the crops).
+SHADING = 'shading-matches-the-model'
+SHADING_CHECK = REPO / 'research/shading/emu_check.py'
+# ... and the code block's xb_sh (from xb_cap at a still): with COLOR 1's Shading at -3 (the camera's own row, set in
+# Picture Mode) it reads -3 through the getter key 0xf7c9, clears the capture's copy (+37722) and notes the level for
+# xb_gs; with Shading 0 it leaves everything as it is. On a fake capture (om-emu takes no photos).
+SHTAKE = 'shading-taken-over-at-a-still'
 ENGINE = 'look-tables-match-the-model'
 DIAL = 'rgb-page-counts-every-click'
 # #68: our looks are for photos only. A video pass after a photo pass, the same look (split toning and curves), must
@@ -321,6 +329,9 @@ SI_MODE_ON_VIDEO = 'expect:pxdiff:62,574,300,450'
 BORDER_TO_0 = f'{OPEN_BORDER}' + ' left wait' * 3 + ' expect:p:82=00 menu wait wait s1 wait wait'
 BORDER_TO_M3 = f'{OPEN_BORDER}' + ' left wait' * 3 + ' expect:p:82=fd menu wait wait s1 wait wait'   # black -3
 BORDER_FROM_M3 = f'{OPEN_BORDER}' + ' right wait' * 3 + ' expect:p:82=00 menu wait wait s1 wait wait'
+# gentler Shading: Picture Mode's Shading row (the camera's own, item 5399), the 13th (pm_list); setting 912 = COLOR 1's
+OPEN_SHADING = 'ok wait ok wait' + ' down wait' * 12
+SHADING_TO_M3 = f'{OPEN_SHADING}' + ' left wait' * 3 + ' expect:val:912=-3 menu wait wait s1 wait wait'
 # better grain g2: the Film Grain strength row, the 16th (Grain Size under it); COLOR 1's level byte +53 is P + 85
 OPEN_GRAIN = 'ok wait ok wait' + ' down wait' * 15
 GRAIN_2_COARSE = '^Film Grain on COLOR 1-4: 2 Coarse, Off, Off, Off$'
@@ -837,6 +848,64 @@ def run_border(emu, build, out, card):
     if r.returncode == 0:
         return BORDER, []
     return BORDER, [l for l in r.stdout.splitlines() if l.startswith('DIFF')] or [f'emu_check.py exit {r.returncode} (check.log)']
+def run_shading(emu, build, out, card):
+    """vg_run on research/shading/emu_check.py's default cases in om-emu: bit-exact with firmware/shading.py, registers
+    and sp back, nothing past the frame, levels 0, 6 and -6 untouched."""
+    d = out / SHADING
+    r = subprocess.run([sys.executable, SHADING_CHECK, build, '--out', d, '--card', card], capture_output=True,
+                       text=True, timeout=BOOT_TIMEOUT_S, env={**os.environ, 'OM3_EMU': emu})
+    d.mkdir(parents=True, exist_ok=True)
+    (d / 'check.log').write_text(r.stdout + r.stderr)
+    if r.returncode == 0:
+        return SHADING, []
+    return SHADING, [l for l in r.stdout.splitlines() if l.startswith('DIFF')] or [f'emu_check.py exit {r.returncode} (check.log)']
+
+
+def run_shtake(emu, build, out, card0):
+    """xb_sh (`call xb_sh,[d2,d3],20`, a3 = the capture, d1 / a1 kept) on a fake capture whose +37722 is in a scratch
+    area: boot 1 sets COLOR 1's Shading to -3 in Picture Mode, then three calls (the capture's byte -3 as the camera
+    copies it, 0 as in a burst's later frame, and 7, not a copy of it: left alone); boot 2 leaves Shading at 0."""
+    sym, xb = elf_symbols(build / 'p.elf'), elf_symbols(build / 'xb10000000.elf')
+    target = f"W(P+{sym['XPTR']})+{xb['xb_sh'] - 0x10000000:#x}"
+    lvl, nt, nd = sym['vg_lvl'], sym['vg_nt'], sym['vg_nd']
+    def case(name, byte):
+        mem = [['B', 'dd'], ['B+1', '=(B+0x10)-B'], ['B+5', 'c014'], ['B+0x10', 'dc'],
+               ['B+0x11', f'=({target})-(B+0x10)'], ['B+0x100', f'{byte & 255:02x}'],
+               [f'{lvl:#x}', '00'], [f'{nt:#x}', '00000000'], [f'{nd:#x}', '00000000']]
+        return {'name': name, 'pc': 'B', 'stop': ['B+7'], 'max': 50000, 'mem': mem,
+                'regs': {'a3': f'B+0x100-{37722}', 'd1': '0x12345678', 'a1': '0x2468ace0', 'a2': '0x13579bdf'},
+                'read': [['B+0x100', 1], [f'{lvl:#x}', 1], [f'{nt:#x}', 4], [f'{nd:#x}', 4]],
+                'restore': [[f'{lvl:#x}', '00'], [f'{nt:#x}', '00000000'], [f'{nd:#x}', '00000000']]}
+    errors = []
+    boots = (('shading-3', f's1 wait wait {SHADING_TO_M3} ncall', [case('capture-byte-3', -3), case('capture-byte-0', 0),
+                                                                  case('capture-byte-other', 7)],
+              {'capture-byte-3': (-3, 0, 0xfd, 1, 0), 'capture-byte-0': (-3, 0, 0xfd, 1, 1),
+               'capture-byte-other': (0, 7, 0, 0, 1)}),   # test 4: not -3 or 0 there -> left alone, no vignette
+             ('shading-0', 's1 wait wait ncall', [case('shading-off', 0)], {'shading-off': (0, 0, 0, 0, 0)}))
+    for sub, tokens, spec, want in boots:
+        d = out / SHTAKE / sub
+        d.mkdir(parents=True, exist_ok=True)
+        res = run_ncall(emu, build, d, card0, tokens, spec)
+        if isinstance(res, str):
+            errors.append(f'{sub}: {res}')
+            continue
+        for o in spec:
+            r = res[o['name']]
+            if r['steps'] >= 50000:
+                errors.append(f"{sub} {o['name']}: xb_sh did not return (out.json)")
+                continue
+            d0 = int(r['regs']['d0'], 16)
+            d0 = d0 - (1 << 32) if d0 >= 1 << 31 else d0
+            got = (d0, *(int.from_bytes(bytes.fromhex(m), 'little') for m in r['mem']))
+            if got != want[o['name']]:
+                errors.append(f"{sub} {o['name']}: level, capture byte, VG_LVL, taken over, differed = {got}, "
+                              f"not {want[o['name']]}")
+            for k, v in (('d1', '12345678'), ('a1', '2468ace0'), ('a2', '13579bdf')):
+                if r['regs'][k] != v:
+                    errors.append(f"{sub} {o['name']}: {k} {r['regs'][k]}, not {v}")
+    return SHTAKE, errors
+
+
 def tone_strength(code):
     """a stored strength code -5..5 -> strength 0..10 (st_run; research/splittone/model.py strength)"""
     return 2 * code if code >= 0 else -2 * code - 1
@@ -1265,7 +1334,7 @@ def newest_looks():
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('build', type=pathlib.Path)
-    ap.add_argument('--only', nargs='+', choices=sorted([*TESTS, AUDIT, HALATION, BORDER, ENGINE, DIAL, VIDEO, GRAINMIX, CROPHIST, CROPPL, CROPQ, GATES, GRAINTILE, *STATIC]))
+    ap.add_argument('--only', nargs='+', choices=sorted([*TESTS, AUDIT, HALATION, BORDER, SHADING, SHTAKE, ENGINE, DIAL, VIDEO, GRAINMIX, CROPHIST, CROPPL, CROPQ, GATES, GRAINTILE, *STATIC]))
     ap.add_argument('--jobs', type=lambda v: max(1, int(v)), default=DEFAULT_JOBS)
     ap.add_argument('--out', type=pathlib.Path)
     ap.add_argument('--looks', type=pathlib.Path)
@@ -1288,7 +1357,7 @@ def main():
     looks = (a.looks or newest_looks()).resolve()
     make_card(emu, build, looks, card0)
     fixtures = make_fixtures(out, looks)
-    names = a.only or sorted([*TESTS, AUDIT, HALATION, BORDER, ENGINE, DIAL, VIDEO, GRAINMIX, CROPHIST, CROPPL, CROPQ, GATES, GRAINTILE, *STATIC])
+    names = a.only or sorted([*TESTS, AUDIT, HALATION, BORDER, SHADING, SHTAKE, ENGINE, DIAL, VIDEO, GRAINMIX, CROPHIST, CROPPL, CROPQ, GATES, GRAINTILE, *STATIC])
     stock = static_check.find_stock(a.stock) if any(n in STATIC for n in names) else None
     runs = [(n, k) for n in names for k in range(1, a.repeat + 1)]
     print(f'{len(names)} tests{f" x {a.repeat}" if a.repeat > 1 else ""} on {build}, results in {out}')
@@ -1313,6 +1382,10 @@ def main():
                 return run_halation(emu, build, d, card0)
             if n == BORDER:
                 return run_border(emu, build, d, card0)
+            if n == SHADING:
+                return run_shading(emu, build, d, card0)
+            if n == SHTAKE:
+                return run_shtake(emu, build, d, card0)
             if n == ENGINE:
                 return run_engine(emu, build, d, card0)
             if n == DIAL:
