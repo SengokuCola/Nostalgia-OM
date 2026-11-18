@@ -8,6 +8,7 @@
  .set XB_H0, 0                    /* v0.28 halation probe h0 (camera-tested 2026-11-12): off */
  .set XB_HL, 1                    /* v0.28: the Halation row (slot +30, 1..5) on our looks' stills (editor.s hl_run) */
  .set XB_BD, 1                    /* borders: the Border row (slot +50, 1..5; Frame's old byte) on our looks' stills (editor.s bd_run) */
+ .set XB_SH, 1                    /* gentler Shading s1 (#22): our own vignette on our COLOR looks' stills (shading.s vg_run) */
 /* Caduceus for OM-3 v0.20 test 5: the Extras code block (appended to GUIDES.BIN, our own code).
  *
  * Runs from its heap buffer (uncached pool, as the camera's malloc returns), relocated in place by entry 0. Linked at
@@ -127,6 +128,9 @@ xb_cap:
  movbu d0,(xb_ownf)
  clr d0
  movbu d0,(xb_gt)                 /* no camera grain unless a plain COLOR look with Grain below */
+ .if XB_SH
+ movbu d0,(VG_LVL)                /* gentler Shading: no vignette unless this still's Shading is taken over below */
+ .endif
  mov 38225,a1
  add a3,a1
  movbu (a1),d0
@@ -161,6 +165,11 @@ xb_cap:
  extb d0
  cmp 0,d0
  bgt 2f
+ .endif
+ .if XB_SH
+ call xb_sh,[d2,d3],20            /* gentler Shading: the camera's Shading -> ours (the Soft Focus passes, w 1024) */
+ cmp 0,d0
+ bne 2f
  .endif
  .if XB_FX
  ARTB d0
@@ -255,6 +264,53 @@ xb_rv:
  mov d0,mdr
  mov d2,d1
  ret [d2,d3],12
+
+/* xb_sh (gentler Shading s1, #22, 2026-11-18): `call xb_sh,[d2,d3],20` from xb_cap, a3 = capture, a1 = S, d1 = the
+ * flags -> d0 = the level taken over (0: none, the camera's own Shading stays). The current picture mode's Shading
+ * (getter key 0xf7c9: the value the camera's capture snapshot 0x603e7f65 copies to capture +37722, and the request
+ * builder 0x60553e36 from there to the development's +1752, the level combiner 33's set-up reads) at -5..-1 / 1..5:
+ * the capture's copy cleared, so the camera develops this still as with Shading 0, and the level noted for xb_gs
+ * (VG_LVL: shading.s vg_run draws our gentler vignette) and counted for the debug log (VG_NT; VG_ND when the capture's
+ * byte was not the setting's). The getter is the one xb_slot calls here. Keeps d1, a1, a2, a3. */
+xb_sh:
+ mov d1,(4,sp)
+ mov a1,(8,sp)
+ mov 63433,d0                     /* 0xf7c9: the current picture mode's Shading */
+ clr d1
+ mov 0,a0
+ call getter,[d2,d3],12
+ extb d0
+ cmp -5,d0
+ blt 8f
+ cmp 5,d0
+ bgt 8f
+ cmp 0,d0
+ beq 8f
+ mov d0,d2
+ mov 37722,a0
+ add a3,a0
+ movbu (a0),d1
+ extb d1
+ cmp d2,d1
+ beq 1f
+ mov (VG_ND),d3
+ inc d3
+ mov d3,(VG_ND)
+1:
+ clr d1
+ movbu d1,(a0)                    /* the camera's own Shading off for this still */
+ movbu d2,(VG_LVL)
+ mov (VG_NT),d3
+ inc d3
+ mov d3,(VG_NT)
+ mov d2,d0
+ bra 9f
+8:
+ clr d0
+9:
+ mov (4,sp),d1
+ mov (8,sp),a1
+ ret [d2,d3],20
 
 /* live view / movie (record -> development request 0x6046b86c, COLOR, the stock Art Effect gates passed):
  * a2 = request (+12 flags), a3 = record+248, d3 live. Glow only (Clarity is invisible on combiner 12, as Caduceus). */
@@ -535,11 +591,17 @@ xb_rec:                           /* `call xb_rec,[d2,d3],12`, a0 = job -> a1 = 
  .set P_LPTR, 708
 xb_gs:                            /* `calls` (0,sp) = return, a0 = job */
  movm [d2,d3,a2,a3],(sp)
- add -24,sp                       /* (0) call slot, (4) job, (8) level, (12) result, (16) halation 0..5, (20) border 0..5 */
+ add -28,sp                       /* (0) call slot, (4) job, (8) level, (12) result, (16) halation 0..5, (20) border 0..5,
+                                     (24) gentler Shading -5..5 */
  mov a0,(4,sp)
  clr d0
  mov d0,(16,sp)
  mov d0,(20,sp)
+ .if XB_SH
+ movbu (VG_LVL),d0                /* gentler Shading: the level xb_cap took over for this still (0 none) */
+ extb d0
+ .endif
+ mov d0,(24,sp)
  call xb_slot,[d2,d3],12
  cmp 0,a1
  beq 90f
@@ -593,9 +655,14 @@ xb_gs:                            /* `calls` (0,sp) = return, a0 = job */
  cmp 0,d1
  bne 10f
  .endif
+ .if XB_SH
+ mov (24,sp),d1                   /* gentler Shading: a level -> the setup, then vg_run */
+ cmp 0,d1
+ bne 10f
+ .endif
 90:                               /* no grain: the stock setup, as if called directly */
  mov (4,sp),a0
- add 24,sp
+ add 28,sp
  movm (sp),[d2,d3,a2,a3]
  jmp SF_ENT
 10:
@@ -639,6 +706,19 @@ xb_gs:                            /* `calls` (0,sp) = return, a0 = job */
  mov a1,a0
  call xb_h0,[d2,d3,a2,a3],48
  .endif
+ .if XB_SH
+ mov (24,sp),d0                   /* gentler Shading: after halation and grain, before the Border (which stays white) */
+ cmp 0,d0
+ beq 18f
+ mov (4,sp),a0
+ call xb_rec,[d2,d3],12
+ cmp 0,a1
+ beq 18f
+ mov a1,a0
+ mov (24,sp),d0
+ call VG_RUN,[d2,d3,a2,a3],104
+18:
+ .endif
  .if XB_BD
  mov (20,sp),d0                   /* borders: last, so no glow, halo or grain on the border */
  cmp 0,d0
@@ -653,7 +733,7 @@ xb_gs:                            /* `calls` (0,sp) = return, a0 = job */
  .endif
 20:
  mov (12,sp),d0
- ret [d2,d3,a2,a3],40
+ ret [d2,d3,a2,a3],44
 
  .if XB_H0
 /* xb_h0 (v0.28 halation probe h0, experiment): which odd byte of buffer 0x1000 is Cb and which Cr, and whether chroma

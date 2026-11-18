@@ -142,7 +142,8 @@ EXT10 = (0x61aa4300, 0x61aa47f0)
 EXT8 = (0x617e45f0, 0x617e47f0)            # section-8 tail (FF from 0x617e45e0, end 0x617e4800)
 EXT11 = (0x60f49800, 0x60f59800)           # v0.23: section 6 extended by 64 KiB (loader end word 0x60045e9c raised; camera-proven GX2)
 EXT12 = (0x60f59800, 0x60f99800)           # v0.27: section 6 extended by 256 KiB more (camera-proven GX3, 2026-11-10)
-EXT13 = (0x60fac000, 0x60fbc000)           # v0.30 test 10: the debug log, after the RGB work area (GX4-proven reserve to 0x6103f000)
+EXT13 = (0x60fac000, 0x60fc0000)           # v0.30 test 10: the debug log, after the RGB work area (GX4-proven reserve to 0x6103f000);
+                                            # gentler Shading s1: + 16 KB for the vignette pass and its tables (still inside the reserve)
 EXT3 = (0x6081fe10, 0x6081fffc)            # section-3 tail (FF from 0x6081fe00, end 0x60820000)
 EXT5 = (0x60adb5b0, 0x60adb7f0)            # section-5 tail (FF from 0x60adb5a0, end 0x60adb800)
 EXT6 = (0x60f49590, 0x60f497f0)            # section-6 tail (FF from 0x60f49580, end 0x60f49800)          # section-10 tail (FF from 0x61aa42f0, end 0x61aa4800)          # section-4 tail (FF from 0x60a8f088, end 0x60a8f800)
@@ -248,6 +249,8 @@ def build(defaults, testfile, out):
     (out / 'lgver.inc').write_text(f'lg_ver:\n .asciz "{ver}"\n')
     import halation                               # v0.28: the halation numbers and tables (firmware/halation.py)
     (out / 'hl_tab.inc').write_text(halation.inc())
+    import shading                                # gentler Shading s1 (#22): the vignette's mask (firmware/shading.py)
+    (out / 'vg_tab.inc').write_text(shading.inc())
     # v0.28 Blacks / Whites grid: our pictures in place of the camera's WB grid pictures (editor.s bwg_swap / bwg_ent)
     bw = ['.balign 4', 'bwg_ent:', ' .long ' + ', '.join(f'bwg_d{i}' for i in range(8))]
     streams = []
@@ -895,7 +898,8 @@ def make_xblock(out, sy, xtag):
                SEL=0x6052cf39, fwrite=0x608d4da9, PF_CAPTO=sy['pf_capto'], PF_CAP=sy['pf_cap'], E_LK=sy['e_lk'], E_RET=sy['e_ret'], E_RST=sy['e_rst'], REFRESH=0x611b20ea, XT_TAB=sy['xt_tab'], EMARK=680, EMAGIC=0x45334d4f,
                FL_HAS=sy['fl_has'], FACADE=0x60b8696a, AGET=0x603f039d, TXGET=0x604cd921, TXATT=0x604bc0cf, TXPF=0x604b77fb, TWO=sy['TWO'], TW_LEN=sy['TW_LEN'], FV0=sy['FV0'],
                WB_V=sy['wb_v'], wb_wtk=sy['wb_wtk'], wb_wem=sy['wb_wem'], HL_RUN=sy['hl_run'], BD_RUN=sy['bd_run'], TYPEMAP=0x60555b58,
-               TG_OWN=sy['tg_own'], TG_BAD=sy['tg_bad'], GS_EFF=sy['gs_eff'])
+               TG_OWN=sy['tg_own'], TG_BAD=sy['tg_bad'], GS_EFF=sy['gs_eff'],
+               VG_RUN=sy['vg_run'], VG_LVL=sy['vg_lvl'], VG_NT=sy['vg_nt'], VG_ND=sy['vg_nd'])
     sys.path.insert(0, str(ROOT / 'firmware'))
     import mkicons                                # v0.25 WB grid row: the left cell's glyphs (xblock xb_wbc)
     inc = ''.join(f'.set {k}, {getattr(mkicons, k)}\n' for k in ('WBC_IX', 'WBC_IY', 'WBC_TY', 'WBC_GH'))
