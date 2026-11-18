@@ -7537,3 +7537,27 @@ camera's own info-display settings, with show / hide per item, several set-ups, 
   and upright (orientation 1 and 6): the photo and its 1600 px preview both bordered to every edge (no picture line);
   the photos keep their widths (4:3 291, 16:9 218, 3:2 259, 1:1 291, 3:4 218, XPan 143, 21:9 166, Border -1 58). Log
   clean (21 photos, Shading 0 throughout).
+
+## Shading speed: what grain and halation did, and the hardware route (2026-11-18; analysis only)
+- Owner, after s2's estimates (±1 0.15 s, ±2 0.55 s, ±3 1.1 s, ±4 1.8 s, ±5 free): "Look into how we made grain fast an
+  halation fast. Apply that to shading."
+- **Grain** is fast because the CPU makes a small thing (the 1536-row tile, 4.7 MB) and the image processor (combiner
+  1, Grainy Film's blend) lays it over the whole photo; g3 made the tile itself from a 128-row band and cut the locks /
+  FLUSHes (1536 -> ~250). **Halation (h7)** is fast because it reads a sample (pass A: 4 rows a 64-px cell), works on
+  cells, and writes only pixels that change (g >= 2), many rows a lock. **Shading s2 already uses halation's tricks**
+  (only the outer part, rows skipped, many rows a lock); what is left is the area: through the bus window each pixel
+  read and written costs ~27 ns a byte each way (s2's calibration on s1's camera 2.33 s), ~2.2 s for a whole 20 MP
+  frame, so a broad vignette (±3, ±4) cannot be fast on the CPU. Grain's lesson is the one that applies: let the image
+  processor do the per-pixel work.
+- **The hardware route:** the development parameters carry a 64-point radial lens-shading gain table,
+  `ausEffectiveShadingCoefficient[64]`: u16 at +124..+251 of the parameter block, `ucShadingCancel` at +252 (the
+  camera's own dump 0x61a316ff..0x61a3175b prints them; two more dumpers print the same names for other parameter
+  blocks: 0x61a3cfd7, 0x61a41ef6). Our Vignette Correction row (VigFix, v0.21, camera-tested) already switches the
+  camera's lens vignetting correction per look (setting 0x8c21 -> request flag 0x2000). If this table is the gain that
+  correction applies, a gentler (or any) vignette is a different table per still: drawn by the image processor at no
+  time, smooth, in the photo and its previews alike. Not known yet: who fills the table and when, whether it is a plain
+  gain (and its scale), whether it is applied to the RAW data (before WB / colour) or later, and whether the camera's
+  own Shading effect already uses it (the Nov 12 probes found no strength in the request: this table would explain it).
+- **Next if the owner wants it (probes, camera):** p1 logs the table and +252 at a still with Vignette Correction on and
+  off and Shading 0 / -2 (debug log; no change to the photo); p2 scales the table by a fixed factor per still (plain
+  wall photos at Shading 0); then the real gentle curves. s2 stays the fallback.
