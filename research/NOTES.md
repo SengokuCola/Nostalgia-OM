@@ -7949,7 +7949,8 @@ Test driver tools/emulator/focus_stacking.mjs runs this routine with controlled 
   output): first pass recorded only; unchanged and Hue-only passes keep C+60 0 and the tables; split toning, curves,
   Tone Balance and Blacks change set 8 and rebuild (Blacks: O+3828 = O+3832, the LUT remapped); the camera's own bit
   0x40 kept; a still pass leaves C+60 alone and the next live pass catches its change; video leaves it alone; a fresh job
-  with the last look gives the same tables as the bit-set pass. Passes on this branch; `caught` on test 7 (`94fbd976…`:
+  with the last look gives the same tables as the bit-set pass. Passes on this branch (full suite 89 of 89, build
+  `3f9dc989…4c9f`, package `test-builds/2026-11-18-live-look-1`); `caught` on test 7 (`94fbd976…`:
   "split-toning: C+60 after the pass is 0x0, want 0x8 ... the tables were not rebuilt with the new look").
 - **Not known (camera only):** whether the camera's live-view contexts take C+60 per pass as the fake job does (if the
   camera kept it between passes, its own tone changes would rebuild forever, so most likely per pass); whether live view
