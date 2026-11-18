@@ -7438,3 +7438,18 @@ camera's own info-display settings, with show / hide per item, several set-ups, 
   upright (PB183425..440, private card backups): 4:3 291 / 292 px all round, 16:9 218, 3:2 259 / 260, 1:1 291 / 292,
   3:4 218, 5:4 291 / 292, XPan 143 / 144, 21:9 166; no picture outside the border. Log clean ("border fix", 16 photos,
   nothing unusual).
+
+## Black borders: one Border row -5..+5 (2026-11-18; emulator, test 3 packaged)
+- Owner: "add some sort of option to make the border black. so we could have white and black?"; of the two ways
+  (one row -5..+5, or a Border Colour row) the owner chose "One row, -5 to +5". The Border byte (slot +50 / record +48,
+  Frame's old byte, which the camera checks as -5..5) holds -5..+5: 1..5 white, -1..-5 black (BD_BLACK 0x80008000:
+  Y 0, Cb = Cr = 128), the same widths, 0 off. Row as Glow / Tone Balance (count 11, LOWCNT -5, bar 3f, readouts
+  rda_11 / rdb_11, write -5..5); xb_gs passes the signed level clamped to -5..5; bd_run sets d2 from the sign at its
+  start; bl_gv takes |level| for the live view frame line. Older builds read a black border as none (xb_gs: <= 0).
+- Emulator: emu_check 24 of 24 bit-exact (black5, black1, black3c in a 16:9 crop, levelm6 nothing);
+  border-row-minus-5-to-5-kept (three boots: 0 -> +5 -> +3, -> -5 -> -3, -> 0) and border-preview-on-for-black pass;
+  menu screenshots: the row reads -3 / +3, the bar centred. Suite on 8906f3d: 67 pass, 1 FAIL static:changed-bytes at
+  0x60e9b0d4:1 / 0x6152f8e4:1: two pointer words into our code whose first byte matched stock in test 1, so the
+  2026-11-18 --write-hooks had narrowed them by a byte (and 0x613317c0); hooks.json takes back their full words
+  (0x60e9b0d4:3, 0x613317c0:5, 0x6152f8e4:4, as before b0aaaa2); static_check then passes on tests 1, 2 and 3.
+  Package `test-builds/2026-11-18-v0.41-dev-test3`: `fa455b99…32aa`, a second build matches.
