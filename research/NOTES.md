@@ -7894,3 +7894,64 @@ Test driver tools/emulator/focus_stacking.mjs runs this routine with controlled 
   the Shading pass never ran). On the way the owner asked for the Shading row "back to ... -2 to +2"; om-emu showed the
   row runs -5..+5 on v0.40-alpha as released (rebuilt byte for byte, `fbef591d…`) and on test 7 alike, the camera's own
   range, never changed by Caduceus; the owner then: "sorry I was wrong". Test 7 stays as it is.
+
+## Live look: our tone rows follow live view at once (2026-11-18; emulator + analysis, camera test pending; branch feature/live-look-refresh)
+- Owner (2026-11-18): "get all the picture profile settings (especially split toning) applied immediately instead of on
+  half-press if possible. These should update in live view as we adjust them." Branch `feature/live-look-refresh` from
+  `try/v0.41-dev` 23116f3 (v0.40b = test 7, `94fbd976…`, rebuilt byte for byte here first).
+- **The rows, and how each reaches live view** (status words per row):
+
+  | Row | Where it acts | Live view before this branch |
+  |---|---|---|
+  | Picture Mode (film) | camera setting 111 / 901: the camera's own picture-mode change | at once (camera-tested 2026-11-17) |
+  | Color Mix | mx_go in the matrix function 0x605147a2, the development function's first stage; no mask test, runs every pass | most likely at once (analysis; not checked on the camera) |
+  | RGB | st_run / st_all on the tone tables | **next half-press** (camera-tested 2026-11-15, curves test 4) |
+  | HSL: Saturation | the camera's own setting per colour | at once (stock) |
+  | HSL: Hue, Luminance | hl_pp after the colour builder 0x60518381, which runs every pass for key 11 | at once (camera-tested 2026-11-18, perf branch test 2) |
+  | HSL: Shadows / Highlights (split toning) | st_run on the tone tables | **next AF / half-press** (camera-tested 2026-11-18) |
+  | Split Tone Balance | st_run | **next half-press** (analysis: same stage) |
+  | WB Compensation | wb_get at the camera's WB fine-tune reads (the pipeline parameter reads 0x604631b2 / c5 among them) | most likely at once (analysis) |
+  | Highlight & Shadow, Contrast, Shading | the camera's own settings | at once (stock) |
+  | B/W (Blacks / Whites) | `tone`: remaps the luminance LUT 0x60518db2 builds | **next half-press** (analysis: the LUT builder is mask-gated) |
+  | Sharpness, Noise Filter, Vignette Correction | capture reads only (hook_sh / nr1 / nr2, xb getter) | never: photos only (live view shows the camera's own values) |
+  | Glow | xb_lv in each live-view request (s_lv6) | Glow at once (analysis); Clarity never (invisible on combiner 12) |
+  | Halation, Film Grain, Grain Size, Border (image) | the still's development | never: photos only. Border's frame line is the screen's (border preview), not touched |
+
+- **Cause (analysis + om-emu).** Each live-view job (the request floods, gl2c camera log 2026-11-06) runs the development
+  function 0x605196b4 (both dispatcher wrappers 0x60519e3c / 0x60519e63 call it). Its stages read a mask in the job's
+  context C at C+60 and rebuild only when it asks: the RGB gamma stage 0x60516ad9 (copies the picture mode's curve into
+  O+1252.. unless its cache of the three curve pointers at (R+1524)+5220 matches and C+60 & 0x2230001e is 0), the
+  luminance LUT 0x60518db2 (0x4134063e), the tone curve 0x60518fa4 (0x3024ae); also 0x60515e64 (0x302006), 0x60517c71
+  (0x41300826), the colour stage's non-key-11 path 0x6051863f (0x3020ae), 0x6051958c (0xa00e). The colour builder (Hue /
+  Luminance) and the matrix function (Mix) have no mask test. Our split toning, Tone Balance and curves (st_run) bend the
+  gamma stage's tables and only when R = G = B (fresh), and Blacks / Whites (`tone`) remap the LUT, so a change of ours
+  waited for the camera's next own rebuild (a half-press, AF, a tone setting of its own).
+- **om-emu, the development function run whole** on a fake live-view job (research/splittone's fake COLOR job, R+14
+  0x0030, R+1524 pointing at a cache): first pass ~50k instructions, tables split-toned; after a split toning change a
+  pass with C+60 0 takes ~3.2k and keeps the old tables (the camera's symptom); with C+60 8 it takes ~50k and the
+  tables carry the new look; the next pass with 0 keeps them (~3.2k).
+- **Bit choice.** Bit 3 (8) is in the gamma stage's, the LUT's and the tone curve's masks, and otherwise only in
+  0x6051863f (not taken by a COLOR job) and 0x6051958c (0xa00e, after the tone curve). Bits 1, 2, 20, 21 are in nearly
+  every stage's mask (a full rebuild): not used.
+- **Built (`lv_ref`, colourmix.inc, ext12; no new hook, no hook moved).** mx_go (hook_mx, the development function's
+  first stage) calls it after its existing gates: SEC_READY (mx_g), cv_ok (the films read at the first half-press, so
+  nothing at power-on), the caller 0x605196fb, key 11 (or 12 with no filter), mx_photo (photos only: video and S&Q stay
+  stock, #68). It finds C through the development function's own frame ((24,sp) = C+12, at (108,F) from the matrix
+  function's frame F; R at (96,F) as mx_go already used). Not on still development (R+14 0x1000, built fresh). It
+  hashes the tone inputs of COLOR 1-4 (P slot +33, +47, +48, +55..+58; cv_ram live[k]'s 18 curve bytes, not the mix)
+  and keeps the hash per output O (C+12) in a 4-entry table (round robin; a new output is only recorded). When O's hash
+  changed since its last pass: C+60 |= 8, so that one pass rebuilds O's tone tables as the camera's own tone settings
+  do. The camera's own bits stay.
+- **Cost (om-emu).** An unchanged live-view pass: ~3,570 instructions (was ~3,200: +~380 for the hash and table). A pass
+  after a change: 50k..85k once per output (the camera's own build; 85k with curves and Blacks / Whites on). It runs on
+  the picture task, not in the dial click: the click (cv_ev, ed_set, tn_set, s_cur) is unchanged.
+- **Test `live-view-tone-tables-follow-a-change`** (direct call, the development function whole, 12 passes on one
+  output): first pass recorded only; unchanged and Hue-only passes keep C+60 0 and the tables; split toning, curves,
+  Tone Balance and Blacks change set 8 and rebuild (Blacks: O+3828 = O+3832, the LUT remapped); the camera's own bit
+  0x40 kept; a still pass leaves C+60 alone and the next live pass catches its change; video leaves it alone; a fresh job
+  with the last look gives the same tables as the bit-set pass. Passes on this branch; `caught` on test 7 (`94fbd976…`:
+  "split-toning: C+60 after the pass is 0x0, want 0x8 ... the tables were not rebuilt with the new look").
+- **Not known (camera only):** whether the camera's live-view contexts take C+60 per pass as the fake job does (if the
+  camera kept it between passes, its own tone changes would rebuild forever, so most likely per pass); whether live view
+  uses more than 4 outputs (then a change could miss one until the next half-press: no harm); how smooth it looks while
+  turning; Color Mix and WB Compensation (expected at once already: analysis). Test build: live look 1.

@@ -1,8 +1,8 @@
 > [!WARNING]
-> **Feature branch `feature/gentler-shading`, not released** (local, not pushed). Gentler Shading (#22): on our COLOR
-> looks' photos the camera's Shading is replaced by our own vignette, Shading -5 / +5 about the camera's -2 / +2 and
-> even steps between (not on the screen while shooting, a little slower saves). Test build s1 on v0.41-dev (grain g3 +
-> screen info s2): emulator only, camera test pending. Details: `research/NOTES.md`, "Gentler Shading s1".
+> **Feature branch `feature/live-look-refresh`, not released** (local, not pushed; on `try/v0.41-dev` = v0.40b).
+> Our tone rows (split toning, Tone Balance, Blacks / Whites, RGB curves) show in live view as they are
+> adjusted, without a half-press. Test build live look 1: emulator only, camera test pending. Details:
+> `research/NOTES.md`, "Live look".
 
 <h1 align="center">Caduceus for OM-3</h1>
 
