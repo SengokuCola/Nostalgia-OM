@@ -7940,3 +7940,53 @@ Test driver tools/emulator/focus_stacking.mjs runs this routine with controlled 
   the crop back at start-up)". Suite **89 of 89 pass** (88 of test 7, the start-up test replacing the old one, plus
   the direct test; static checks all pass: no new hook or patch site). Package `test-builds/2026-11-18-crop83-1`
   (private folder), go-back v0.40b = test 7 `94fbd976…2fab`. Camera test pending.
+
+## #83 crop83-1 on the camera; crop83-2: the crop kept after its start-up restore (2026-11-18; crop83-1 camera, crop83-2 emulator + analysis)
+- **Camera, crop83-1** (owner: "the xpan fix on lasts through 1 power cycle. after the second power cycle it resets to
+  16.9"). Log of the failing power-on (private, `card-backups/2026-11-18-crop83-1-tested`): "tag 43520006 at
+  start-up, Image Aspect then 3, set to 6, after 6, now 3"; display 3, 900 x 506; histogram area 900 x 506, trimmed 1;
+  6 shutter events, 0 photos; the first look at event 1 with edits waiting (one films-block write, M's changed byte
+  still 1 at event 6). So the restore ran at start-up, the live view's histogram was set up once at XPan, and later
+  Image Aspect was 3 again: something put the base back after us, with no SetValue we made.
+- **Ruled out in om-emu (crop83-1's build):** power cycles with and without half-presses, a menu in and out, no
+  half-press at all (4 cycles each): XPan every time. ar_setv(269) updates both copies in M (+0x2c2 and +0x32458). The
+  stock store write 0x60061183 is called from 0x60063afc (the store task's message handler: command 1 saves the stores
+  whose flags are set, M without a callback at 0x60063c2c, which is where cr_sin patches the live value) and from
+  0x60063da9 (the GUI's save, with a callback: cr_sbuf patches only the buffer); om-emu sends command 1 only at
+  power-off.
+- **Order (om-emu trace, WTID):** the settings task (165) writes 15258, 15319 x2, 15313, then 897, 2188, 679, 680, 897,
+  15312, 15322, 897, 2136 before the GUI's (168) first state change, where el_go and cr_el run. On the camera (bp1)
+  that state change came after 897 and 2188, and task 167 still wrote 897 twice after the first label: the camera's
+  start-up goes on after our restore, om-emu's does not. A scratch build restoring at the GUI's first dispatcher pass
+  (before 897 .. 2136, the camera's order) still kept XPan in om-emu, so those writes alone do not undo it; om-emu runs
+  no live view. Cause on the camera: **not known**; most likely the rest of the camera's start-up (the live view's set-up or
+  the settings task's tail), racing our restore: crop83-1 held at one start, not the next.
+- **crop83-2 (crop round 12):** `cr_chk` keeps the crop set at start-up. It runs from `si_upd` (the shooting screen's
+  updater, GUI task 168 as cr_el; om-emu: about 6 passes a second) while `cr_rch` is 1, and once more from cr_hp at the
+  first shutter event, which closes it. If Image Aspect (M + 0x2c2) is back at the crop's base it sets the crop again
+  (ar_setv behind the SEC_READY 0x40 gate, cr_self around it), at most 3 times, photo modes only. It stops at the next
+  GUI state change (gx_map: any screen opened), at a ratio set through the facade from the GUI task (`cr_sv` in sx_set),
+  or at a ratio that is neither crop nor base. **Found while testing:** a ratio picked on the control panel does not go
+  through sx_set (om-emu: "others set Image Aspect 0 times"), and the updater does not run while the panel is open, so
+  without the state-change stop a pick of 16:9 from XPan was taken back.
+- cr_rst opens the window only after a start-up restore. Its not-ready exit (7) moved within short reach of its three
+  gates: with crop83-2's added lines the assembler had made the first `beq 7f` into `bne; jmp`, which
+  `static:section-order` (rightly) no longer reads as a gate.
+- **Log** (CROP MODES, crop round 12): "...; kept after start-up: checks N, base back at check K (tag in memory then T),
+  set again R; others set Image Aspect W times (last V, task X, GUI task G); save patches S". T is 4352000x only if our
+  own save patch cr_sin wrote it again after cr_rst cleared it (a no-callback save of M during the power-on); S counts
+  those patches; W / X show a write of 269 by the camera through the facade.
+- **Tests:** `crop-kept-when-the-camera-puts-the-base-back` (boot 2: after the restore, both copies poked to 3 as a
+  block copy would; XPan back before any half-press, "set again 1"; crop83-1's build: caught, "03, not 06"),
+  `crop-xpan-21-9-5-4-kept-over-power-cycles` (XPan at three start-ups with and without a half-press, then 21:9 and 5:4
+  back at the next start-up; passes on crop83-1 too: om-emu does not show the camera's revert),
+  `crop-user-pick-after-start-up-kept` (16:9 picked on the control panel right after start-up stays through a
+  half-press, "set again 0"), and cr_chk's limits as direct calls in `crop-start-up-restore-photo-only` (stopped at
+  ar_setv: in place, base back, 3 times already, video, a pick through the facade, 3:2).
+- **Camera-only:** whether the revert still comes, how soon after the restore (the check number), and whether the
+  updater runs before the first half-press on the camera (the checks count). If it shows "set again 3" with the base
+  back, the camera undoes it each time: a later restore point is the next try.
+- **Build** of cf91e1a: E1479999.BIN `2b48d6c1…bdf8` (a second clean build matches), VERSION "v0.41-dev crop83-2 (#83:
+  the crop kept after start-up)". Suite **92 of 92 pass** (static checks included; no new hook or patch site).
+  Package `test-builds/2026-11-18-crop83-2` (private folder), go-back v0.40b = test 7 `94fbd976…2fab`; TEST-STEPS
+  cover several power cycles in a row with and without a half-press, in XPan, 21:9 and 5:4. Camera test pending.
