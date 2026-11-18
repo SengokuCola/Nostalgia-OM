@@ -1,6 +1,8 @@
-> **Branch `feature/crop-modes`: camera test (2026-11-17).** Real crop modes XPan 65:24, 21:9 and 5:4 (round 1:
-> the parts of crop test c5 that worked, nothing of ours at start-up), on border preview 1; see `research/NOTES.md`,
-> "Crop modes reopened". The released firmware is on `main`.
+> **Branch `feature/crop-modes`: camera test (2026-11-17).** Real crop modes XPan 65:24, 21:9 and 5:4 on border
+> preview 1 (`research/NOTES.md`, "Crop modes reopened" .. "Crop round 9b: the reboot; round 9c"). Camera-tested
+> through round 9c: the crops in the files, start-up, the focus target, grid lines and the live histogram in the strip,
+> the Border inside the crop, and the XPan label in playback / image review. Not seen yet: the 21:9 and 5:4 playback
+> labels. Open: the quality label for crop photos. Local only (not pushed). The released firmware is on `main`.
 
 <h1 align="center">Caduceus for OM-3</h1>
 

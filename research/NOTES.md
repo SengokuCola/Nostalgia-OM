@@ -6894,3 +6894,9 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   8 (ours exactly when they match) and with class 1 (the stock picture).
 - **Suite** (out-cr9c, E1479999.BIN a0889007…d938, commit 4307cdf): **50 pass**, **2 FAIL** as before
   (static:hook-list: crs, crb, crg, crh, crk; static:changed-bytes). Package `test-builds/2026-11-17-crop-round-9c`.
+- **Camera, round 9c (owner, 2026-11-17, a0889007…d938): "I can see the xpan name now in image review".** Card
+  (card-backups/2026-11-17-crop-round-9c-tested, main chat): build "crop round 9c", log written at event 34, 2 photos
+  this power-on, play screens at events 9 and 29, **no reboot**; PB173212 3:4 2912 x 3888 and PB173213 XPan
+  5184 x 1920, both normal. **Camera-tested:** the XPan label in playback / image review (cr_pbk1 + cr_ic's picture
+  swap), playback and review of a stock (3:4) and an XPan photo without a reboot. **Not seen yet:** the 21:9 and 5:4
+  labels (no such photos on the card). **Still open:** the quality label for crop photos (none, as stock).
