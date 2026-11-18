@@ -7894,3 +7894,49 @@ Test driver tools/emulator/focus_stacking.mjs runs this routine with controlled 
   the Shading pass never ran). On the way the owner asked for the Shading row "back to ... -2 to +2"; om-emu showed the
   row runs -5..+5 on v0.40-alpha as released (rebuilt byte for byte, `fbef591d…`) and on test 7 alike, the camera's own
   range, never changed by Caduceus; the owner then: "sorry I was wrong". Test 7 stays as it is.
+
+## #83: the crop back at start-up, crop round 11 (2026-11-18; emulator + analysis, camera test pending; branch fix/83-crop-at-start)
+- **Issue #83 (crombach):** after a power-off in XPan or 21:9 the camera starts in 16:9 (5:4: in 4:3) until the first
+  half-press. Owner (2026-11-18): "yes. lets fix #83": the crop there when the camera has started, as the films and
+  colour profiles already are. Branch from `try/v0.41-dev` 23116f3 (v0.40b = test 7, the build on the owner's camera).
+- **Why it waited (crop round 1):** the camera's saved settings never hold 5 / 6 / 7 (cr_sin / cr_sbuf save the base
+  ratio and our tag), and cr_rst ran only from cr_hp (nm_ex at a half-press load, lg_pr at a shutter event), never from
+  v0.30's early load (el_go, el_nc 1).
+- **Round 11:** `cr_el` (crop.s), called from gx_map right after the el_go block at every GUI state change while
+  `cr_on` is 0 (the GUI task: the state dispatcher, 0x610f6016), runs cr_rst. The camera's first state change is the
+  end of its start-up, where the early load already puts the films in (camera-tested since v0.30; bp1: after the
+  settings task's start-up writes, before the shooting screen asks for its label). Its gates: all ten sections copied
+  (SECBITS 0x3ff, as el_go; else the next state change tries again) and a photo mode, read as el_ok does (ss_photo once
+  rc_in is seen, else the photo / movie / S&Q switch UI_PSW 2): the camera's settings written while video live view
+  starts freeze it (#53, rc_go's rule). In video, a later state change in a photo mode or the first half-press (cr_hp,
+  the fallback, unchanged) puts the crop back. cr_rst keeps its three section-7 checks (SEC_READY 0x40; not ready:
+  cr_on back to 0, the next call tries again).
+- **cr_rst:** claims cr_on under LOCK first (cr_el in the GUI task and cr_hp in the HLS_EVENT task could meet: the
+  first one in does the work); notes where it ran in `cr_dwh` (1 start-up, 2 a shutter event). Its frame is now 24:
+  with `[d2,d3,a2,a3],20` its local (4) was the slot of a saved register (the frame rule, "locals only below N - 4 x
+  regs"); harmless before because cr_hp's own frame restored that register for its callers.
+- **Not changed:** the camera still never saves 5 / 6 / 7 (the save hooks as they were); nothing runs during the boot
+  itself (the restore waits for the GUI's first state change, which on the camera comes about 1.1 s after power-on,
+  bp1 timing); no new hook or patch site (gx_map's own code gains the call; static:hook-list and changed-bytes as
+  test 7). ar_setv is the call the dial handler makes in the GUI task (0x6109356f), the task cr_el runs in.
+- **Debug log:** the CROP MODES line now reads "CROP MODES (crop round 11): tag 43520006 at start-up, Image Aspect then
+  3, set to 6, after 6, now 6; ..." ("at the first half-press" for the fallback, "(not read yet)" before either).
+- **Tests:** `crop-xpan-back-at-start-up` replaces `crop-xpan-starts-as-16-9-and-comes-back`: boot 1 picks XPan,
+  power-off; boot 2: Image Aspect (M + 0x2c2) 6 and cr_on 1 before any half-press, the log line "at start-up";
+  `--without` test 7's build (94fbd976…): caught ("629209c2: 03, not 06"). `crop-start-up-restore-photo-only` calls
+  cr_el and cr_hp directly (12 cases: P; video code; code 0 with the movie, S&Q or photo switch; no manager handle with
+  the movie or photo switch; section 10 not copied; already put back; the half-press fallback; the half-press after a
+  start-up restore; the half-press load inside the early load): cr_rst runs only in the photo cases and the fallback.
+  om-emu cannot show a boot started in video: its driver sets the photo / movie switch (PSET0) only after its start-up
+  has passed the GUI's first state change, so a "video" boot 2 had already put XPan back in photo (a boot test tried
+  first, dropped for the direct one). `--without` test 7: caught (no cr_el). `crop-stock-ratio-left-alone`: the log
+  line now says "at start-up".
+- **Camera-only:** the timing (the restore adds an ar_setv at the GUI's first state change, after the films' 46..96 ms;
+  the live view is switched to the strip there, before the shooting screen's first label), start-ups in video with a
+  crop saved, several start-ups for lag or a black screen.
+- **User docs** (`docs/USING.md` "Switching on", CHANGELOG, release notes) still say the crop comes back at the first
+  half-press: to change at the release that takes this fix.
+- **Build** of d86fade: E1479999.BIN `3864267e…f185a` (a second clean build matches), VERSION "v0.41-dev crop83-1 (#83:
+  the crop back at start-up)". Suite **89 of 89 pass** (88 of test 7, the start-up test replacing the old one, plus
+  the direct test; static checks all pass: no new hook or patch site). Package `test-builds/2026-11-18-crop83-1`
+  (private folder), go-back v0.40b = test 7 `94fbd976…2fab`. Camera test pending.
