@@ -313,7 +313,13 @@ cr_rst:
  cmp 8,d0
  bcc 8f
  mov d0,(4,sp)                    /* the crop */
+                                  /* v0.40 alpha: ar_getv / ar_setv are in section 7: each call waits for its ready
+                                   * bit (0x40); not in yet: 7, the next shutter event tries again (cr_on back to
+                                   * 0, the tag kept) */
  mov 269,d0
+ mov (SEC_READY),d3
+ and 0x40,d3
+ beq 7f
  call ar_getv,[d2,a2],24
  mov d0,(cr_das)
  mov (4,sp),d1
@@ -326,8 +332,14 @@ cr_rst:
  bne 8f                           /* the setting was changed since: leave it */
  mov d1,(cr_dst)
  mov 269,d0
+ mov (SEC_READY),d3
+ and 0x40,d3
+ beq 7f
  call ar_setv,[d2,a2],20          /* d1 = the crop */
  mov 269,d0
+ mov (SEC_READY),d3
+ and 0x40,d3
+ beq 7f
  call ar_getv,[d2,a2],24
  mov d0,(cr_daf)
 8:
@@ -335,6 +347,10 @@ cr_rst:
  mov d0,(CR_TG)
  mov d0,(CR_TG + CR_UNC)
 9:
+ ret [d2,d3,a2,a3],20
+7:                                /* section 7 not in yet: as if this shutter event had not come */
+ clr d0
+ movbu d0,(cr_on)
  ret [d2,d3,a2,a3],20
 
 .section .hook_crs,"ax"
