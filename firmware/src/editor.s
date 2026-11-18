@@ -626,66 +626,6 @@ wb_get:
  mov d3,d0
  ret [d2,d3],12
 
-/* pf_cnt <- facade vtable +28 word 0x60e57490 (count, stock 0x60b86e09): d0 id, a0 facade -> d0 count. COLOR1-4
- * cell ids 928..975 ask code block +96 (xb_cv: the Looks page's 12 o'clock 0..5; v0.21 an Extras cell its own range,
- * so the dial stops at the ends); anything else, or no answer: stock. */
-pf_cnt:
- movm [d2,d3,a2],(sp)
- add -4,sp
- mov d0,d2
- exthu d0
- add -928,d0
- cmp 48,d0
- bcc 9f
- call xp,[],0
- beq 9f
- add 96,a1
- mov d2,d0
- calls (a1)                       /* -> d0 count, d1 1 hit / 0 miss */
- cmp 0,d1
- bne 8f
-9:
- mov d2,d0
- add 4,sp
- movm (sp),[d2,d3,a2]
- jmp stock_cnt
-8:
- add 4,sp
- movm (sp),[d2,d3,a2]
- rets
-
-/* pf_vbi <- facade vtable +32 word 0x60e57494 (value by index, stock 0x60b87031): d0 id, d1 index, a0 facade,
- * a1 out (or 0) -> d0 value (-1 = no such index), (a1) = the same. Cell ids 928..975: code block +104 (xb_vb,
- * d3 = out); anything else, or no answer: stock. */
-pf_vbi:
- movm [d2,d3,a2],(sp)
- add -4,sp
- mov d0,d2
- mov a1,d3
- mov d1,a2
- exthu d0
- add -928,d0
- cmp 48,d0
- bcc 9f
- call xp,[],0                     /* keeps d1 */
- beq 9f
- add 104,a1
- mov d2,d0
- calls (a1)                       /* d0 id, d1 index, d3 out -> d0 value, d1 1 hit / 0 miss */
- cmp 0,d1
- bne 8f
-9:
- mov d2,d0
- mov a2,d1
- mov d3,a1
- add 4,sp
- movm (sp),[d2,d3,a2]
- jmp stock_vbi
-8:
- add 4,sp
- movm (sp),[d2,d3,a2]
- rets
-
 .balign 2
 hl_lut:                           /* +0: hue raw[ui+7] (15 hw); +30: lightness raw[ui+7]; +60: perm[12] */
  .hword 7000,6000,5000,4000,3000,2000,1000,0,-1000,-2000,-3000,-4000,-5000,-6000,-7000
@@ -3895,6 +3835,68 @@ sl_vbi:
  movm (sp),[d2,d3,a2,a3]
  mov (gr_oid),d0
  jmp pf_vbi
+
+/* (v0.40 alpha: pf_cnt and pf_vbi moved here from .ext1, to make room there for the section gates. Only sl_cnt /
+ * sl_vbi, just above in section 6, reach them; the facade words point at sl_cnt / sl_vbi.) */
+/* pf_cnt <- facade vtable +28 word 0x60e57490 (count, stock 0x60b86e09): d0 id, a0 facade -> d0 count. COLOR1-4
+ * cell ids 928..975 ask code block +96 (xb_cv: the Looks page's 12 o'clock 0..5; v0.21 an Extras cell its own range,
+ * so the dial stops at the ends); anything else, or no answer: stock. */
+pf_cnt:
+ movm [d2,d3,a2],(sp)
+ add -4,sp
+ mov d0,d2
+ exthu d0
+ add -928,d0
+ cmp 48,d0
+ bcc 9f
+ call xp,[],0
+ beq 9f
+ add 96,a1
+ mov d2,d0
+ calls (a1)                       /* -> d0 count, d1 1 hit / 0 miss */
+ cmp 0,d1
+ bne 8f
+9:
+ mov d2,d0
+ add 4,sp
+ movm (sp),[d2,d3,a2]
+ jmp stock_cnt
+8:
+ add 4,sp
+ movm (sp),[d2,d3,a2]
+ rets
+
+/* pf_vbi <- facade vtable +32 word 0x60e57494 (value by index, stock 0x60b87031): d0 id, d1 index, a0 facade,
+ * a1 out (or 0) -> d0 value (-1 = no such index), (a1) = the same. Cell ids 928..975: code block +104 (xb_vb,
+ * d3 = out); anything else, or no answer: stock. */
+pf_vbi:
+ movm [d2,d3,a2],(sp)
+ add -4,sp
+ mov d0,d2
+ mov a1,d3
+ mov d1,a2
+ exthu d0
+ add -928,d0
+ cmp 48,d0
+ bcc 9f
+ call xp,[],0                     /* keeps d1 */
+ beq 9f
+ add 104,a1
+ mov d2,d0
+ calls (a1)                       /* d0 id, d1 index, d3 out -> d0 value, d1 1 hit / 0 miss */
+ cmp 0,d1
+ bne 8f
+9:
+ mov d2,d0
+ mov a2,d1
+ mov d3,a1
+ add 4,sp
+ movm (sp),[d2,d3,a2]
+ jmp stock_vbi
+8:
+ add 4,sp
+ movm (sp),[d2,d3,a2]
+ rets
 
 /* sl_sel <- facade +40 word 0x60e5749c (selectable: d0 id, d1 value, a0 -> d0 1 / 0); else stock 0x60b86a01. */
 sl_sel:
