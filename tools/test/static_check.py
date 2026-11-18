@@ -476,9 +476,31 @@ def section_order(build, stock):
                      'loaded later while the camera starts: check SEC_READY first (static_check.py, section order)')
     return fails
 
+INSN_LINE = re.compile(r'^ [a-z][a-z0-9]*(\s|$)')   # an instruction line: one space, then the mnemonic
+
+
+def comment_swallow(build, stock):
+    """An instruction line that starts inside a /* */ comment (a comment opened on the line above and closed after it)
+    is not assembled: 2026-11-18 found three (a blt, a bne, a mov) that way. Comment lines here start with ' *' or are
+    indented further; a line of one space and a lowercase word inside a comment is flagged."""
+    fails = []
+    for f in sorted((REPO / 'firmware/src').glob('*.s')):
+        inside = False
+        for i, line in enumerate(f.read_text().split('\n'), 1):
+            if inside and INSN_LINE.match(line):
+                fails.append(f'{f.relative_to(REPO)}:{i}: {line.strip()[:60]!r} is inside a comment (not assembled)')
+            j = 0
+            while True:
+                k = line.find('*/' if inside else '/*', j)
+                if k < 0:
+                    break
+                inside, j = not inside, k + 2
+    return fails
+
+
 CHECKS = {'release-rebuild': release_rebuild, 'hook-list': hook_list, 'hook-sections': hook_sections,
           'changed-bytes': changed_bytes, 'loader-end': loader_end,
-          'section-order': section_order}
+          'section-order': section_order, 'comment-swallow': comment_swallow}
 
 
 # ---------------------------------------------------------------- command line

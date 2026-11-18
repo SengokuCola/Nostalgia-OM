@@ -4021,8 +4021,10 @@ sl_set0:
 12:
  cmp 10,a3
  bne 13f
- cmp -5,d1                        /* borders: Border -5..+5 -> +50 (v0.25 Frame's byte; the camera checks it as
- blt 7f                           * -5..5); 2026-11-18: - black, + white (was 0..5) */
+ /* borders: Border -5..+5 -> +50 (v0.25 Frame's byte; the camera checks it as -5..5); 2026-11-18: - black,
+  * + white (was 0..5) */
+ cmp -5,d1
+ blt 7f
  cmp 5,d1
  bgt 7f
  mov d2,a3
@@ -4031,8 +4033,10 @@ sl_set0:
 13:
  cmp 7,a3
  bcs 10f
- cmp -7,d1                        /* A-B / G-M -7..+7 -> +26 / +27, then wb_flags (+25): bit0 on, bit7 off (as the
- blt 7f                           * Extras wheel) */
+ /* A-B / G-M -7..+7 -> +26 / +27, then wb_flags (+25): bit0 on, bit7 off (as the Extras wheel). 2026-11-18: this
+  * comment used to swallow the `blt 7f` below (the low end went unchecked; the row never offers below -7) */
+ cmp -7,d1
+ blt 7f
  cmp 7,d1
  bgt 7f
  mov 58,d3

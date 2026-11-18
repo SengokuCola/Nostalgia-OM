@@ -191,8 +191,10 @@ xb_cap:
  beq 1f
  .if XB_SHG                        /* v0.24 camera (owner): High grain rebooted the camera; the likely cause is the
                                    * stock settings getter (AGET) called from the capture pipeline here: off */
- add -12,sp                       /* film test 11 (owner, camera): with Shading on, the camera's grain (its MONO route)
- mov d1,(4,sp)                     * made the picture monochrome -> then the CPU grain, as with an Art Effect */
+ /* film test 11 (owner, camera): with Shading on, the camera's grain (its MONO route) made the picture monochrome ->
+  * then the CPU grain, as with an Art Effect. (2026-11-18: this comment used to swallow the `mov d1,(4,sp)`; off, XB_SHG 0) */
+ add -12,sp
+ mov d1,(4,sp)
  mov a1,(8,sp)
  mov 63153,d0                     /* the effective COLOR profile 1..4 (xb_slot found it) */
  clr d1
@@ -303,8 +305,10 @@ xb_sh:
  mov (VG_ND),d3
  inc d3
  mov d3,(VG_ND)
- cmp 0,d1                         /* 0: a burst's later frame (cleared at its first); anything else (test 4, cad): not
- bne 8f                           * the copy we expect there, so this still stays as the camera makes it */
+ /* 0: a burst's later frame (cleared at its first); anything else (test 4, cad): not the copy we expect there, so
+  * this still stays as the camera makes it */
+ cmp 0,d1
+ bne 8f
 1:
  clr d1
  movbu d1,(a0)                    /* the camera's own Shading off for this still */

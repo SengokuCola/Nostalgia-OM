@@ -105,6 +105,7 @@ The gate and the digest have unit tests that need no firmware:
 | `static:changed-bytes` | Every byte that differs from stock lies in a place the build may write |
 | `static:loader-end` | The loader's end word, read from the image, covers every section that uses it |
 | `static:section-order` | No hook or patch site in sections 1..5 reaches our code or data in a later section (copied later while the camera starts), unless behind the camera's own ready check for that section |
+| `static:comment-swallow` | No instruction line (one space, then a mnemonic) starts inside a `/* */` comment in `firmware/src/*.s`: a comment opened on the line above swallows it and it is never assembled (2026-11-18: a `blt` and a `bne` of the day's work, and two older ones) |
 
 Results, emulator only:
 
