@@ -8,7 +8,7 @@
  .set XB_H0, 0                    /* v0.28 halation probe h0 (camera-tested 2026-11-12): off */
  .set XB_HL, 1                    /* v0.28: the Halation row (slot +30, 1..5) on our looks' stills (editor.s hl_run) */
  .set XB_BD, 1                    /* borders: the Border row (slot +50, 1..5 white, -1..-5 black; Frame's old byte) on our looks' stills (editor.s bd_run) */
- .set XB_SH, 1                    /* gentler Shading s1 (#22): our own vignette on our COLOR looks' stills (shading.s vg_run) */
+ .set XB_SH, 0                    /* gentler Shading (#22): off (owner, 2026-11-18: "turn the shading back to standard so it is as quick as normal"); 1 = s1, our own vignette on our COLOR looks' stills (shading.s vg_run) */
 /* Caduceus for OM-3 v0.20 test 5: the Extras code block (appended to GUIDES.BIN, our own code).
  *
  * Runs from its heap buffer (uncached pool, as the camera's malloc returns), relocated in place by entry 0. Linked at
