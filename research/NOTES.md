@@ -7282,6 +7282,8 @@ Resumed (owner via cad, 2026-11-17: "Carry on"). `try/v0.40-alpha` (492c890) mer
 - **Static checks:** `static:hook-list` (new hook `hook_si` at 0x6123043d, 6 B) and `static:changed-bytes` (SetValue
   word 0x60e57478, the three menu item-list entries 0x6156d0a4 / bc / d4 and row-list entries 0x6152a064 / 70 / 7c)
   fail until `tools/test/hooks.json` is updated; left for cad and the owner, as the rules say.
+- **Test build s2:** "v0.41-dev (screen info s2)", E1479999.BIN 0bb89498…b467 (GUIDES / LABELS / TONES built in);
+  suite 64 pass, 0 known, the two static FAILs above. Waiting for cad's check, then the owner's camera test.
 - Not shown by om-emu: the camera's own redraw timing, the viewfinder styles 1 / 2 (s2 does not touch the viewfinder),
   HDMI, battery / flash / Live ND icons, whether the touch shutter still works with its icon hidden.
 
