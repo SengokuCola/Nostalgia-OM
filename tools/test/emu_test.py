@@ -441,8 +441,12 @@ def PICK_ASPECT(n):
 GRID_THIRDS = 'menu left ok wait down ok wait down wait down wait down wait ok wait s1 wait wait'
 
 
-def CROP_LINE(tag, then, set_to, after, now):
-    return (rf'^CROP MODES \(crop round \d+\w*\): tag at the first half-press {tag}, Image Aspect then {then}, set to {set_to}, '
+# #83: where cr_rst read the tag, as the log says it (crop-start-up-restore-photo-only covers the half-press)
+AT_START_UP = 'at start-up'
+
+
+def CROP_LINE(tag, where, then, set_to, after, now):
+    return (rf'^CROP MODES \(crop round \d+\w*\): tag {tag} {where}, Image Aspect then {then}, set to {set_to}, '
             rf'after {after}, now {now};')
 
 
@@ -452,6 +456,20 @@ def CROP_ASPECT_IS(v):                           # Image Aspect in the camera's 
 
 def CROP_NOW(now):
     return rf'^CROP MODES \(crop round \d+\w*\): .*, now {now};'
+
+
+def CROP_SET_AGAIN(n):                           # crop83-2: times cr_chk set the crop again after its start-up restore
+    return rf'^CROP MODES \(crop round \d+\w*\): .*\), set again {n};'
+
+
+# crop83-2: the camera putting the crop's base back after the start-up restore, past the settings manager (both copies of
+# Image Aspect in M, as a block copy would); a ratio picked from XPan on the control panel, whose cursor stays on the
+# Image Aspect cell after PICK_ASPECT: n steps along the list (-5 from XPan: 16:9), then OK.
+CROP_BASE_BACK = 'poke:629209c2=03 poke:62952b58=03'
+
+
+def SCP_ASPECT(n):
+    return 'ok wait' + (' main+1 wait' * n if n > 0 else ' main-1 wait' * -n) + ' ok wait wait'
 
 
 # A valid films block in camera memory: BUNDLES.BIN and EDITS.BIN on the card change nothing, their lines as without.
@@ -617,12 +635,39 @@ TESTS = {
         Boot(f's1 wait wait {SI_HIDE_MODE} {SI_MASK1} s1 wait wait poweroff'),
         Boot(f'wait wait s1 wait wait {SI_MODE_ON_VIDEO} poweroff', photo_switch=PHOTO_SWITCH_VIDEO),
     ],
-    # crop modes: XPan (Image Aspect 6) is saved as 16:9 with our tag, so the camera starts on 16:9; the first half-press
-    # puts XPan back (the start-up rule: nothing of ours before it, not even with v0.30's early load of the films).
-    'crop-xpan-starts-as-16-9-and-comes-back': [
+    # #83: XPan (Image Aspect 6) is saved as 16:9 with our tag, so the camera's settings never hold a crop; at the GUI's
+    # first state change, where v0.30's early load puts the films in, cr_el puts XPan back: Image Aspect is 6 before
+    # any half-press, and the half-press sets nothing more.
+    'crop-xpan-back-at-start-up': [
         Boot(f's1 wait wait {PICK_ASPECT(6)} s1 wait wait poweroff', expect=[CROP_NOW(6)]),
-        Boot(f'wait wait {CROP_ASPECT_IS(3)} expect:mem:{{cr_on}}=00 s1 wait wait {CROP_ASPECT_IS(6)} poweroff',
-             expect=[CROP_LINE('43520006', 3, 6, 6, 6)]),
+        Boot(f'wait wait {CROP_ASPECT_IS(6)} expect:mem:{{cr_on}}=01 s1 wait wait {CROP_ASPECT_IS(6)} poweroff',
+             expect=[CROP_LINE('43520006', AT_START_UP, 3, 6, 6, 6)]),
+    ],
+    # crop83-2 (owner's camera, crop83-1: "lasts through 1 power cycle"): several power cycles in a row, with and without a
+    # half-press: XPan is back at every start-up (boots 2..4), then 21:9 (boot 5) and 5:4 (boot 6, 5:4 not 4:3).
+    'crop-xpan-21-9-5-4-kept-over-power-cycles': [
+        Boot(f's1 wait wait {PICK_ASPECT(6)} s1 wait wait poweroff', expect=[CROP_NOW(6)]),
+        Boot(f'wait wait {CROP_ASPECT_IS(6)} poweroff'),
+        Boot(f'wait wait {CROP_ASPECT_IS(6)} s1 wait wait {CROP_ASPECT_IS(6)} poweroff'),
+        Boot(f'wait wait {CROP_ASPECT_IS(6)} poweroff'),
+        Boot(f'wait wait {CROP_ASPECT_IS(6)} {SCP_ASPECT(1)} {CROP_ASPECT_IS(7)} poweroff'),
+        Boot(f'wait wait {CROP_ASPECT_IS(7)} {SCP_ASPECT(-2)} {CROP_ASPECT_IS(5)} poweroff'),
+        Boot(f'wait wait {CROP_ASPECT_IS(5)} s1 wait wait {CROP_ASPECT_IS(5)} poweroff',
+             expect=[CROP_LINE('43520005', AT_START_UP, 1, 5, 5, 5)]),
+    ],
+    # crop83-2: the camera's own start-up put the base back after the restore (crop83-1 on the camera: "then 3, set to 6,
+    # after 6, now 3"; om-emu's start-up is over before the restore, so the test does it): the shooting screen's next
+    # updates set XPan again, before any half-press.
+    'crop-kept-when-the-camera-puts-the-base-back': [
+        Boot(f's1 wait wait {PICK_ASPECT(6)} s1 wait wait poweroff', expect=[CROP_NOW(6)]),
+        Boot(f'wait wait {CROP_ASPECT_IS(6)} {CROP_BASE_BACK} wait wait wait {CROP_ASPECT_IS(6)} s1 wait wait '
+             f'{CROP_ASPECT_IS(6)} poweroff', expect=[CROP_SET_AGAIN(1)]),
+    ],
+    # crop83-2: a ratio the user picks after the start-up restore stays, even the crop's base (16:9 from XPan).
+    'crop-user-pick-after-start-up-kept': [
+        Boot(f's1 wait wait {PICK_ASPECT(6)} s1 wait wait poweroff', expect=[CROP_NOW(6)]),
+        Boot(f'wait wait {CROP_ASPECT_IS(6)} {SCP_ASPECT(-5)} {CROP_ASPECT_IS(3)} wait wait wait {CROP_ASPECT_IS(3)} '
+             f's1 wait wait {CROP_ASPECT_IS(3)} poweroff', expect=[CROP_SET_AGAIN(0), CROP_NOW(3)]),
     ],
     # crop round 7b: the two store-write hooks sit in section 1 and their code in section 6, which is copied later while
     # the camera starts: they wait for the camera's own ready bit for section 6 (0xa32de58c bit 5). With it cleared
@@ -634,7 +679,7 @@ TESTS = {
     # crop modes: a stock ratio (16:9) is saved as it is, with no tag, and nothing is set at the first half-press.
     'crop-stock-ratio-left-alone': [
         Boot(f's1 wait wait {PICK_ASPECT(1)} s1 wait wait poweroff', expect=[CROP_NOW(3)]),
-        Boot('wait wait s1 wait wait poweroff', expect=[CROP_LINE('00000000', 0, 0, 0, 3)]),
+        Boot('wait wait s1 wait wait poweroff', expect=[CROP_LINE('00000000', AT_START_UP, 0, 0, 0, 3)]),
     ],
     # crop round 2: the live view display set-up's picture area (rear screen, id 6 = XPan: 900 x 332) and the AF point
     # grid (id 6: 16:9's 39 x 19) have rows for the crops. om-emu does not run that code, so this checks the tables.
@@ -1631,8 +1676,108 @@ def run_hl(emu, build, out, card0):
     return HL, errors
 
 
+# #83: cr_el (gx_map, at a GUI state change while cr_on is 0) runs cr_rst only in a photo mode and once all ten sections
+# are copied; cr_hp (the first shutter event) stays the fallback. om-emu sets the photo / movie switch only after its
+# start-up has passed the GUI's first state change, so a boot started in video cannot show the gate: this calls cr_el and
+# cr_hp directly. The mode as cr_el reads it: the code at the manager's +24 (ss_photo), the switch (UI_PSW) while that
+# code is 0 or before the manager's handle (rc_in) is seen. No tag in M (CR_TG 0): cr_rst only claims cr_on.
+CROPEL = 'crop-start-up-restore-photo-only'   # crop83-2: and cr_chk's limits (CROPCHK_CASES)
+UI_PSW, SECBITS, CR_TG = 0xa32d9d0d, 0xa32de590, 0x6295a6f0
+MC_VIDEO = 10
+# name, function, the code at +24 (None: as the session has it, P), UI_PSW (None: as it is), rc_in 0, SECBITS' low half,
+# cr_on, el_nc -> cr_rst reached, cr_dwh after (where: 1 start-up, 2 a shutter event)
+CROPEL_CASES = [
+    ('start-up, P', 'cr_el', None, None, False, 0x3ff, 0, 0, True, 1),
+    ('start-up, video', 'cr_el', MC_VIDEO, None, False, 0x3ff, 0, 0, False, 0),
+    ('start-up, code 0, movie switch', 'cr_el', 0, 1, False, 0x3ff, 0, 0, False, 0),
+    ('start-up, code 0, S&Q switch', 'cr_el', 0, 0, False, 0x3ff, 0, 0, False, 0),
+    ('start-up, code 0, photo switch', 'cr_el', 0, 2, False, 0x3ff, 0, 0, True, 1),
+    ('start-up, no handle, movie switch', 'cr_el', None, 1, True, 0x3ff, 0, 0, False, 0),
+    ('start-up, no handle, photo switch', 'cr_el', None, 2, True, 0x3ff, 0, 0, True, 1),
+    ('start-up, section 10 not copied', 'cr_el', None, 2, True, 0x1ff, 0, 0, False, 0),
+    ('start-up, already put back', 'cr_el', None, 2, True, 0x3ff, 1, 0, False, 0),
+    ('half-press fallback', 'cr_hp', None, 2, True, 0x3ff, 0, 0, True, 2),
+    ('half-press, already put back at start-up', 'cr_hp', None, 2, True, 0x3ff, 1, 0, False, 0),
+    ('half-press load inside the early load', 'cr_hp', None, 2, True, 0x3ff, 0, 1, False, 0),
+]
+# crop83-2: cr_chk (the shooting screen's updates after a start-up restore, and the first shutter event) with the crop
+# XPan: name, Image Aspect (M + 0x2c2), cr_usr, cr_nre, the code at +24 (None: P) -> sets it again (reaches ar_setv),
+# cr_rch after (1 still keeping, 0 stopped)
+CROPCHK_CASES = [
+    ('keep: XPan in place', 6, 0, 0, None, False, 1),
+    ('keep: 16:9 back', 3, 0, 0, None, True, 1),
+    ('keep: 16:9 back, set 3 times already', 3, 0, 3, None, False, 0),
+    ('keep: 16:9 back, in video', 3, 0, 0, MC_VIDEO, False, 1),
+    ('keep: a ratio picked since', 3, 1, 0, None, False, 0),
+    ('keep: 3:2 now', 2, 0, 0, None, False, 0),
+]
+
+
+def run_cropel(emu, build, out, card0):
+    """cr_el / cr_hp called as gx_map / nm_ex call them, for each CROPEL_CASES row: whether cr_rst runs, cr_on, cr_dwh."""
+    d = out / CROPEL
+    d.mkdir(parents=True, exist_ok=True)
+    sym = elf_symbols(build / 'p.elf')
+    missing = [n for n in ('cr_el', 'cr_hp', 'cr_rst', 'cr_on', 'cr_dwh', 'rc_in', 'el_nc', 'cr_chk', 'cr_rch', 'cr_crp',
+                           'cr_usr', 'cr_nre') if n not in sym]
+    if missing:
+        return CROPEL, [f'not in this build: {", ".join(missing)}']
+    word = lambda v: v.to_bytes(4, 'little').hex()
+    half = lambda v: v.to_bytes(2, 'little').hex()
+    at = lambda n: f'{sym[n]:#x}'
+    spec = []
+    for name, fn, code, psw, no_handle, secbits, on, nc, _, _ in CROPEL_CASES:
+        mem = [['B', 'dd'], ['B+1', f'={sym[fn]:#x}-B'], ['B+5', 'f014'],      # call fn,[d2,d3,a2,a3],20
+               [f'{CR_TG:#x}', word(0)], [at('cr_on'), f'{on:02x}'], [at('cr_dwh'), '00'], [at('el_nc'), f'{nc:02x}'],
+               [f'{SECBITS:#x}', half(secbits)], [at('cr_rch'), '00']]
+        if code is not None:
+            mem.append([f"W({at('rc_in')})+24", f'{code:02x}'])
+        if psw is not None:
+            mem.append([f'{UI_PSW:#x}', f'{psw:02x}'])
+        if no_handle:
+            mem.append([at('rc_in'), word(0)])
+        spec.append({'name': name, 'pc': 'B', 'stop': ['B+7'], 'max': 20000, 'mem': mem, 'count': [at('cr_rst')],
+                     'read': [[at('cr_on'), 1], [at('cr_dwh'), 1]],
+                     'restore': [[f'{SECBITS:#x}', half(0x3ff)], [at('el_nc'), '00']]})
+    setv = int(f"{sym['ar_setv']:#x}" if 'ar_setv' in sym else '0x61085d05', 16)
+    chk = []
+    for name, aspect, usr, nre, code, _, _ in CROPCHK_CASES:    # stopped at ar_setv: the call is not run (SetValue
+        mem = [['B', 'dd'], ['B+1', f"={sym['cr_chk']:#x}-B"], ['B+5', 'f018'],   # waits for the settings task)
+               [at('cr_rch'), '01'], [at('cr_crp'), '06'], [at('cr_usr'), f'{usr:02x}'], [at('cr_nre'), word(nre)],
+               ['0x629209c2', f'{aspect:02x}'], [f"W({at('rc_in')})+24", f'{code if code is not None else 1:02x}']]
+        chk.append({'name': name, 'pc': 'B', 'stop': ['B+7', f'{setv:#x}'], 'max': 20000, 'mem': mem,
+                     'read': [[at('cr_rch'), 1]], 'restore': [['0x629209c2', '03'], [at('cr_rch'), '00'], [at('cr_self'), '00']]})
+    res = run_ncall(emu, build, d, card0, 's1 wait wait ncall', chk + spec)    # cr_chk's first: the cr_el cases zero rc_in
+    if isinstance(res, str):
+        return CROPEL, [res]
+    errors = []
+    for name, aspect, usr, nre, code, sets, rch in CROPCHK_CASES:
+        r = res[name]
+        pc = int(r['regs']['pc'], 16)
+        if r['steps'] >= 20000:
+            errors.append(f'{name}: cr_chk did not return (out.json)')
+        elif (pc == setv) != sets:
+            errors.append(f'{name}: {"sets" if pc == setv else "does not set"} the crop again, want {"yes" if sets else "no"}')
+        elif not sets and int(r['mem'][0], 16) != rch:
+            errors.append(f'{name}: cr_rch {int(r["mem"][0], 16)}, want {rch}')
+    for name, fn, code, psw, no_handle, secbits, on, nc, runs, where in CROPEL_CASES:
+        r = res[name]
+        if r['steps'] >= 20000:
+            errors.append(f'{name}: {fn} did not return (out.json)')
+            continue
+        hits = r['count'][0]
+        on_after, where_after = (int(m, 16) for m in r['mem'])
+        if hits != int(runs):
+            errors.append(f'{name}: cr_rst ran {hits} times, want {int(runs)} (out.json)')
+        if on_after != (1 if runs or on else 0):
+            errors.append(f'{name}: cr_on {on_after}, want {1 if runs or on else 0}')
+        if where_after != where:
+            errors.append(f'{name}: cr_dwh {where_after}, want {where}')
+    return CROPEL, errors
+
+
 # Tests that call our code directly through run_ncall: name -> runner(emu, build, out, card0).
-DIRECT = {WB: run_wb, HL: run_hl}
+DIRECT = {WB: run_wb, HL: run_hl, CROPEL: run_cropel}
 
 
 def newest_looks():

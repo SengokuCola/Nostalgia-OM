@@ -5290,6 +5290,35 @@ gx_map:
  mov d3,mdr
  add 16,sp
 2:
+ movbu (cr_rch),d1                /* crop83-2: the next GUI state change (a screen the user opens) stops crop.s cr_chk */
+ cmp 0,d1
+ beq 84f
+ mov d0,d1
+ exthu d1
+ cmp 0,d1
+ beq 84f
+ clr d1
+ movbu d1,(cr_rch)
+84:
+ movbu (cr_on),d1                 /* #83: the crop back at the GUI's first state change, after the films (crop.s cr_el) */
+ cmp 0,d1
+ bne 85f
+ mov d0,d1
+ exthu d1
+ cmp 0,d1
+ beq 85f
+ mov mdr,d3
+ add -16,sp
+ mov d3,(4,sp)
+ mov d0,(8,sp)
+ mov a1,(12,sp)
+ call cr_el,[d2,d3,a2,a3],20
+ mov (12,sp),a1
+ mov (8,sp),d0
+ mov (4,sp),d3
+ mov d3,mdr
+ add 16,sp
+85:
  movbu (rc_pend),d1               /* v0.30-dev k1 (#41): the shooting mode changed with the films in: put each */
  cmp 0,d1                         /* COLOR's film back into the camera's settings (GUI task, between events) */
  bne 01f
@@ -14585,6 +14614,21 @@ sx_set:                           /* from sl_set (entered as the manager: d0 id,
 1:
  cmp 897,d0
  beq 2f
+ cmp 269,d0                       /* crop83-2: Image Aspect set through the facade (crop.s cr_sv), then stock */
+ bne 86f
+ add -16,sp
+ mov a0,(4,sp)
+ mov a1,(8,sp)
+ mov d1,(12,sp)
+ call cr_sv,[d2,d3,a2,a3],20
+ mov (4,sp),a0
+ mov (8,sp),a1
+ mov (12,sp),d1
+ add 16,sp
+ mov 269,d0
+ mov (68,sp),d2                   /* MDR = the setter's return address again, as the 1440 path leaves it */
+ mov d2,mdr
+86:
  jmp sl_set0
 2:
  clr d2
