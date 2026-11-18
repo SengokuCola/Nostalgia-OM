@@ -7875,3 +7875,14 @@ Status: analysis and emulator only; no camera result. Target: M.Zuiko 17mm f/1.8
 Official OM-3 1.1 package SHA-256 8c133084414533159f587bf46bfb4152714c4074312a47c8d8503e33d605696d; decoded main SHA-256 5e8d376e9111a44ac0352f26030d7c1b17026d42c45f3600cfa02a0e8c5b7d59. The diagnostic string at 0x60a3c8cc identifies fcs_check_focus_stacking_enable at 0x60901988. First query 0x602f3671 → nonzero rejects at 0x60901992 (unchanged). Second query 0x602fdc68 → lens-record stacking flag at +119091; not 1 rejects at 0x6090199e. The sole behavior edit is the latter two-byte branch to NOPs. The routine still returns through its original diagnostic and register/stack epilogue. No added startup work or code space. Reviewed patch site 0x6090199e:2 added explicitly to hooks.json; no baseline regeneration.
 
 Test driver tools/emulator/focus_stacking.mjs runs this routine with controlled query results, checks four decision cases and preservation of d2/d3/a2/a3/sp. Real lens commands, focus travel and composite generation remain camera-only. Build identity fs1 makes this distinguishable from the camera-tested upstream release. See docs/FOCUS_STACKING.md for the pending camera checks.
+
+## v0.41-dev test 6: PR #82 + PR #79 merged (2026-11-18; emulator only)
+- Owner (2026-11-18, after a look at the open PRs): "Yes, both" (#82 and #79 into a v0.41 test build). Merged as their
+  authors wrote them: #82 (crombach, 6a18e0a, based on v0.40-alpha) at 073770d, #79 (Bensonson, 42a5beb, based on main
+  e32363a) at 18cca79. Text conflicts only (emu_test.py lists and constants, NOTES, hooks.json, VERSION).
+- At #82's merge (cad): its new bl_gv pre-check ("some COLOR slot with a Border 1..5?", `add -1; cmp 5; bcs`) read only
+  1..5, so black borders (-1..-5) would have lost the live view frame line: now -5..5 but 0 (extb, +5, < 11, != 5).
+  The comment first written for it swallowed the `mov 4,d1` after it; static:comment-swallow caught it before the
+  build.
+- Build `f032d80e…c02c` (a second build matches); static checks all pass (hook_rr from #82 in the list, #79's patch
+  site 0x6090199e:2); suite **88 of 88**. Package `test-builds/2026-11-18-v0.41-dev-test6`. Camera test pending.
