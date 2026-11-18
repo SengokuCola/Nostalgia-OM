@@ -181,6 +181,37 @@ for (const t of SCRIPT.split(/\s+/).filter(Boolean)) {
       else if (held !== null) { if (v !== held) { console.error(`keep ${reg}: ${v.toString(16)} at ${exit}, not ${held.toString(16)}`); process.exit(1); } kept++; held = null; }
     }, { pcs: [E, X] });
   }
+  else if (t.startsWith('atmem:')) {
+    // atmem:PC:REG+OFF*+OFF...=HEX (fwver, 2026-11-18) ends the run with exit 1 if, when the code reaches PC (hex), the
+    // bytes at REG (a register's value), then expect:mem's chain (OFF* reads the word at + OFF, OFF adds; hex), are
+    // not HEX. Several atmem: tokens add up (om-emu has one exec trace: not with hit: / count: / keep: in a run).
+    // expect:atmem ends it with exit 1 unless the code reached a checked PC since.
+    const i = t.indexOf(':', 6), pc = t.slice(6, i), [where, hex] = t.slice(i + 1).split('='), [reg, ...offs] = where.split('+');
+    const A = (globalThis.__am ??= { checks: [], n: 0, d: Debugger.attach(lab.sim, { lab }) });
+    A.checks.push({ pc: parseInt(pc, 16) >>> 0, reg, offs, hex: hex.toLowerCase(), where });
+    A.d.traceExec((r) => {
+      for (const c of A.checks) {
+        if (c.pc !== (r.pc >>> 0)) continue;
+        let at = A.d.regs()[c.reg] >>> 0;
+        for (const o of c.offs) at = o.endsWith('*') ? u32((at + parseInt(o, 16)) >>> 0) : (at + parseInt(o, 16)) >>> 0;
+        const got = Buffer.from(rd(at, c.hex.length / 2)).toString('hex');
+        if (got !== c.hex) { console.error(`atmem ${c.pc.toString(16)} ${c.where}: ${got}, not ${c.hex}`); process.exit(1); }
+      }
+      A.n++;
+    }, { pcs: [...new Set(A.checks.map((c) => c.pc))] });
+  }
+  else if (t === 'expect:atmem') { const A = globalThis.__am; if (!A || !A.n) { console.error('expect:atmem: no atmem: PC reached'); process.exit(1); } A.n = 0; }
+  else if (t.startsWith('expect:ink:') || t.startsWith('expect:noink:')) {
+    // expect:ink:X,Y,X2,Y2 / expect:noink:X,Y,X2,Y2 (fwver): the rear screen drawn as shot: draws it; ends the run with
+    // exit 1 unless some pixel of the box from (X, Y) to (X2, Y2) differs from its top-left one / none does.
+    const ink = t.startsWith('expect:ink:'), [x, y, x2, y2] = t.slice(ink ? 11 : 13).split(',').map(Number);
+    s.scene_frame(); s.a15_apply('tft'); const comp = lab.compose('tft', true, true);
+    const w = comp.header.width, px = comp.raw, bpp = px.length / (w * comp.header.height);
+    const at = (X, Y) => Buffer.from(px.slice((Y * w + X) * bpp, (Y * w + X) * bpp + 3)).toString('hex');
+    let found = false;
+    for (let Y = y; Y <= y2 && !found; Y++) for (let X = x; X <= x2 && !found; X++) found = at(X, Y) !== at(x, y);
+    if (found !== ink) { console.error(`${t}: ${found ? 'ink' : 'no ink'}`); process.exit(1); }
+  }
   else if (t.startsWith('wcount:')) {
     // wcount:MGR:IDS:K counts the settings manager's (MGR, hex) calls for COLOR K's 18 settings, their ids from the
     // table at IDS (hex, pf_ids: u16 base, u8 step per COLOR, u8 record offset), and notes their values now (getv).

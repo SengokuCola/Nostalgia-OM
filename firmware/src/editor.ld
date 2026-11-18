@@ -62,6 +62,7 @@ SECTIONS {
   .hook_bgc     0x611e44d7 : { *(.hook_bgc) }
   .hook_bgd     0x611eae1e : { *(.hook_bgd) }
   .hook_blk     0x611c7922 : { *(.hook_blk) }   /* border preview: the line lookup's loop end -> bl_tail */
+  .hook_fv      0x6120b698 : { *(.hook_fv) }    /* fwver: the Firmware Version page's build, its end -> fv_add */
   .ext2         0x607187a8 : { *(.ext2) }
   .ext7         0x6164afd0 : { *(.ext7) }
   .ext3         0x6081fe10 : { *(.ext3) }
@@ -138,6 +139,8 @@ rdb_11        = 0x611d1757;
 color_resume  = 0x6051861a;
 getter        = 0x60063380;
 gui_get       = 0x610fd8ef;   /* border preview: the GUI's setting read (its cache, else the settings interface) */
+fv_lab        = 0x611c782f;   /* fwver: a line's label into its record (a0 the viewer, d0 the record, a1 the label) */
+fv_back       = 0x6120b69e;   /* fwver: the build's end, ret [d2,d3,a2,a3],84 */
 gl_loop       = 0x611c78cc;   /* border preview: the line lookup's record loop */
 gl_ret        = 0x611c7927;   /* and its retf */
 trig          = 0x60415343;

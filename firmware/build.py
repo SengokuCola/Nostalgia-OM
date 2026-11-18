@@ -91,7 +91,8 @@ HOOKS = {'.hook_color': (0x60518615, bytes.fromhex('cd6cfdf060')),
          '.hook_bgb': (0x611cb433, bytes.fromhex('ddbc24f3fff01c')),   # the same in grid builder 0x611cb359
          '.hook_bgc': (0x611e44d7, bytes.fromhex('dd1894f1fff01c')),   # the same in grid builder 0x611e4221
          '.hook_bgd': (0x611eae1e, bytes.fromhex('ddd12af1fff01c')),   # the same in grid builder 0x611eab68
-         '.hook_blk': (0x611c7922, bytes.fromhex('4c2144a7d4'))}   # border preview: the line lookup's loop end (inc d3; add 68,a1; cmp d1,d3; lcs)   # better grain g1: the grain tile's load -> tg_fill   # ft8: work-list key -> block +136   # ft4: end of combiner 1's set-up -> block +128   # ft3: the combiner set-up's selector call -> block +120   # ft1: still set-up -> code block +112 (grain texture)   # film test 9: the reset keeps the strip's scroll       # v0.23: Blacks / Whites bars top-down          # v0.23: our row title "Vignette Correction"          # v0.23: the bar's dot step   # v0.21 grain: request configuration -> selector
+         '.hook_blk': (0x611c7922, bytes.fromhex('4c2144a7d4')),
+         '.hook_fv': (0x6120b698, bytes.fromhex('5c14f1dcf050'))}   # border preview: the line lookup's loop end (inc d3; add 68,a1; cmp d1,d3; lcs)   # better grain g1: the grain tile's load -> tg_fill   # ft8: work-list key -> block +136   # ft4: end of combiner 1's set-up -> block +128   # ft3: the combiner set-up's selector call -> block +120   # ft1: still set-up -> code block +112 (grain texture)   # film test 9: the reset keeps the strip's scroll       # v0.23: Blacks / Whites bars top-down          # v0.23: our row title "Vignette Correction"          # v0.23: the bar's dot step   # v0.21 grain: request configuration -> selector
 XB_SRC = HERE / 'src' / 'xblock.s'
 XB_L1, XB_L2 = 0x10000000, 0x12345670          # the code block is linked at both; fields that move = relocations
 ROOT = HERE.parent                               # card files: card/mkguides.py (pictures), card/mklabels.py
@@ -118,7 +119,12 @@ DATA = {0x611d16c2: (bytes.fromhex('fcdc48c65461ca10'), bytes.fromhex('fcdca0ca5
         0x611d1733: (bytes.fromhex('fcdc70c65461ca10'), bytes.fromhex('fcdcf8ca5461ca24')),   # mov 0x6154caf8,a0; bra -> mov 11,d3
         # Picture Mode's idle timer (id 500): mov 8000,d1 -> mov 30000,d1 at every id-500 arm in 0x611c20ad..0x611c3cc2.
         # The white balance screen just after it keeps 8000, as do the others. Signed 16-bit: 32767 ms max.
-        **{a: (bytes.fromhex('2d401f'), bytes.fromhex('2d3075')) for a in PM_IDLE_SITES}}
+        **{a: (bytes.fromhex('2d401f'), bytes.fromhex('2d3075')) for a in PM_IDLE_SITES},
+        # fwver 1: the Firmware Version page's value boxes (x, y, w, h shorts; research/NOTES.md "Our version on the
+        # Firmware Version screen"): the 7 rows' plain place (x 477; the x 427 place is the update view's) 80 px ->
+        # 300 px wide, so our line's value shows whole. The camera's own "1.1" sits at the box's left as before.
+        **{0x614200e8 + 16 * i: (struct.pack('<4h', 477, y, 80, 62), struct.pack('<4h', 477, y, 300, 62))
+           for i, y in enumerate((205, 269, 333, 173, 237, 301, 365))}}
 EXT2 = (0x607187a8, 0x60718800)            # section-2 tail (FF from 0x607187a4, end 0x60718800; v0.20)
 EXT7 = (0x6164afd0, 0x6164b000)            # section-7 tail (FF from 0x6164afcc, end 0x6164b000; v0.20)
 EXT9 = (0x619a9670, 0x619a97f0)            # section-9 tail (FF from 0x619a966c, end 0x619a9800)
@@ -252,6 +258,11 @@ def build(defaults, testfile, out):
     ver = (HERE / 'VERSION').read_text().strip().replace('"', "'")
     assert ver.isprintable() and len(ver) < 60
     (out / 'lgver.inc').write_text(f'lg_ver:\n .asciz "{ver}"\n')
+    # fwver 1: the version's short name (VERSION's first word) for the camera's Firmware Version screen (fwver.s)
+    short = ver.split()[0]                        # fv_add shows it only if it fits whole (up to 14 letters)
+    assert short.isascii()
+    fv = [ord(c) for c in short] + [0] * max(1, 16 - len(short))   # 16 shorts at least (the tests put names there)
+    (out / 'fvver.inc').write_text('fv_ver:\n .short ' + ', '.join(map(str, fv)) + '\n')
     import halation                               # v0.28: the halation numbers and tables (firmware/halation.py)
     (out / 'hl_tab.inc').write_text(halation.inc())
     import shading                                # gentler Shading s1 (#22): the vignette's mask (firmware/shading.py)
