@@ -5925,3 +5925,9 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   FILM 1 (Portra 400's name, curves and mix), the other 19 with the standard values (photo codes = LOOKS.BIN records).
   Most likely the shot came before the new set was loaded at the half-press (analysis). The log listed films 1-19 as
   changed ('*'); not looked into.
+- **Shading back to the camera's own (2026-11-18, v0.41-dev test 7, owner: "the +2, -2"):** the preview now follows
+  the camera's own Shading, not s1. Its mask, measured on the Shading session's p1 wall photos (PB183489..493, f/1.8,
+  VC on and off): -2 and +2 are one mask m(r) (0 inside r 0.42, 0.05 at 0.52, 0.15 at 0.62, 0.28 at 0.72, 0.52 at 0.82,
+  0.79 at 0.92, 0.87 at 0.97), darker Y (1 - m), lighter 1 - (1 - Y)(1 - m); the preview matches both within 0.01.
+  Other levels estimated from the 2026-11-12 photos (room -1 / -3 / -5, wall -5 / +5) as (1 - m)^k, k 0.87 / 1 / 1.17 /
+  1.30 / 1.39: only +-2 is measured. Card 2's Shading photos were s1 and no longer apply.

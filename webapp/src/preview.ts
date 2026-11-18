@@ -407,13 +407,17 @@ function lensFalloff(w: number, h: number): Float32Array {
   return f;
 }
 
-/** OM-3 Shading -5..+5 (firmware v0.41 Gentler Shading s1: editor.s vg_run, firmware/shading.py; camera-checked on
- *  calibration card 2, 2026-11-18, within a few % of the camera at every level). r = the distance from the centre /
- *  the half-diagonal; the mask M5(r) is a monotone cubic through (0, 0), (0.30, 0.02), (0.525, 0.28), (0.75, 0.75),
- *  (1, 0.94); each level is |level| / 5 of it. In the camera's YCbCr: darker Y' = Y g, lighter Y' = 1 - (1 - Y) g,
- *  the colour toward grey by g, g = 1 - |level| M5 / 5 (in 256ths, as the firmware rounds it). */
+/** OM-3 Shading -5..+5: the camera's own (firmware v0.41 test 7 went back to it, owner 2026-11-18: "the +2, -2").
+ *  Measured on a plain wall (the Shading session's probe p1, 2026-11-18, PB183489..493): -2 and +2 are one radial mask
+ *  m(r), r = the distance from the centre / the half-diagonal: nothing inside r 0.42, then 0.05 at r 0.52, 0.15 at
+ *  0.62, 0.28 at 0.72, 0.52 at 0.82, 0.79 at 0.92, 0.87 at 0.97. Darker blends toward black, Y' = Y (1 - m), lighter
+ *  toward white, Y' = 1 - (1 - Y)(1 - m), the colour toward grey by the same amount (probe s1, 2026-11-12). The other
+ *  levels are estimates from the 2026-11-12 photos (a room at -1 / -3 / -5, a wall at -5 / +5): every level is strong,
+ *  higher levels a little more, as (1 - m)^k, k = 0.87 / 1 / 1.17 / 1.30 / 1.39 for 1..5. */
+const SHADE_K = [0, 0.87, 1, 1.17, 1.3, 1.39];
 const SHADE_M = (() => {
-  const P = [[0, 0], [0.3, 0.02], [0.525, 0.28], [0.75, 0.75], [1, 0.94]], n = P.length;
+  const P = [[0, 0], [0.42, 0], [0.47, 0.015], [0.52, 0.052], [0.57, 0.109], [0.62, 0.153], [0.67, 0.208], [0.72, 0.284],
+    [0.77, 0.361], [0.82, 0.517], [0.87, 0.67], [0.92, 0.792], [0.97, 0.872], [1, 0.91]], n = P.length;
   const hh = P.slice(0, -1).map((p, i) => P[i + 1][0] - p[0]), d = hh.map((v, i) => (P[i + 1][1] - P[i][1]) / v);
   const t = new Array<number>(n).fill(0);
   t[n - 1] = d[n - 2];
@@ -428,16 +432,16 @@ const SHADE_M = (() => {
     const sp = (r - P[i][0]) / hh[i], s2 = sp * sp, s3 = s2 * sp;
     return (2 * s3 - 3 * s2 + 1) * P[i][1] + (s3 - 2 * s2 + sp) * hh[i] * t[i] + (-2 * s3 + 3 * s2) * P[i + 1][1] + (s3 - s2) * hh[i] * t[i + 1];
   };
-  return Array.from({ length: 513 }, (_, i) => Math.floor(256 * m(Math.sqrt(i / 512)) + 0.5));
+  return Float32Array.from({ length: 513 }, (_, i) => Math.max(0, Math.min(1, m(Math.sqrt(i / 512)))));   // by r^2
 })();
 function om3Shading(img: Float32Array, w: number, h: number, level: number) {
-  const lv = Math.min(5, Math.abs(level)), D = w * w + h * h;
+  const k = SHADE_K[Math.min(5, Math.abs(level))], D = w * w + h * h;
   for (let y = 0; y < h; y++) {
     const Yc = (2 * y + 1 - h) ** 2;
     for (let x = 0; x < w; x++) {
-      const idx = Math.min(512, Math.floor((((2 * x + 1 - w) ** 2 + Yc) * 512) / D));
-      const g = (256 - Math.floor((lv * SHADE_M[idx] + 2) / 5)) / 256;
-      if (g >= 1) continue;
+      const m2 = SHADE_M[Math.min(512, Math.round((((2 * x + 1 - w) ** 2 + Yc) * 512) / D))];
+      if (m2 <= 0) continue;
+      const g = (1 - m2) ** k;                   // what is left of the pixel's distance to the target
       const q = (y * w + x) * 3, r = img[q], gg = img[q + 1], b = img[q + 2];
       const Y = 0.299 * r + 0.587 * gg + 0.114 * b;
       const cb = (-0.168736 * r - 0.331264 * gg + 0.5 * b) * g, cr = (0.5 * r - 0.418688 * gg - 0.081312 * b) * g;

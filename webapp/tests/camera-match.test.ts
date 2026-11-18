@@ -24,7 +24,7 @@ describe('OM-3 v0.41 preview', () => {
     d = render(l);
     expect(px(d, 160, 2, 60)).toBe(0);
   });
-  it('Shading -5: the centre stays, the corner goes to about 0.06 of it (firmware s1)', () => {
+  it('Shading -5: the centre stays, the corner goes to a few % of it (the camera\'s own)', () => {
     const l = blankLook('colour', 's');
     l.vignette = -5;
     const d = render(l);
