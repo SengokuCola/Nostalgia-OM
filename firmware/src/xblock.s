@@ -7,7 +7,7 @@
  .set XB_SHG, 0                   /* film test 11's Shading check before the camera grain (1: on; rebooted on the camera) */
  .set XB_H0, 0                    /* v0.28 halation probe h0 (camera-tested 2026-11-12): off */
  .set XB_HL, 1                    /* v0.28: the Halation row (slot +30, 1..5) on our looks' stills (editor.s hl_run) */
- .set XB_BD, 1                    /* borders: the Border row (slot +50, 1..5; Frame's old byte) on our looks' stills (editor.s bd_run) */
+ .set XB_BD, 1                    /* borders: the Border row (slot +50, 1..5 white, -1..-5 black; Frame's old byte) on our looks' stills (editor.s bd_run) */
 /* Caduceus for OM-3 v0.20 test 5: the Extras code block (appended to GUIDES.BIN, our own code).
  *
  * Runs from its heap buffer (uncached pool, as the camera's malloc returns), relocated in place by entry 0. Linked at
@@ -556,13 +556,17 @@ xb_gs:                            /* `calls` (0,sp) = return, a0 = job */
 6:
  .endif
  .if XB_BD
- movbu (50,a1),d0                 /* borders: the Border row 1..5 (slot +50; 0 and below: none) */
+ movbu (50,a1),d0                 /* borders: the Border row 1..5 white, -1..-5 black (slot +50; 0: none) */
  extb d0
  cmp 0,d0
- ble 16f
+ beq 16f
  cmp 5,d0
- bls 17f
+ ble 18f
  mov 5,d0
+18:
+ cmp -5,d0
+ bge 17f
+ mov -5,d0
 17:
  mov d0,(20,sp)
 16:

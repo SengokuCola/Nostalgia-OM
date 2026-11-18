@@ -319,6 +319,8 @@ SI_MASK1 = 'expect:mem:6295c70c=01000000'
 SI_MODE_ON, SI_MODE_OFF = 'expect:pxdiff:48,575,300,450', 'expect:pxsame:48,575,300,450'
 SI_MODE_ON_VIDEO = 'expect:pxdiff:62,574,300,450'
 BORDER_TO_0 = f'{OPEN_BORDER}' + ' left wait' * 3 + ' expect:p:82=00 menu wait wait s1 wait wait'
+BORDER_TO_M3 = f'{OPEN_BORDER}' + ' left wait' * 3 + ' expect:p:82=fd menu wait wait s1 wait wait'   # black -3
+BORDER_FROM_M3 = f'{OPEN_BORDER}' + ' right wait' * 3 + ' expect:p:82=00 menu wait wait s1 wait wait'
 # better grain g2: the Film Grain strength row, the 16th (Grain Size under it); COLOR 1's level byte +53 is P + 85
 OPEN_GRAIN = 'ok wait ok wait' + ' down wait' * 15
 GRAIN_2_COARSE = '^Film Grain on COLOR 1-4: 2 Coarse, Off, Off, Off$'
@@ -415,13 +417,19 @@ TESTS = {
         Boot(BOOT1_ASSIGN_C1),
         Boot(LIVE_TURN_HOLDS_THE_LABEL, expect=[P_FILM_LINE], mode_dial=MODE_DIAL_M),
     ],
-    # borders: the Border row steps 0..5 (right / left; no step past either end) into COLOR 1's slot +50, and the
-    # value is kept over a power-off (saved at the half-press).
-    'border-row-0-to-5-kept': [
+    # borders: the Border row steps -5..+5 (2026-11-18: - black, + white; right / left, no step past either end) into
+    # COLOR 1's slot +50, and the value is kept over a power-off (saved at the half-press).
+    'border-row-minus-5-to-5-kept': [
         Boot(f's1 wait wait {OPEN_BORDER}' + ' right wait' * 7 + ' expect:p:82=05 left wait left wait expect:p:82=03'
              ' menu wait wait s1 wait wait poweroff'),
-        Boot(f'wait wait s1 wait wait expect:p:82=03 {OPEN_BORDER}' + ' left wait' * 4 + ' expect:p:82=00'
+        Boot(f'wait wait s1 wait wait expect:p:82=03 {OPEN_BORDER}' + ' left wait' * 10 + ' expect:p:82=fb'
+             ' right wait right wait expect:p:82=fd menu wait wait s1 wait wait poweroff'),
+        Boot(f'wait wait s1 wait wait expect:p:82=fd {OPEN_BORDER}' + ' right wait' * 3 + ' expect:p:82=00'
              ' menu wait wait s1 wait wait poweroff'),
+    ],
+    # border preview: a black Border (-3) gets the same frame line as a white one (+3), and Border 0 none.
+    'border-preview-on-for-black': [
+        Boot(f's1 wait wait {BORDER_LINE_OFF} {BORDER_TO_M3} {BORDER_LINE_ON} {BORDER_FROM_M3} {BORDER_LINE_OFF} poweroff'),
     ],
     # border preview: the frame line is there at Border 3 and gone at Border 0 (and not there before the Border).
     'border-preview-on-at-3-off-at-0': [

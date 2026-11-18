@@ -3453,7 +3453,7 @@ sl_slot:
 83:
  cmp 10,d1
  bne 84f
- movbu (50,a0),d0                 /* borders: Border 0..5 (slot +50; v0.25 Frame's byte) */
+ movbu (50,a0),d0                 /* borders: Border -5..+5 (slot +50; v0.25 Frame's byte) */
  extb d0
  bra 99f
 84:
@@ -3731,7 +3731,7 @@ sl_cnt:
  mov 11,d0                        /* v0.25: 9 Glow / Clarity -5..+5 */
  cmp 9,a3
  beq 6f
- mov 6,d0                         /* borders: 10 Border 0..5 */
+ mov 11,d0                        /* borders: 10 Border -5..+5 (2026-11-18: - black, + white; was 0..5) */
  cmp 10,a3
  beq 6f
  mov 15,d0                        /* 7 A-B, 8 G-M: -7..+7 */
@@ -3776,12 +3776,10 @@ sl_cnt:
  mov 11,d1
  cmp 13,a3
  beq 99f
- mov -5,d0                        /* v0.25: 9 Glow / Clarity -5, 11; borders: 10 Border 0, 6 */
+ mov -5,d0                        /* v0.25: 9 Glow / Clarity -5, 11; borders: 10 Border -5, 11 (2026-11-18) */
  mov 11,d1
  cmp 9,a3
  beq 99f
- clr d0
- mov 6,d1
  cmp 10,a3
  beq 99f
  mov -7,d0
@@ -4023,8 +4021,8 @@ sl_set0:
 12:
  cmp 10,a3
  bne 13f
- cmp 0,d1                         /* borders: Border 0..5 -> +50 (v0.25 Frame's byte) */
- blt 7f
+ cmp -5,d1                        /* borders: Border -5..+5 -> +50 (v0.25 Frame's byte; the camera checks it as
+ blt 7f                           * -5..5); 2026-11-18: - black, + white (was 0..5) */
  cmp 5,d1
  bgt 7f
  mov d2,a3
@@ -4182,8 +4180,8 @@ rw_bar:
  beq 3f
  cmp HL_IT,d0                     /* v0.28 Halation: 0..5 (h6: its own ends, so the bar starts at the left) */
  beq 5f
- cmp FR_IT,d0                     /* borders: Border 0..5, as Halation */
- beq 5f
+ cmp FR_IT,d0                     /* borders: Border -5..+5 (2026-11-18; was 0..5 as Halation) */
+ beq 3f
  cmp GS_IT,d0                     /* g2: Film Grain 0..5, as Halation */
  beq 5f
  cmp TB_IT,d0                     /* v0.28 Tone Balance: -5..+5 */
@@ -5652,8 +5650,6 @@ rd_a:
  cmp HL_IT,d0                     /* v0.28 h6 Halation 0..5: +-0, then +1..+5 (no -1..-5 entries) */
  beq 51f
  cmp GS_IT,d0                     /* g2: Film Grain 0..5, as Halation */
- beq 51f
- cmp FR_IT,d0                     /* borders: Border 0..5, as Halation */
  bne 6f
 51:
  mov rd6_a,a0
@@ -5678,6 +5674,8 @@ rd_a:
  cmp WH_IT,d0
  beq 1f
  cmp GL_IT,d0
+ beq 1f
+ cmp FR_IT,d0                     /* borders: Border -5..+5 (2026-11-18) */
  beq 1f
  cmp TB_IT,d0                     /* v0.28 Tone Balance */
  beq 1f
@@ -5714,8 +5712,6 @@ rd_b:
  cmp HL_IT,d0                     /* v0.28 h6 Halation (as rd_a) */
  beq 51f
  cmp GS_IT,d0                     /* g2: Film Grain (as rd_a) */
- beq 51f
- cmp FR_IT,d0                     /* borders: Border (as rd_a) */
  bne 6f
 51:
  mov rd6_b,a0
@@ -5740,6 +5736,8 @@ rd_b:
  cmp WH_IT,d0
  beq 1f
  cmp GL_IT,d0
+ beq 1f
+ cmp FR_IT,d0                     /* borders: Border -5..+5 (2026-11-18) */
  beq 1f
  cmp TB_IT,d0                     /* v0.28 Tone Balance */
  beq 1f
@@ -17725,17 +17723,26 @@ hl_open:
  .set BD_PAIR, 4                  /* the estimate: per pair written, and per row */
  .set BD_ROW, 60
  .set BD_WORD, 0x80ff80ff         /* Y0 255, Cb 128, Y1 255, Cr 128 */
+ .set BD_BLACK, 0x80008000        /* 2026-11-18, Border -5..-1: Y0 0, Cb 128, Y1 0, Cr 128 */
  .balign 4
 bd_tab:                           /* the width per level, in 1 / 65536 of the short side: 1.5, 3, 4.5, 6, 7.5 % */
  .long 983, 1966, 2949, 3932, 4915
 
-/* bd_run: `call bd_run,[d2,d3,a2,a3],88`, a0 = buffer record, d0 = level 1..5 (anything else: nothing).
+/* bd_run: `call bd_run,[d2,d3,a2,a3],88`, a0 = buffer record, d0 = level 1..5 white, -1..-5 black (2026-11-18, owner:
+ * "make the border black ... so we could have white and black": one Border row -5..+5), anything else: nothing.
  * Locals: (0) call slot, (4) rec, (8) P = W / 2 pairs, (12) H, (16) pitch, (20) bus, (24) B rows, (28) Bp pairs,
  * (32) y, (36) the band's end row, (40) a: pairs from the left, (44) b: the right span's first pair (P - b pairs),
  * (48) K rows per lock, (52) rows in this group, (56) token, (60) cached, (64) the row's CPU address, (68) band 0..2.
- * d2 = BD_WORD throughout (the callee-saved registers are ours: xb_gs's call saves them). */
+ * d2 = BD_WORD or BD_BLACK throughout (the callee-saved registers are ours: xb_gs's call saves them). */
 bd_run:
  mov a0,(4,sp)
+ mov BD_WORD,d2                   /* 1..5: white */
+ cmp 0,d0
+ bge 3f
+ not d0                           /* -1..-5: black, the same widths */
+ inc d0
+ mov BD_BLACK,d2
+3:
  cmp 1,d0
  bcs 99f
  cmp 5,d0
@@ -17792,7 +17799,6 @@ bd_run:
  add 1,d0
  lsr 1,d0
  mov d0,(28,sp)                   /* Bp */
- mov BD_WORD,d2
  clr d0
  mov d0,(68,sp)                   /* band 0: rows 0 .. B - 1, the whole width */
  mov d0,(32,sp)
@@ -21132,9 +21138,14 @@ bl_gv:
  asl 6,d1
  add 32,d1
  add d1,a2                        /* COLOR k's slot */
- movbu (50,a2),d0                 /* the Border 1..5 (as xb_gs) */
+ movbu (50,a2),d0                 /* the Border -5..-1 / 1..5 (as xb_gs; 2026-11-18: either colour, the same frame) */
+ extb d0
  cmp 0,d0
  beq 9f
+ bgt 4f
+ not d0
+ inc d0
+4:
  cmp 6,d0
  bcc 9f
  mov (8,sp),a0

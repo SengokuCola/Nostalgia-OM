@@ -5,8 +5,8 @@
 
 BUILD_DIR is a firmware/build.py --out folder (main.bin, p.elf). Each case is a test frame of random bytes in the
 camera's buffer format (YCbYCr 4:2:2, rows `pitch` bytes apart; the padding past 2 W bytes must stay as it is): the
-four photo shapes, the smallest frame, a short wide one, a 8192 px wide one (few rows per lock), and levels the
-firmware must leave alone (0, 6). research/halation/emu_hl.mjs runs `bd_run` on each in om-emu (single steps;
+four photo shapes, the smallest frame, a short wide one, a 8192 px wide one (few rows per lock), black borders
+(levels -1..-5), and levels the firmware must leave alone (0, 6, -6). research/halation/emu_hl.mjs runs `bd_run` on each in om-emu (single steps;
 FLUSH stubbed) and the result must equal model.border's byte for byte, with the callee-saved registers, sp and a guard
 after the frame intact. Prints one line per case. Exit 0 when every case is bit-exact.
 """
@@ -54,6 +54,10 @@ CASES = {   # name: (W, H, pad pixels, level[, Image Aspect 1..9: 2 3:2, 3 16:9,
     'c11': (640, 480, 0, 4, 4),
     'c34': (640, 480, 16, 5, 9),
     'c169cut': (1024, 576, 0, 2, 3),
+    'black5': (640, 480, 16, -5),      # 2026-11-18: Border -1..-5 black, the same widths
+    'black1': (480, 640, 0, -1),
+    'black3c': (1024, 768, 8, -3, 3),
+    'levelm6': (320, 240, 0, -6),      # below -5: nothing
 }
 CR_A1 = 0x629209c2                     # Image Aspect in the camera's settings image (crop.s CR_A1)
 BIG = ('big5', 'big169', 'big34')   # camera-sized (20 MP): for the counts, not in the default run
