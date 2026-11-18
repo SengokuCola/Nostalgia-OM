@@ -57,16 +57,16 @@ CROPHIST_CASES = {   # name: (Image Aspect, area x, y, w, h asked, area kept)
     '5-4': (5, (0, 0, 640, 480), (20, 0, 600, 480)),
     '16-9-as-it-is': (3, (0, 0, 640, 360), (0, 0, 640, 360)),
 }
-# crop round 9: the playback labels, by direct calls (om-emu's playback gives its photos no size). The GUI's label
-# code by shape (0x61101381): 5:4 6, XPan 7, 21:9 8, the stock ratios as before. The play component's record-mode code
-# (0x60c7c18a, the quality label): a crop takes its base size's code (XPan / 21:9 L -> 16:9 L), a miss stays 57.
-# The three label elements: 8 states.
+# crop round 9b: the playback ratio label, by direct calls (om-emu's playback gives its photos no crop size). The
+# camera's own shape sort (0x61101381) and record-mode lookup (0x60c7c18a) stay stock (round 9 changed them and the
+# camera rebooted in playback); SimplePlayCommon's hook (cr_pbk1) notes the crop shape, and the label updates
+# (cr_pbla / cr_pblb) show its state when the stock code is the crop's base. The three label elements: 8 states.
 CROPPL = 'crop-playback-label-and-quality'
-CROPPL_LABEL = {(5184, 1920): 7, (3200, 1184): 7, (5184, 2224): 8, (4864, 3888): 6, (5184, 2920): 4, (5184, 3888): 1,
-                (5184, 3456): 2, (3888, 3888): 5, (2912, 3888): 3, (5184, 0): 2}   # h 0: 16389, as stock
-CROPPL_QUALITY = {   # (class, compression, w, h): code
-    (1, 1, 5184, 2920): 1, (1, 1, 5184, 1920): 1, (1, 1, 5184, 2224): 1, (1, 5, 5184, 1920): 2, (1, 1, 3200, 1800): 5,
-    (1, 1, 3200, 1184): 5, (0, 1, 5184, 3888): 1, (0, 1, 4864, 3888): 1, (0, 1, 3200, 2400): 5, (3, 1, 1000, 999): 57}
+CROPPL_STOCK = {(5184, 1920): 4, (5184, 2224): 4, (4864, 3888): 1, (5184, 2920): 4, (5184, 3888): 1}
+CROPPL_QUALITY = {(1, 1, 5184, 2920): 1, (1, 1, 5184, 1920): 57, (0, 1, 4864, 3888): 57, (0, 1, 5184, 3888): 1}
+CROPPL_KIND = {(5184, 1920): 7, (3200, 1184): 7, (5184, 2224): 8, (4864, 3888): 6, (3008, 2400): 6, (5184, 2920): 0,
+               (5184, 3888): 0, (5184, 3456): 0, (3888, 3888): 0, (2912, 3888): 0, (5184, 0): 0}
+CROPPL_INDEX = {(7, 4): 6, (8, 4): 7, (6, 1): 5, (7, 2): 1, (0, 4): 3, (6, 4): 3, (8, 1): 0}   # (cr_pbk, code): index
 CROPPL_ELEMENTS = (0x613f8d08, 0x613fe9cc, 0x6147d568)
 GRAIN_GAINS = {1: (400, 175), 3: (1024, 448), 5: (1536, 672)}   # strength -> texture Y gain, Cb / Cr gain (xblock.s)
 REAR_DIAL = 0x9032                               # the rear dial's event (cv_ev); a1 its signed clicks
@@ -831,36 +831,72 @@ def run_crophist(emu, build, out, card0):
 
 
 def run_croppl(emu, build, out, card0):
-    """0x61101381 for CROPPL_LABEL, 0x60c7c18a for CROPPL_QUALITY (stub calls as the camera's), the elements."""
+    """The stock 0x61101381 / 0x60c7c18a unchanged; cr_pbk1 for CROPPL_KIND; cr_pbla / cr_pblb for CROPPL_INDEX;
+    the elements."""
     d = out / CROPPL
     d.mkdir(parents=True, exist_ok=True)
     sym = elf_symbols(build / 'p.elf')
     word = lambda v: v.to_bytes(4, 'little').hex()
+    half = lambda v: v.to_bytes(2, 'little').hex()
+    jmp = lambda name: [['B', 'dc'], ['B+1', f"={sym.get(name, 0):#x}-B"]]
     spec = []
-    for (w, h), _ in CROPPL_LABEL.items():
-        spec.append({'name': f'label {w}x{h}', 'pc': 'B', 'stop': ['B+7'], 'max': 5000,
+    for (w, h), _ in CROPPL_STOCK.items():
+        spec.append({'name': f'stock label {w}x{h}', 'pc': 'B', 'stop': ['B+7'], 'max': 5000,
                      'mem': [['B', 'dd'], ['B+1', '=0x61101381-B'], ['B+5', '8004']], 'regs': {'d0': str(w), 'd1': str(h)}})
     for (c, k, w, h), _ in CROPPL_QUALITY.items():
         spec.append({'name': f'quality {c} {k} {w}x{h}', 'pc': 'B', 'stop': ['B+7'], 'max': 5000,
                      'mem': [['B', 'dd'], ['B+1', '=0x60c7c18a-B'], ['B+5', 'f014'], ['SP+4', word(w)], ['SP+8', word(h)]],
                      'regs': {'d0': '1', 'd1': str(c), 'a1': str(k)}})
+    for (w, h), _ in CROPPL_KIND.items():
+        spec.append({'name': f'kind {w}x{h}', 'pc': 'B', 'stop': ['0x61113424'], 'max': 2000,
+                     'mem': jmp('cr_pbk1') + [['B+0x300', half(w) + half(h)], ['SP+2844', '78563412']],
+                     'regs': {'d0': '4', 'd1': '0x11', 'a2': 'B+0x300', 'a3': 'B+0x302'},
+                     'read': [[f"{sym.get('cr_pbk', 0):#x}", 1]]})
+    for site, back in (('cr_pbla', '0x611509c2'), ('cr_pblb', '0x611525bf')):
+        for (k, c), _ in CROPPL_INDEX.items():
+            if site == 'cr_pblb' and (k, c) != (7, 4):
+                continue
+            spec.append({'name': f'{site} {k} {c}', 'pc': 'B', 'stop': [back], 'max': 2000,
+                         'mem': jmp(site) + [['B+0x310', f'{c:02x}'], [f"{sym.get('cr_pbk', 0):#x}", f'{k:02x}']],
+                         'regs': {'d1': '0x11', 'a2': '0x1234', 'a3': 'B+0x310'}})
     pll = sym.get('cr_pll', 0)
     spec.append({'name': 'elements', 'pc': 'B', 'stop': ['B'], 'read': [[hex(e), 12] for e in CROPPL_ELEMENTS] +
-                 [[f'{pll:#x}', 128]]})
+                 [[f'{pll:#x}', 128], [f"{sym.get('cr_pbk', 0):#x}", 1]],
+                 'mem': [[f"{sym.get('cr_pbk', 0):#x}", '00']]})
     res = run_ncall(emu, build, d, card0, 's1 wait wait ncall', spec)
     if isinstance(res, str):
         return CROPPL, [res]
     errors = []
-    for (w, h), want in CROPPL_LABEL.items():
-        r = res[f'label {w}x{h}']
-        got = int(r['regs']['d0'], 16) if r['steps'] < 5000 else 'no return'
+    ok = lambda r, n: r['steps'] < n
+    reg = lambda r, k: int(r['regs'][k], 16)
+    for (w, h), want in CROPPL_STOCK.items():
+        r = res[f'stock label {w}x{h}']
+        got = reg(r, 'd0') if ok(r, 5000) else 'no return'
         if got != want:
-            errors.append(f'label {w} x {h}: code {got}, not {want}')
+            errors.append(f'the stock label code of {w} x {h}: {got}, not {want} (0x61101381 changed)')
     for (c, k, w, h), want in CROPPL_QUALITY.items():
         r = res[f'quality {c} {k} {w}x{h}']
-        got = int(r['regs']['d0'], 16) if r['steps'] < 5000 else 'no return'
+        got = reg(r, 'd0') if ok(r, 5000) else 'no return'
         if got != want:
-            errors.append(f'quality class {c}, compression {k}, {w} x {h}: code {got}, not {want}')
+            errors.append(f'the stock record mode of class {c}, {w} x {h}: {got}, not {want} (0x60c7c18a changed)')
+    for (w, h), want in CROPPL_KIND.items():
+        r = res[f'kind {w}x{h}']
+        if not ok(r, 2000):
+            errors.append(f'cr_pbk1 {w} x {h}: did not reach 0x61113424')
+            continue
+        got = bytes.fromhex(r['mem'][0])[0]
+        regs = (reg(r, 'd0'), reg(r, 'd1'), reg(r, 'd2'), reg(r, 'a0'))
+        if got != want or regs != (4, 0x11, 0x12345678, 78):
+            errors.append(f'cr_pbk1 {w} x {h}: kind {got} (not {want}), d0 d1 d2 a0 {[hex(x) for x in regs]}')
+    for site in ('cr_pbla', 'cr_pblb'):
+        for (k, c), want in CROPPL_INDEX.items():
+            n = f'{site} {k} {c}'
+            if n not in res:
+                continue
+            r = res[n]
+            regs = (reg(r, 'd0'), reg(r, 'd1'), reg(r, 'a0')) if ok(r, 2000) else None
+            if regs != (want, 0x11, 0x1234):
+                errors.append(f'{site}: kind {k}, code {c}: index / d1 / a0 {regs}, not ({want}, 0x11, 0x1234)')
     mem = res['elements']['mem']
     for e, got in zip(CROPPL_ELEMENTS, mem[:3]):
         b = bytes.fromhex(got)

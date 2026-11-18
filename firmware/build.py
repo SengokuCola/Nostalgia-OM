@@ -36,8 +36,9 @@ HOOKS = {'.hook_color': (0x60518615, bytes.fromhex('cd6cfdf060')),
          '.hook_crb': (0x6006120e, bytes.fromhex('fccf80d273a3')),       # crop modes: the buffer before the write (menus)
          '.hook_crg': (0x611cb24d, bytes.fromhex('5c0870f85309')),       # crop round 3: the GUI screen spec's ratio byte
          '.hook_crh': (0x60dc4bb1, bytes.fromhex('cff0fafe00ff')),       # crop round 5: the live histogram's area
-         '.hook_crk': (0x61101393, bytes.fromhex('8003faca2e22')),       # crop round 9: the playback label code by shape (section 7)
-         '.hook_crq': (0x60c7c18a, bytes.fromhex('839f394f00')),         # crop round 9: the play component's record-mode code (section 6)
+         '.hook_crk': (0x6111341e, bytes.fromhex('fab61c0b904e')),       # crop round 9b: SimplePlayCommon after its label code (s7)
+         '.hook_crl': (0x611509bc, bytes.fromhex('f0439828ff14')),       # crop round 9b: the item 34 label update (s7)
+         '.hook_crm': (0x611525b9, bytes.fromhex('f0439828ff14')),       # crop round 9b: the item 61 label update (s7)
          '.hook_shutter': (0x60415216, bytes.fromhex('cd2d01f024')),
          '.hook_set': (0x60b8798b, bytes.fromhex('dd04d90200f044')),
          '.hook_pmod': (0x6129ba07, bytes.fromhex('0cfcde10ec')),

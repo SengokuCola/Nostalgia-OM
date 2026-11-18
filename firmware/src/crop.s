@@ -559,7 +559,7 @@ cr_dst:
 cr_daf:
  .long 0
 cr_t1:
- .asciz "\r\n\r\nCROP MODES (crop round 9): tag at the first half-press "
+ .asciz "\r\n\r\nCROP MODES (crop round 9b): tag at the first half-press "
 cr_t2:
  .asciz ", Image Aspect then "
 cr_t3:
@@ -1012,105 +1012,120 @@ cr_bdc:
 /* ---- (Crop round 7's playback info diagnosis, cr_pbi at 0x6057fb1b, is removed: that hook sat in section 2 and jumped
  * into section 6's extension, and the camera boot-looped. research/NOTES.md "Crop round 7: the boot loop".) */
 
-/* ---- Crop round 9: the playback labels (2026-11-17; camera, round 8: "Still says 16:9 ... the lsf+raw also
- * disappears"). Playback sorts a photo by its shape, w x 10000 / h against fixed thresholds, into the five stock
- * ratios, twice: the GUI's label code (0x61101381: 3:4, 1:1, 4:3, 3:2, else 16:9 -> codes 3, 5, 1, 2, 4; item 197
- * + 78 and the other info's, shown as index code - 1 of 4:3, 3:2, 3:4, 16:9, 1:1) and the play component's class
- * for its record-mode code (Cmp_PlayComponentBase 0x60c79521 / 0x60c82c93 -> 0x60c7c18a: the class's table of
- * {k, w, h, code} by exact size; a miss gives 57, no quality label). XPan / 21:9 come out as 16:9 and miss the
- * size table, 5:4 as 4:3. Both are in sections loaded after section 6 or with it (7, 6).
- * cr_pbc: codes 6 (5:4), 7 (XPan), 8 (21:9) for their shapes; the label elements (3 layouts) get 8 entries, ours
- * the top bar's pictures CR_IC0 + 3..5 (crop.py). cr_pq: a wide crop takes the height of the 16:9 entry of its
- * width, a 5:4 the width of the 4:3 entry of its height, before the stock lookup (L XPan -> 16:9 L's code). */
-cr_pbc:                           /* jmp from 0x61101393 (d2 = w x 10000 / h, or 16389 for h 0) */
- cmp 25156,d2
- bhi 7f                           /* > 2.516: XPan (65:24 = 2.708) */
- cmp 20625,d2
- bhi 8f                           /* > 2.063: 21:9 (2.333) */
- cmp 12917,d2
- bhi 9f                           /* > 1.292: the stock 4:3, 3:2, 16:9 */
- cmp 11667,d2
- bhi 6f                           /* > 1.167: 5:4 (1.25) */
-9:
- mov 3,d0                         /* the stock instructions */
- cmp 8750,d2
- jmp cr_pbc_back                  /* 0x61101399: bls */
-6:
- mov 6,d0
- jmp cr_pbc_end                   /* 0x611013b5: extbu d0; ret [d2],4 */
-7:
- mov 7,d0
- jmp cr_pbc_end
+/* ---- Crop round 9b: the playback ratio label (2026-11-17). Playback sorts a photo by its shape into the five stock
+ * ratios (the GUI's 0x61101381: w x 10000 / h against 8750 / 11667 / 14166 / 16389 -> codes 3, 5, 1, 2, else 4),
+ * so XPan / 21:9 are 16:9 and 5:4 is 4:3; the play component's record-mode lookup (0x60c7c18a) misses their sizes
+ * (57: no quality label). Round 9 changed both outputs (codes 6..8 from the shared 0x61101381, a real record mode
+ * from 0x60c7c18a) and the camera rebooted when a photo was shown; which reader of the new values broke is not known
+ * (research/NOTES.md "Crop round 9: the reboot"). Round 9b leaves every stock value as it was: the single frame's
+ * info build (CPlaySingleFrame::SimplePlayCommon, right after its 0x61101381 call at 0x61113417) notes the crop
+ * shape in cr_pbk (6 5:4, 7 XPan, 8 21:9, else 0) from the photo's own w x h, and the two label updates (0x611509bc
+ * item 34, 0x611525b9 item 61) show state cr_pbk - 1 instead of code - 1 when the stock code is the crop's base (4 /
+ * 1). The label elements have 8 states (crop.py; ours the top bar's pictures). The quality label stays as stock (none
+ * for a crop). All in section 7 (hooks) and .ext12 (section 6, loaded before it). */
+cr_pbk:
+ .byte 0
+ .balign 4
+cr_pbsv:                          /* cr_pbk1: d0, d1; the label updates: d1 */
+ .space 12
+cr_pbk1:                          /* jmp from 0x6111341e (d0 = the stock code; a2 -> w, a3 -> h; d2 and a0 are set
+                                     by the stock instructions next) */
+ mov d0,(cr_pbsv)
+ mov d1,(cr_pbsv + 4)
+ clr d2
+ movhu (a3),d1                    /* h */
+ cmp 0,d1
+ beq 8f
+ mov d1,a0
+ lsr 4,d1
+ add a0,d1
+ add a0,d1                        /* 2h + h/16 (2.0625) */
+ movhu (a2),d0                    /* w */
+ cmp d1,d0
+ bls 4f
+ mov a0,d1                        /* wide: XPan above 2h + h/2 + h/64 (2.5156), else 21:9 */
+ lsr 6,d1
+ add a0,d1
+ add a0,d1
+ mov a0,d2
+ lsr 1,d2
+ add d2,d1
+ mov 7,d2
+ cmp d1,d0
+ bhi 8f
+ mov 8,d2
+ bra 8f
+4:
+ mov a0,d1                        /* 5:4: h + h/8 + h/32 + h/64 (1.1719) < w <= h + h/4 + h/32 + h/128 (1.2891) */
+ lsr 3,d1
+ add a0,d1
+ mov a0,d2
+ lsr 5,d2
+ add d2,d1
+ mov a0,d2
+ lsr 6,d2
+ add d2,d1
+ clr d2
+ cmp d1,d0
+ bls 8f
+ mov a0,d1
+ lsr 2,d1
+ add a0,d1
+ mov a0,d2
+ lsr 5,d2
+ add d2,d1
+ mov a0,d2
+ lsr 7,d2
+ add d2,d1
+ clr d2
+ cmp d1,d0
+ bhi 8f
+ mov 6,d2
 8:
- mov 8,d0
- jmp cr_pbc_end
+ movbu d2,(cr_pbk)
+ mov (cr_pbsv),d0
+ mov (cr_pbsv + 4),d1
+ mov (2844,sp),d2                 /* the stock instructions */
+ mov 78,a0
+ jmp cr_pbk1_back                 /* 0x61113424 */
 .section .hook_crk,"ax"
- jmp cr_pbc                       /* stock 0x61101393: mov 3,d0; cmp 8750,d2 */
+ jmp cr_pbk1                      /* stock 0x6111341e: mov (2844,sp),d2; mov 78,a0 */
  .byte 0xcb
 .section .ext12,"ax"
 
-cr_pq:                            /* jmp from 0x60c7c18a ([d2,d3,a2,a3],20 frame, retf: mdr is the return, so no
-                                     mul / div / call here): d0 the mode, d1 the class (0 4:3, 1 16:9), a1 the
-                                     compression, (24,sp) w, (28,sp) h */
- mov d0,a3
- movhu (28,sp),d3
- cmp 0,d3
- beq 8f
- movhu (24,sp),d0
- cmp 1,d1
- bne 4f
- mov d3,d2                        /* 16:9: a wide crop when w > 2.0625 h */
- lsr 4,d2
- add d3,d2
- add d3,d2
- cmp d2,d0
- bls 8f
- mov 0x60ead1f8,a0                /* the 16:9 table: 28 entries */
- mov 28,d2
-1:
- movhu (2,a0),d3
- cmp d0,d3
- beq 2f
- add 12,a0
- add -1,d2
- bne 1b
- bra 8f
-2:
- movhu (4,a0),d3                  /* its height */
- movhu d3,(28,sp)
- bra 8f
-4:
+ .macro CR_PBL back
+ mov d1,(cr_pbsv + 8)
+ movbu (a3),d0                    /* the stock code */
+ movbu (cr_pbk),d1
  cmp 0,d1
- bne 8f
- mov d3,d2                        /* 4:3: a 5:4 crop when w <= 1.28 h */
- lsr 5,d2
- add d3,d2
- lsr 2,d3
- add d3,d2
- cmp d2,d0
- bhi 8f
- movhu (28,sp),d3
- mov 0x60ead048,a0                /* the 4:3 table: 36 entries */
- mov 36,d2
-3:
- movhu (4,a0),d0
- cmp d3,d0
- beq 5f
- add 12,a0
- add -1,d2
- bne 3b
- bra 8f
-5:
- movhu (2,a0),d0                  /* its width */
- movhu d0,(24,sp)
-8:
- mov a3,d0
- mov d0,d3                        /* the stock instructions */
- mov 57,a3
- mov a3,(sp)
- jmp cr_pq_back                   /* 0x60c7c18f */
-.section .hook_crq,"ax"
- jmp cr_pq                        /* stock 0x60c7c18a: mov d0,d3; mov 57,a3; mov a3,(sp) */
+ beq 9f
+ cmp 6,d1
+ bne 1f
+ cmp 1,d0                         /* 5:4: its stock code is 4:3's */
+ bne 9f
+ bra 2f
+1:
+ cmp 4,d0                         /* XPan, 21:9: 16:9's */
+ bne 9f
+2:
+ mov d1,d0
+9:
+ mov (cr_pbsv + 8),d1
+ mov a2,a0                        /* the stock instructions (index code - 1) */
+ add -1,d0
+ extbu d0
+ jmp \back
+ .endm
+cr_pbla:                          /* jmp from 0x611509bc (item 34: a3 -> the code, a2 = the widget) */
+ CR_PBL cr_pbla_back
+cr_pblb:                          /* jmp from 0x611525b9 (item 61) */
+ CR_PBL cr_pblb_back
+.section .hook_crl,"ax"
+ jmp cr_pbla                      /* stock 0x611509bc: movbu (a3),d0; mov a2,a0; add -1,d0; extbu d0 */
+ .byte 0xcb
+.section .hook_crm,"ax"
+ jmp cr_pblb                      /* stock 0x611525b9: the same */
+ .byte 0xcb
 .section .ext12,"ax"
 
  .balign 4
