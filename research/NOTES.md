@@ -7113,3 +7113,9 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   crop's patch sites, both a subset of crop round 10's, waiting for the owner's OK). Package
   `test-builds/2026-11-17-v0.40-alpha-test1` (private folder): E1479999.BIN `5f092548…d635`, rebuilt byte for byte from
   760fe6b; go-back crop round 10 `5f910b23…23c4`.
+- **Camera, 2026-11-17 (owner: "everything worked amazing").** Test 1 `5f092548…d635` flashed; start-ups, Picture
+  Mode, crops, films, video all as expected (owner). Last power-on's log: build "v0.40-alpha-dev (crops + gates +
+  PR #76, test 1)", nothing unusual, card files match; the crop came back at the first half-press through the new
+  section 7 check (tag 43520006: XPan saved, Image Aspect 3 -> 6). Photos: 4:3 / 16:9 / 3:2 / 1:1 / 3:4 / 5:4 / XPan /
+  21:9 at their sizes. Log and photos in `card-backups/2026-11-17-v0.40-alpha-test1-tested` (private folder).
+  **Camera-tested.**
