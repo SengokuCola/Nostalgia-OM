@@ -2761,6 +2761,7 @@ pm_list:                          /* item ids, in the order the owner reads them
                                    * only the tail of the "Coarse" title) */
 .set ST_GZ0, 0x7f0b
 .set ST_CRS, 0x7f0e
+.set ST_FWV, 0x7f64                 /* fwver: "Caduceus", our line's label on the Firmware Version screen (fwver.s) */
 .set IC_BK, 0x7f80                /* our picture ids (ic_get answers them; the camera's table has ~20000 slots) */
 .set IC_WH, 0x7f81
 .set IC_AB, 0x7f82
@@ -3155,7 +3156,7 @@ st_get:
 4:
  jmp fl_tt
 st_stk:
- jmp cr_str                        /* crop modes: our labels (crop.s), then cr_stk */
+ jmp fv_chk                        /* fwver: "Caduceus" (fwver.s), then crop modes: our labels (crop.s cr_str), then cr_stk */
 cr_stk:
  mov d0,d2
  call str_lang,[],0
@@ -21626,3 +21627,5 @@ bl_v:                             /* the value */
  .include "screeninfo.s"          /* screen info: hook, handlers, tables (ext12) */
 
  .include "shading.s"             /* gentler Shading s1 (#22): our own vignette on stills (ext13) */
+
+ .include "fwver.s"               /* our version on the camera's Firmware Version screen (ext13) */

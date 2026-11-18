@@ -344,6 +344,33 @@ FILM_SWITCH_WRITES = ('wait wait s1 wait wait ok wait ok wait ' + 'right wait ' 
 FILM_3_LINE = r'^Picture mode: COLOR 1, FILM 3\b'
 NO_STAR_LINE = r'^Films with changes \(a \* in the camera\): none$'
 
+# fwver 1 (2026-11-18): our line on the camera's Firmware Version page (MENU > wrench tab 6 > Firmware Version > OK;
+# firmware/src/fwver.s). fv_back is the page build's end (its ret), reached only through fv_add; there (20,sp) is the
+# block the page shows: +0 the line count, +4 + 124 k line k's label record ({u16 4, .., u16 string id}), +520 + 10 k
+# line k's value text. om-emu's body version is 0.0 and it has no lens: FV_LENS takes the build's Lens branch.
+FV_WALK = 'menu wait left wait up wait up wait' + ' right wait' * 6 + ' down wait' * 5
+FV_AT = 'atmem:{fv_back}:sp+14*'
+FV_LENS = 'poke:6120b22b=ca'                     # beq 0x6120b230 -> bra: "Lens : 0.0" as line 1
+ST_FWV = 0x7f64                                  # "Caduceus" (editor.s ST_FWV)
+
+
+def FV_HEX(name):
+    return name.encode('utf-16-le').hex() + '0000'
+
+
+def FV_NAME(name):                               # the version text fv_add shows (fv_ver, 16 letters of room)
+    return f'poke:{{fv_ver}}={FV_HEX(name)}'
+
+
+def FV_LINE(k, name):                            # line k: our label, then the name, whole
+    return (f'{FV_AT}+{4 + 124 * k:x}=0400 {FV_AT}+{8 + 124 * k:x}={ST_FWV & 255:02x}{ST_FWV >> 8:02x} '
+            f'{FV_AT}+{0x208 + 10 * k:x}={FV_HEX(name)}')
+
+
+def fv_not_run(hits):
+    return [f'fv_add ran {len(hits)} times with no menu opened'] if hits else []
+
+
 @dataclass
 class Boot:
     tokens: str
@@ -838,6 +865,32 @@ TESTS = {
     'video-boot-after-photo-boot': [
         Boot('s1 wait wait poweroff'),
         Boot(VIDEO_BOOT, expect=VIDEO_BOOT_LINES, photo_switch=PHOTO_SWITCH_VIDEO),
+    ],
+    # fwver 1: the page gets our line under the camera's own: 2 lines, line 1 "Caduceus : " + the build's name (drawn:
+    # label and value), the Body line as it was (om-emu: "0.0"), and OK goes back to the same menu screen.
+    'firmware-version-page-shows-our-line': [
+        Boot(f's1 wait wait {FV_WALK} fhash:menu {FV_AT}=02 {FV_AT}+80=0400 {FV_AT}+84={ST_FWV & 255:02x}{ST_FWV >> 8:02x} '
+             f'{FV_AT}+208=30002e0030000000 ok wait wait expect:atmem expect:ink:270,305,420,360 '
+             'expect:ink:480,305,550,360 ok wait wait fhash:back expect:fsame:menu:back poweroff'),
+    ],
+    # ... a name of 14 letters (the most with one camera line) shows whole: the value boxes are wider (build.py DATA)
+    'firmware-version-long-name-shows-whole': [
+        Boot(f's1 wait wait {FV_NAME("v0.00-longname")} {FV_WALK} {FV_AT}=02 {FV_LINE(1, "v0.00-longname")} '
+             'ok wait wait expect:atmem expect:ink:565,305,770,360 poweroff'),
+    ],
+    # ... after a Lens line ours is the third (9 letters of room) ...
+    'firmware-version-our-line-after-a-lens': [
+        Boot(f's1 wait wait {FV_LENS} {FV_NAME("v0.00-abc")} {FV_WALK} {FV_AT}=03 {FV_LINE(2, "v0.00-abc")} '
+             'ok wait wait expect:atmem expect:ink:270,340,420,390 poweroff'),
+    ],
+    # ... and a name that does not fit there is left out whole (never cut short): 2 lines, nothing in a third row.
+    'firmware-version-name-too-long-left-out': [
+        Boot(f's1 wait wait {FV_LENS} {FV_NAME("v0.00-abcd")} {FV_WALK} {FV_AT}=02 '
+             'ok wait wait expect:atmem expect:noink:270,366,420,392 poweroff'),
+    ],
+    # ... and fv_add never runs while the camera starts, idles or powers off (the start-up rule)
+    'firmware-version-line-not-at-start-up': [
+        Boot('wait poweroff', watch=('fv_add',), hits=fv_not_run),
     ],
 }
 
