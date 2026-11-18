@@ -5882,3 +5882,46 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
 - **Camera (crombach, 2026-11-17, build 9b8a861a...): passed.** A tap and every key, `up` included, give Picture
   Mode 30 s. Other touch menus and a screen opened from Picture Mode close after 8 s. The white balance screen closes
   8 s after `down`. Photo, video, sleep and start-up work as before.
+
+## LookLab matched to the camera: calibration cards 1-3 (2026-11-18; branch feature/looklab-camera-match; camera photos)
+- Owner: "the goal here is to perfectly (as possible) match looklab to the camera"; "shading is way way to subtle in
+  looklab"; "grain is also way off"; match the next release (the v0.41 line: grain 0..5 + Grain Size, Border -5..+5,
+  Gentler Shading s1). Three cards on the owner's OM-3 with v0.41-dev test 5 (E1479999.BIN 1e0d279e...): card 1 colour
+  tests (Colour Mix R / G / B hue and strength +-6, RGB curve points, mixes), card 2 effects (Shading -5..+5, Grain
+  Low / Med / High, Border +-3, Glow +3 / +5, Clarity 3, Sharp -5 / +2, Vignette Correction Off), card 3 the standard
+  20. A colour chart, OM 17 mm f/1.8 II at f/4, 1/30 s, ISO 200, JPEG; the photos stay private. Measured at 1296 x 972
+  (the camera's JPEG area-averaged 4x, LookLab rendering the plain photo of the same session): 24 patch medians (Lab,
+  change from the plain photo, camera vs LookLab), radial brightness, high-pass texture, spectra.
+- **Shading:** firmware s1 (firmware/shading.py on try/v0.41-dev) applied to the plain photo reproduces the camera's
+  radial profile within a few % at every level, so preview.ts now runs it as the firmware does (mask table, g in
+  256ths, darker Y g / lighter 1 - (1 - Y) g, colour toward grey). Patch error 1.3..6.6 -> 0.4..0.6 (noise floor 0.6).
+  The old preview (0.07 s r^1.5) was several times too weak. s2 / p4 (the Shading session) would need the new table.
+- **Grain:** the camera's g3 grain at full size Y sigma 10.6 / 15.9 / 23.8 for Low / Med / High (strength 2 / 3 / 5,
+  Medium) = the firmware model (16 x gain 650 / 1024 / 1536), the same in every tone (also in the shadows, where the
+  old preview had none). At preview size the old preview was 3-4x too weak (Y high-pass 1.4 / 2.0 / 2.8 against the
+  camera's 4.5 / 6.8 / 9.8). preview.ts now builds the g3 tile (box-filtered uniform noise, Y w x w, Cb / Cr half size
+  (w + 1) / 2) and shows each preview pixel as the tile's mean over the camera pixels it covers: Y 4.5 / 6.9 / 10.3,
+  Cb / Cr within 5 % after a 0.86 factor for the JPEG's half-size colour; lag-1..3 autocorrelation and spectrum match.
+  The "Fine" / "Coarse" shots were Medium (same texture as Med: the size was not set on the camera), so Grain Size is
+  previewed from the firmware model only. LOOKS.BIN holds Low / Med / High (strength 2 / 3 / 5); strength and size
+  live in the camera's curves record (byte G), so LookLab shows Grain Size as a preview-only choice.
+- **Border:** research/border/model.py widths on the preview (1.5..7.5 % of the short side, white / black); LookLab
+  writes it to LOOKS.BIN +48 (signed) for "v0.28 or later" exports (v0.25..v0.40 ignore the byte) and reads it back.
+- **Glow / Clarity / Sharp:** Glow's share is the firmware's (xb_gl 942..666: 0.08..0.35; fitted 0.18 / 0.33 at +3 /
+  +5) with a Soft Focus blur of sigma about 48 camera pixels and no brightening: the preview's x1.08 lift is gone on
+  OM-3 and its blur follows the camera's pixel scale (patch error 1.7 / 2.5 -> 0.8). Clarity already close (0.9). Sharp
+  was far too strong at preview size: now scaled to the camera's change at 1296 px (x (size / 1296)^2 on larger previews).
+- **Vignette Correction Off:** corners 0.84 of the centre at f/4 with this lens (1 - 0.18 r^2.4 in linear light); the
+  preview now darkens the corners that much for looks with the correction off (lens- and aperture-dependent).
+- **Contrast:** on the 9 standard films with Contrast +1 / +2 the camera's whites came out 4 (per step) brighter than
+  the preview; Contrast 0 films matched. OM3_CAL.contrast is a fitted per-step curve (lift up to +0.068 at 0.92, a dip
+  of 0.02 near 0.3); films left out of the fit 4.70 -> 4.37 and 3.99 -> 3.95. -1 / -2 assumed the mirror (no shots).
+- **Colour (not changed):** RGB curves 0.6..1.0 (good). Colour Mix 1.8..4.3: the matrix is right in scale and space
+  (scaling it, a sensor-space version or gamut handling all fit worse; each film's mix as it is beats none or half),
+  the misses are the most saturated blues / purples, which the camera moves less (its processing after the matrix).
+  A refit of the 12-sector engine on the films did not hold on films left out (4.26 -> 4.28, 3.62 -> 3.68), so OM3_CAL
+  stays; standard films 4.0 -> 3.7 after Contrast (the earlier fit's floor between two shoots was 2.3).
+- Card 3's first photo (FILM 1 Portra 400) carries an all-zero photo code: it was taken with the previous set's plain
+  FILM 1 (Portra 400's name, curves and mix), the other 19 with the standard values (photo codes = LOOKS.BIN records).
+  Most likely the shot came before the new set was loaded at the half-press (analysis). The log listed films 1-19 as
+  changed ('*'); not looked into.

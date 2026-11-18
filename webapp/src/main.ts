@@ -945,7 +945,7 @@ function splitPv(l: Look): Look {
   if (fw >= 28) return l;
   const c = (v: number) => Math.max(-5, Math.min(5, v));
   const r: Look = { ...l, tone: { ...l.tone, blacks: c(l.tone.blacks), whites: c(l.tone.whites) } };
-  delete r.halation; delete r.tone_balance; delete r.film_wb; delete r.rgb; delete r.mix;
+  delete r.halation; delete r.tone_balance; delete r.film_wb; delete r.rgb; delete r.mix; delete r.border;
   if (r.split) r.split = fw >= 25 ? { ...r.split, sh: Math.round(r.split.sh), hl: Math.round(r.split.hl) } : undefined;
   if (!r.split) delete r.split;
   return r;
@@ -1001,9 +1001,9 @@ function buildPreview() {
     h('div', { class: 'pv-wrap' }, frame, h('span', { class: 'badge' }, 'Before'), h('span', { class: 'badge r' }, 'After · approximate')),
     thumbs,
     h('div', { class: 'pv-opts' },
-      h('span', { class: 'help' }, 'Includes Contrast, Sharp and Shading.'),
+      h('span', { class: 'help' }, 'Includes Contrast, Sharp, Shading, Film Grain, Border, Glow, Halation and the lens corners.'),
       h('button', { class: 'link', onclick: () => $<HTMLInputElement>('#photo').click() }, 'Use your own photo…')),
-    h('p', { class: 'help' }, 'Drag the line on the photo to compare before and after. A rough desktop-sim port running on JPEGs, not the camera\'s pipeline: use it for direction and strength, then check on the camera. Your own photo never leaves this browser.'));
+    h('p', { class: 'help' }, 'Drag the line on the photo to compare before and after. Shading, grain, border, glow and the lens corners follow the camera\'s own maths, checked against photos from an OM-3; colours are close but not exact (strong blues and purples differ most), so check a new look on the camera. Your own photo never leaves this browser.'));
   pickImage(S.image);
 }
 
@@ -1434,7 +1434,7 @@ function renderOm3Editor(l: Look) {
       cseg('Vignette Correction', [['off', 'Off'], ['on', 'On']], l.lens_correction ? 'on' : 'off', (x) => {
         if (x === 'on') l.lens_correction = true; else delete l.lens_correction;
         renderEditor(); changed();
-      }, 'Off = the lens\'s natural corners; On = the camera\'s correction (not in the preview)'),
+      }, 'Off = the lens\'s natural corners (the preview shows a typical prime at f/4: corners about 15 % darker); On = the camera\'s correction'),
       crow('Shading Effect', OM3.shading, () => l.vignette, (x) => { l.vignette = x; }, 'The camera\'s Shading: − darker corners, + lighter'),
       (() => {
         const e = l.effect, v = !e ? 0 : e.type === 'clarity' ? -e.strength : e.strength;
@@ -1460,10 +1460,25 @@ function renderOm3Editor(l: Look) {
       })(),
       h('p', { class: 'help' }, 'Glow Effect: + Glow, − Clarity. Halation Effect needs firmware v0.28; saving a photo with it takes a little longer. Hover a row for what it does.')),
     h('div', { class: 'group cam rows' },
-      cseg('Film Grain Effect', [['0', 'Off'], ['1', 'Low'], ['2', 'Med'], ['3', 'High']], String(l.film_grain ?? 0), (x) => {
+      cseg('Film Grain Effect', [['0', 'Off'], ['1', '2'], ['2', '3'], ['3', '5']], String(l.film_grain ?? 0), (x) => {
         if (x === '0') delete l.film_grain; else l.film_grain = Number(x);
         renderEditor(); changed();
-      }, 'Colour film grain, made by the camera as the photo develops'),
+      }, 'Colour film grain, made by the camera as the photo develops. The looks file holds strength 2, 3 or 5 (Low / Med / High on firmware before v0.41); 1 and 4 are set on the camera'),
+      ...(l.film_grain ? [cseg('Grain Size', [['1', 'Fine'], ['2', 'Medium'], ['3', 'Coarse']], String(l.grain_size ?? 2), (x) => {
+        if (x === '2') delete l.grain_size; else l.grain_size = Number(x);
+        renderEditor(); changed();
+      }, 'Preview only: the looks file has no place for the grain size, so films start at Medium; set Fine or Coarse on the camera\'s Grain Size row (firmware v0.41)')] : []),
+      ...(() => {
+        const note = h('p', {});
+        const show = () => {
+          note.hidden = !l.border;
+          if (!om3Fw28()) { note.className = 'warn'; note.replaceChildren(h('b', {}, 'Needs firmware v0.41: '), 'the export is set to an older firmware, so the Border is not previewed or saved. Choose "v0.28 or later" under Export › Firmware on the camera.'); }
+          else { note.className = 'help'; note.textContent = 'The Border shows on firmware v0.41 and later; older firmware ignores it.'; }
+        };
+        const { inp, out } = slider(-OM3.border, OM3.border, l.border ?? 0, (x) => { if (x) l.border = x; else delete l.border; show(); changed(); }, (x) => (x > 0 ? `+${x} white` : x < 0 ? `${x} black` : '0'), 'Border');
+        show();
+        return [h('div', { class: 'crow', title: 'A border around the photo, the same width on every side: + white, − black (1.5 % to 7.5 % of the short side)' }, h('span', { class: 'cname' }, 'Border'), steps(inp), out), note];
+      })(),
       grainWarn),
     h('div', { id: 'problems' }));
   refreshProblems();

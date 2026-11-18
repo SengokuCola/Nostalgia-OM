@@ -30,7 +30,7 @@ import { crc32, type Problem } from './format';
 import { CAMERA_FILMS, filmByName, filmLook } from './om3films';
 
 export const COLORS = 4, PER = 5;
-export const OM3 = { hl: 5, sat: 5, wb: 7, contrast: 2, sharpness: 2, shading: 5, hsm: 7, bw: 7, fx: 5, grain: 3, halation: 5, balance: 5 } as const;
+export const OM3 = { hl: 5, sat: 5, wb: 7, contrast: 2, sharpness: 2, shading: 5, hsm: 7, bw: 7, fx: 5, grain: 3, halation: 5, balance: 5, border: 5 } as const;
 /** v0.22 Sharp (Extras sector 10): the camera's own numbers, 0 = its normal; -3..-4 softer than its menu goes, -5 = Off. */
 export const SHARP = { lo: -5, hi: 2 } as const;
 export const sharpLabel = (v: number) => (v <= SHARP.lo ? 'Off' : v > 0 ? `+${v}` : String(v));
@@ -51,6 +51,7 @@ export function v28Parts(l: Look): string[] {
   if (l.split && (toSteps(l.split.sh) % 2 || toSteps(l.split.hl) % 2)) p.push('split toning in half steps');
   if (l.tone_balance) p.push('Tone Balance');
   if (l.film_wb) p.push('WB mode');
+  if (l.border) p.push('Border');
   if (Math.abs(l.tone.blacks) > 5 || Math.abs(l.tone.whites) > 5) p.push('Blacks / Whites past ±5');
   return p;
 }
@@ -156,6 +157,7 @@ export function validateProfile(l: Look, at?: { k: number; v: number }): Problem
   if (l.split && !splitOk(l.split)) add('split', 'Split toning: a colour of the wheel and a strength 0..10.');
   if (l.tone_balance !== undefined && !ok(l.tone_balance, OM3.balance)) add('tone_balance', 'Tone Balance: -5..5.');
   if (l.halation !== undefined && !(Number.isInteger(l.halation) && l.halation >= 0 && l.halation <= OM3.halation)) add('halation', 'Halation: 0..5.');
+  if (l.border !== undefined && !ok(l.border, OM3.border)) add('border', 'Border: -5..5.');
   if (l.film_wb && !parseFilmWb(l.film_wb)) add('film_wb', 'WB mode: one of the camera\'s modes; Custom WB 2000..14000 K.');
   return p;
 }
@@ -184,6 +186,7 @@ export function profilesBin(bank: Bank, fw: Fw = 22): Uint8Array {
     s8(44, l.tone.shadows); s8(45, l.tone.midtones); s8(46, l.tone.highlights);
     s8(47, !l.effect ? 0 : l.effect.type === 'clarity' ? l.effect.strength : -l.effect.strength);
     b[o + 48] = Math.max(0, (ARTS as readonly string[]).indexOf(fw >= 24 ? v25Art(l) : l.art_effect === 'blur' ? 'off' : l.art_effect));
+    if (fw >= 28 && l.border) s8(48, Math.max(-OM3.border, Math.min(OM3.border, l.border)));   // v0.41: Border in Art Effect's old byte (v0.25..v0.40 ignore it)
     const nr = Math.max(0, OM3_NR.indexOf(l.grain));
     b[o + 49] = nr === 4 && fw < 23 ? 1 : nr;                                     // High needs v0.23: Standard before
     if (fw >= 21) { b[o + 50] = l.lens_correction ? 0 : 1; b[o + 51] = Math.max(0, Math.min(OM3.grain, l.film_grain ?? 0)); }
@@ -247,8 +250,12 @@ export function lookFromRecord(rec: Uint8Array, name: string, v28 = false, photo
     l.advice = { contrast: s(41), sharpness: s(52) || s(42) }; l.vignette = s(43);      // v0.22 Sharp (+52), else the stock one
     const fx = s(47);
     l.effect = fx < 0 ? { type: 'bloom', strength: Math.min(OM3.fx, -fx) } : fx > 0 ? { type: 'clarity', strength: Math.min(OM3.fx, fx) } : null;
-    const art = ARTS[b[o + 48]] ?? 'off';
+    const art = ARTS[b[o + 48]] ?? 'off', bd = s(48);
     l.art_effect = art === 'blur' ? 'off' : art;
+    if (bd < 0 || (bd > 0 && (v28 || photo))) {       // v0.41 Border (-5..5) in Art Effect's old byte: v0.25 and later write no Art Effect
+      l.art_effect = 'off';
+      if (bd >= -OM3.border && bd <= OM3.border) l.border = bd;
+    }
     l.grain = OM3_NR[b[o + 49]] ?? 'off';
     if (b[o + 50] === 0) l.lens_correction = true;
     if (b[o + 51] >= 1) l.film_grain = Math.min(OM3.grain, b[o + 51]);

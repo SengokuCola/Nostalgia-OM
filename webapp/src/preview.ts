@@ -29,6 +29,12 @@ export const OM3_CAL = {
   hueDown: [19.3, 6.5, 10.1, 5.5, 7.4, 0.0, 7.5, 6.4, 19.0, 12.6, 0.0, 3.6],   // degrees per step, camera Hue -
   hueUp: [17.2, 6.7, 13.7, 5.5, 11.9, 0.1, 7.1, 7.7, 21.2, 6.4, 2.9, 5.5],    // degrees per step, camera Hue +
   light: 2.44, wbAB: [0.0379, 0.0118, -0.0129], wbGM: [-0.0097, 0.0181, -0.0131], split: 1.05,
+  /** OM-3 Contrast: the change per step at y = CON_X (display 0..1), applied before the look's tone. Fitted 2026-11-18 on
+   *  the 9 standard films with Contrast +1 / +2 (calibration card 3): the camera lifts the highlights far more than the
+   *  old symmetric S-curve (white patch +4 L a step); films left out of the fit 4.70 -> 4.37 and 3.99 -> 3.95.
+   *  Contrast -1 / -2 (no shots) are taken as the mirror. */
+  contrast: [0, -0.0042, -0.0216, -0.0039, 0.0053, 0.0265, 0.0442, 0.0684, 0],
+  satRamp: 0,   // chroma (0..~0.5) below which a colour gets only part of its sector's saturation change (0 = all of it)
 };
 export type SectorCal = Pick<typeof OM3_CAL, 'gainPos' | 'gainNeg' | 'hueDown' | 'hueUp' | 'light'>;
 const L_LUT = [-300, -250, -200, -150, -100, -50, -25, 0, 25, 50, 100, 150, 200, 250, 300];
@@ -92,6 +98,14 @@ export function sectorLut(hue: number[], light: number[], sat: number[], cal?: S
 }
 
 export const contrastCurve = (contrast: number) => (y: number) => clamp01(y + 0.5 * CONTRAST_STEP * contrast * Math.sin(2 * Math.PI * (y - 0.5)));
+const CON_X = [0, 0.15, 0.3, 0.45, 0.6, 0.75, 0.85, 0.92, 1];
+/** OM-3 Contrast (-2..+2): the camera's own curve per step (OM3_CAL.contrast). */
+export const om3ContrastCurve = (contrast: number) => (y: number) => {
+  const v = OM3_CAL.contrast; let i = 0;
+  while (i < CON_X.length - 2 && y > CON_X[i + 1]) i++;
+  const t = Math.max(0, Math.min(1, (y - CON_X[i]) / (CON_X[i + 1] - CON_X[i])));
+  return clamp01(y + contrast * (v[i] + (v[i + 1] - v[i]) * t));
+};
 
 /** Box-downsample to ~sw px wide, blur, and bilinear-upsample back: the Soft Focus "blurred copy". */
 function blurredCopy(src: Float32Array, w: number, h: number, sw: number, sigma: number): Float32Array {
@@ -159,9 +173,16 @@ export function renderLook(src: ImageData, dst: ImageData, look: Look, opt: Prev
   const [gr, gg, gb] = (om3 ? [0, 1, 2].map((c) => 1 + OM3_CAL.wbAB[c] * ab + OM3_CAL.wbGM[c] * gm)
     : [1 + WB_STEP * ab, 1 + WB_STEP * gm, 1 - WB_STEP * ab]).map((v, c) => v * (fwg ? fwg[c] : 1));
   const mx = om3 && !mono && !mixIsFlat(look.mix) ? mixMatrix(look.mix!) : null;   // OM-3 colour mix: in the camera's colour matrix, after WB
+  const fall = om3 && !look.lens_correction ? lensFalloff(w, h) : null;           // OM-3 Vignette Correction Off: the lens's own corners
   for (let i = 0; i < n; i++) {
     const p = i * 4, q = i * 3;
-    if (mx) {
+    if (fall) {
+      const f = fall[i], m = mx ?? [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+      const r = DEC[s[p]] * gr * f, g = DEC[s[p + 1]] * gg * f, b = DEC[s[p + 2]] * gb * f;
+      img[q] = enc(m[0][0] * r + m[0][1] * g + m[0][2] * b);
+      img[q + 1] = enc(m[1][0] * r + m[1][1] * g + m[1][2] * b);
+      img[q + 2] = enc(m[2][0] * r + m[2][1] * g + m[2][2] * b);
+    } else if (mx) {
       const r = DEC[s[p]] * gr, g = DEC[s[p + 1]] * gg, b = DEC[s[p + 2]] * gb;
       img[q] = enc(mx[0][0] * r + mx[0][1] * g + mx[0][2] * b);
       img[q + 1] = enc(mx[1][0] * r + mx[1][1] * g + mx[1][2] * b);
@@ -174,7 +195,7 @@ export function renderLook(src: ImageData, dst: ImageData, look: Look, opt: Prev
   }
   // 2. contrast advice + the look's tone (luminance), 3. 12-sector colour engine, 4. mono
   const con = opt.advice ? look.advice.contrast ?? 0 : 0;
-  const tl = !toneIsZero(look.tone) || con ? previewToneLut(look.tone, 1024, con ? contrastCurve(con) : undefined) : null;
+  const tl = !toneIsZero(look.tone) || con ? previewToneLut(look.tone, 1024, con ? (om3 ? om3ContrastCurve(con) : contrastCurve(con)) : undefined) : null;
   const lut = sectorLut(om3 ? look.hue.map((v) => -v) : look.hue, look.light, !mono ? look.sat : new Array(12).fill(0), om3 ? OM3_CAL : undefined);
   const mf = look.advice.mono_filter;
   let mw: [number, number, number] = MONO_W.none;
@@ -197,7 +218,8 @@ export function renderLook(src: ImageData, dst: ImageData, look: Look, opt: Prev
       if (hd < 0) hd += 360;
       const bin = Math.min(BINS - 1, (hd * (BINS / 360)) | 0);
       const ang = (hd * Math.PI) / 180 + lut.shift[bin];
-      const ch = chroma * lut.satMul[bin];
+      const sm = lut.satMul[bin], ramp = om3 ? OM3_CAL.satRamp : 0;
+      const ch = chroma * (ramp > 0 ? 1 + (sm - 1) * Math.min(1, chroma / ramp) : sm);
       y += lut.lsum[bin] * Math.min(1, chroma / 0.25);
       cb = ch * Math.cos(ang); cr = ch * Math.sin(ang);
     }
@@ -207,6 +229,9 @@ export function renderLook(src: ImageData, dst: ImageData, look: Look, opt: Prev
     img[q] = R; img[q + 1] = G; img[q + 2] = B;
   }
   if (om3 && (look.split || look.rgb)) bendSplit(img, n, look.split, OM3_CAL.split, look.tone_balance ?? 0, look.rgb);   // OM-3 v0.26 split toning (the camera bends its gamma curves); v0.28 Tone Balance; RGB curves
+  // OM-3: Sharp and Film Grain are part of the camera's development, before Glow (Soft Focus), Halation, Shading, Border
+  if (om3) om3Sharp(img, w, h, look.advice.sharpness ?? 0);
+  if (om3 && look.film_grain) om3Grain(img, w, h, GRAIN_STRENGTH[Math.min(3, look.film_grain)], look.grain_size ?? 2);
   // 5. bloom / halation (Soft Focus blend of a 160-px-wide blurred copy) or clarity (large-radius local contrast)
   const e = look.effect;                     // OM-3 v0.20: glow (no colour) and clarity too
   if (e && e.strength >= 1) {
@@ -221,16 +246,19 @@ export function renderLook(src: ImageData, dst: ImageData, look: Look, opt: Prev
       }
     } else {
       const tint = TINT_RGB[e.tint ?? (e.type === 'halation' ? 'red' : 'neutral')] ?? TINT_RGB.neutral;
-      const bl = blurredCopy(img, w, h, 160, 1.2), sh = BLOOM_SHARE[st];
+      // OM-3 (calibration card 2, 2026-11-18): the camera's Soft Focus copy is a blur of about sigma 48 camera pixels and
+      // adds no light (Glow +3 / +5 fitted 0.18 / 0.33 against the firmware's 0.20 / 0.35, sigma 48, brightness -2 %)
+      const bl = om3 ? blurredCopy(img, w, h, w / Math.max(1, Math.round((Math.max(w, h) * 24) / FULL_WIDTH)), 2) : blurredCopy(img, w, h, 160, 1.2);
+      const sh = BLOOM_SHARE[st], lift = om3 ? 1 : 1.08;
       for (let i = 0; i < n * 3; i += 3) {
-        for (let c = 0; c < 3; c++) img[i + c] = clamp01((1 - sh) * img[i + c] + sh * Math.min(1, bl[i + c] * tint[c] * 1.08));
+        for (let c = 0; c < 3; c++) img[i + c] = clamp01((1 - sh) * img[i + c] + sh * Math.min(1, bl[i + c] * tint[c] * lift));
       }
     }
   }
   lastHalation = om3 && look.halation ? om3Halation(img, w, h, look.halation) : null;   // OM-3 v0.28: after the Soft Focus blend, as the camera
-  // 6. grain (Olympus xorshift32 luma grain with brightness mask; v0.4 colour gains / stock mono gains)
-  if (om3) om3Settings(img, w, h, look.advice.sharpness ?? 0, look.vignette);
-  if (om3 && look.film_grain) om3Grain(img, w, h, look.film_grain);
+  // 6. OM-3 Shading and Border (the camera's passes on the finished photo); grain (E-P7: Olympus xorshift32 luma grain)
+  if (om3 && look.vignette) om3Shading(img, w, h, look.vignette);
+  if (om3 && look.border) om3Border(img, w, h, look.border);
   const gi = om3 ? 0 : GRAINS.indexOf(look.grain);
   const gain = gi > 0 ? (mono ? MONO_GRAIN : COLOUR_GRAIN)[gi] : 0;
   const scale = Math.min(1, w / FULL_WIDTH) * 2.2;   // a little stronger than full-res-viewed-small, so it stays visible
@@ -351,59 +379,144 @@ function om3Halation(img: Float32Array, w: number, h: number, level: number): 'o
   return 'done';
 }
 
-/** OM-3 Sharpness (unsharp mask on luma; negative softens) and Shading (corner brightness; negative = darker
- *  corners, the Olympus convention), as the Caduceus for OM-3 Look Lab previewed them. Illustrative at preview size. */
-function om3Settings(img: Float32Array, w: number, h: number, sharp: number, shading: number) {
-  const n = w * h;
-  if (sharp) {
-    // the camera's own numbers: -2..+2 as the Look Lab had them; v0.22's -3, -4 and Off (-5) soften a little more
-    const Y = new Float32Array(n), amt = sharp >= -2 ? 0.45 * sharp : -0.9 - 0.05 * (-2 - sharp);
-    for (let i = 0; i < n; i++) Y[i] = 0.299 * img[i * 3] + 0.587 * img[i * 3 + 1] + 0.114 * img[i * 3 + 2];
-    for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
-      const i = y * w + x;
-      const bl = (Y[i - w - 1] + 2 * Y[i - w] + Y[i - w + 1] + 2 * Y[i - 1] + 4 * Y[i] + 2 * Y[i + 1] + Y[i + w - 1] + 2 * Y[i + w] + Y[i + w + 1]) / 16;
-      const dl = amt * (Y[i] - bl), q = i * 3;
-      img[q] = clamp01(img[q] + dl); img[q + 1] = clamp01(img[q + 1] + dl); img[q + 2] = clamp01(img[q + 2] + dl);
-    }
+/** OM-3 Sharp (-5..+2): an unsharp mask on luma (negative softens), sized so the preview changes as much as the
+ *  camera's photo does when shrunk to the preview (calibration card 2, 2026-11-18: Sharp +2 / -5 at 1296 px). */
+const SHARP_AMT = { up: 0.05, down: [0, 0.07, 0.14, 0.22, 0.31, 0.4] };
+function om3Sharp(img: Float32Array, w: number, h: number, sharp: number) {
+  if (!sharp) return;
+  const n = w * h, k = Math.min(4, (Math.max(w, h) / 1296) ** 2);   // the camera's sharpening is per camera pixel: more of it shows on a larger preview
+  const amt = (sharp > 0 ? SHARP_AMT.up * sharp : -SHARP_AMT.down[Math.min(5, -sharp)]) * k;
+  const Y = new Float32Array(n);
+  for (let i = 0; i < n; i++) Y[i] = 0.299 * img[i * 3] + 0.587 * img[i * 3 + 1] + 0.114 * img[i * 3 + 2];
+  for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+    const i = y * w + x;
+    const bl = (Y[i - w - 1] + 2 * Y[i - w] + Y[i - w + 1] + 2 * Y[i - 1] + 4 * Y[i] + 2 * Y[i + 1] + Y[i + w - 1] + 2 * Y[i + w] + Y[i + w + 1]) / 16;
+    const dl = Math.max(-1, amt) * (Y[i] - bl), q = i * 3;
+    img[q] = clamp01(img[q] + dl); img[q + 1] = clamp01(img[q + 1] + dl); img[q + 2] = clamp01(img[q + 2] + dl);
   }
-  if (shading) {
-    const cx = (w - 1) / 2, cy = (h - 1) / 2, R2 = cx * cx + cy * cy, k = 0.07 * shading;
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-      const r = ((x - cx) ** 2 + (y - cy) ** 2) / R2, f = 1 + k * r * Math.sqrt(r), q = (y * w + x) * 3;
-      img[q] = clamp01(img[q] * f); img[q + 1] = clamp01(img[q + 1] * f); img[q + 2] = clamp01(img[q + 2] * f);
+}
+
+/** OM-3 Vignette Correction Off: the lens's own corners, in linear light, as the camera leaves them (calibration card 2,
+ *  2026-11-18: OM 17 mm f/1.8 II at f/4, corners 0.84 of the centre). Other lenses and apertures differ. */
+function lensFalloff(w: number, h: number): Float32Array {
+  const f = new Float32Array(w * h), cx = (w - 1) / 2, cy = (h - 1) / 2, R2 = (w * w + h * h) / 4;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const r2 = ((x - cx) ** 2 + (y - cy) ** 2) / R2;
+    f[y * w + x] = 1 - 0.18 * Math.min(1, r2) ** 1.2;
+  }
+  return f;
+}
+
+/** OM-3 Shading -5..+5 (firmware v0.41 Gentler Shading s1: editor.s vg_run, firmware/shading.py; camera-checked on
+ *  calibration card 2, 2026-11-18, within a few % of the camera at every level). r = the distance from the centre /
+ *  the half-diagonal; the mask M5(r) is a monotone cubic through (0, 0), (0.30, 0.02), (0.525, 0.28), (0.75, 0.75),
+ *  (1, 0.94); each level is |level| / 5 of it. In the camera's YCbCr: darker Y' = Y g, lighter Y' = 1 - (1 - Y) g,
+ *  the colour toward grey by g, g = 1 - |level| M5 / 5 (in 256ths, as the firmware rounds it). */
+const SHADE_M = (() => {
+  const P = [[0, 0], [0.3, 0.02], [0.525, 0.28], [0.75, 0.75], [1, 0.94]], n = P.length;
+  const hh = P.slice(0, -1).map((p, i) => P[i + 1][0] - p[0]), d = hh.map((v, i) => (P[i + 1][1] - P[i][1]) / v);
+  const t = new Array<number>(n).fill(0);
+  t[n - 1] = d[n - 2];
+  for (let i = 1; i < n - 1; i++) {
+    if (d[i - 1] * d[i] <= 0) continue;
+    const w1 = 2 * hh[i] + hh[i - 1], w2 = hh[i] + 2 * hh[i - 1];
+    t[i] = (w1 + w2) / (w1 / d[i - 1] + w2 / d[i]);
+  }
+  const m = (r: number) => {
+    let i = 0;
+    while (i < n - 2 && r > P[i + 1][0]) i++;
+    const sp = (r - P[i][0]) / hh[i], s2 = sp * sp, s3 = s2 * sp;
+    return (2 * s3 - 3 * s2 + 1) * P[i][1] + (s3 - 2 * s2 + sp) * hh[i] * t[i] + (-2 * s3 + 3 * s2) * P[i + 1][1] + (s3 - s2) * hh[i] * t[i + 1];
+  };
+  return Array.from({ length: 513 }, (_, i) => Math.floor(256 * m(Math.sqrt(i / 512)) + 0.5));
+})();
+function om3Shading(img: Float32Array, w: number, h: number, level: number) {
+  const lv = Math.min(5, Math.abs(level)), D = w * w + h * h;
+  for (let y = 0; y < h; y++) {
+    const Yc = (2 * y + 1 - h) ** 2;
+    for (let x = 0; x < w; x++) {
+      const idx = Math.min(512, Math.floor((((2 * x + 1 - w) ** 2 + Yc) * 512) / D));
+      const g = (256 - Math.floor((lv * SHADE_M[idx] + 2) / 5)) / 256;
+      if (g >= 1) continue;
+      const q = (y * w + x) * 3, r = img[q], gg = img[q + 1], b = img[q + 2];
+      const Y = 0.299 * r + 0.587 * gg + 0.114 * b;
+      const cb = (-0.168736 * r - 0.331264 * gg + 0.5 * b) * g, cr = (0.5 * r - 0.418688 * gg - 0.081312 * b) * g;
+      const Y2 = level < 0 ? Y * g : 1 - (1 - Y) * g;
+      img[q] = clamp01(Y2 + 1.402 * cr); img[q + 1] = clamp01(Y2 - 0.344136 * cb - 0.714136 * cr); img[q + 2] = clamp01(Y2 + 1.772 * cb);
     }
   }
 }
 
-/** OM-3 v0.21 Grain (Low / Med / High), from research/grain/model.py: the camera's MONO grain shape. Per row, one
- *  xorshift32 per 4 pixels gives a triangular 0..30 value per pixel, smoothed down the columns and paired across, and
- *  each pixel's luma moves by ((64 h - 945) * G[Y] * S) / 2^18 (G: none in deep shadows, full from the midtones up).
- *  S is the strength for the level, reduced as the photo is when it is shown this small. Owner, 2026-11-09 (v0.26 on
- *  the camera): the old Med (68) looked like the camera's High, so High is now 68 and Low / Med follow the camera's
- *  texture gains (v0.25 fast grain: Low 448, Med 832, High 1280), i.e. 68 x 448 / 1280 and 68 x 832 / 1280. */
-const GRAIN_S = [0, 24, 44, 68];
-const GRAIN_G = Array.from({ length: 256 }, (_, y) => {
-  const ss = (t: number) => { t = Math.min(1, Math.max(0, t)); return t * t * (3 - 2 * t); };
-  return Math.round(255 * (0.08 + 0.92 * ss((y - 25) / 75)) * (1 - 0.25 * ss((y - 200) / 55)));
-});
-function om3Grain(img: Float32Array, w: number, h: number, level: number) {
-  // The camera's grain is per pixel of a 5184-px photo; shrinking it averages it out. Measured, a Grain High photo
-  // shrunk to 1024 px keeps about 0.58 of the full strength (3 / the shrink factor), but the preview is then shown
-  // enlarged on most screens, which makes each grain coarser and the texture read stronger than on the photo. A
-  // little over a third of it (1.1 / the shrink factor) looks right on screen.
-  const S = GRAIN_S[Math.min(3, level)] * Math.min(1, (1.1 * w) / FULL_WIDTH);
-  const V = new Int32Array(w).fill(15), H = new Int32Array(w);
-  let r = 0x12345678;
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x += 4) {
-      r ^= r << 13; r >>>= 0; r ^= r >>> 17; r ^= r << 5; r >>>= 0;
-      for (let k = 0; k < 4 && x + k < w; k++) { const b = (r >>> (8 * k)) & 255; V[x + k] = (V[x + k] + (b & 15) + (b >> 4)) >> 1; }
+/** OM-3 Border -5..+5 (firmware v0.41 bd_run, research/border/model.py; camera-tested 2026-11-18): white (1..5) or black
+ *  (-1..-5), the same width on every side, 1.5 / 3 / 4.5 / 6 / 7.5 % of the short side. */
+const BORDER_T = [983, 1966, 2949, 3932, 4915];
+function om3Border(img: Float32Array, w: number, h: number, level: number) {
+  const B = Math.max(1, Math.round((Math.min(w, h) * BORDER_T[Math.min(5, Math.abs(level)) - 1]) / 65536)), v = level > 0 ? 1 : 0;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    if (y >= B && y < h - B && x >= B && x < w - B) { x = w - B - 1; continue; }
+    const q = (y * w + x) * 3; img[q] = img[q + 1] = img[q + 2] = v;
+  }
+}
+
+/** OM-3 Film Grain (firmware v0.41 better grain g3: editor.s tg_fill, research/grain/tile_model.py). The camera adds a
+ *  colour grain tile in its development: Y = a w x w box sum of uniform random bytes, sigma 16 (8-bit), w = Grain Size
+ *  (1 Fine, 2 Medium, 3 Coarse); Cb / Cr the same at half width and height, box (w + 1) / 2; times the strength's gain,
+ *  Y 400 / 650 / 1024 / 1280 / 1536 of 1024 for 1..5, Cb / Cr 0.4375 of it. LOOKS.BIN's Low / Med / High are 2 / 3 / 5
+ *  at Medium. Calibration card 2 (2026-11-18): the camera's grain at 2 / 3 / 5 measured 10.6 / 15.9 / 23.8 (Y, full
+ *  size), the model 10.2 / 16 / 24, about the same in every tone. The preview shows the photo as it looks shrunk to the
+ *  preview: each preview pixel is the mean of the tile over the camera pixels it covers. The JPEG keeps colour at half
+ *  size, which takes about 14 % off the colour speckle (card 2: Cb / Cr 2.9..4.5 against 3.5..5.1 without it). */
+export const GRAIN_STRENGTH = [0, 2, 3, 5];
+const GRAIN_GAIN = [0, 400, 650, 1024, 1280, 1536];
+const GT_W = 1536, GT_H = 768;                     // the tile: 1536 x 1536 camera pixels, rows repeating every 768
+const grainTiles = new Map<number, Float32Array[]>();
+function grainTile(size: number): Float32Array[] {
+  const hit = grainTiles.get(size);
+  if (hit) return hit;
+  let st = 0x9e3779b9 ^ size;
+  const rnd = () => { st ^= st << 13; st >>>= 0; st ^= st >>> 17; st ^= st << 5; st >>>= 0; return st & 255; };
+  const plane = (W: number, H: number, b: number, lo: number, hi: number) => {
+    const u = new Float32Array(W * H), row = new Float32Array(W * H), out = new Float32Array(W * H);
+    for (let i = 0; i < u.length; i++) u[i] = rnd();
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { let a = 0; for (let k = 0; k < b; k++) a += u[y * W + ((x + k) % W)]; row[y * W + x] = a; }
+    const kt = 16 / (73.9 * b);                    // tg_kt: sigma 16
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      let a = 0; for (let k = 0; k < b; k++) a += row[((y + k) % H) * W + x];
+      out[y * W + x] = Math.max(lo, Math.min(hi, kt * (a - 127.5 * b * b))) / 255;
     }
-    for (let x = 0; x < w; x++) H[x] = (V[x] + (x ? V[x - 1] : 15) + 1) >> 1;
-    for (let x = 0; x < w; x++) {
-      const q = (y * w + x) * 3, Y = 0.299 * img[q] + 0.587 * img[q + 1] + 0.114 * img[q + 2];
-      const d = ((64 * H[x] - 945) * GRAIN_G[Math.max(0, Math.min(255, (Y * 255) | 0))] * S) / 262144 / 255;
-      img[q] = clamp01(img[q] + d); img[q + 1] = clamp01(img[q + 1] + d); img[q + 2] = clamp01(img[q + 2] + d);
+    return out;
+  };
+  const wc = (size + 1) >> 1, t = [plane(GT_W, GT_H, size, -48, 207), plane(GT_W / 2, GT_H / 2, wc, -128, 127), plane(GT_W / 2, GT_H / 2, wc, -128, 127)];
+  grainTiles.set(size, t);
+  return t;
+}
+function om3Grain(img: Float32Array, w: number, h: number, strength: number, size: number) {
+  if (!strength) return;
+  const gy = GRAIN_GAIN[Math.min(5, strength)] / 1024, gc = 0.86 * 0.4375 * gy, tiles = grainTile(Math.max(1, Math.min(3, size)));
+  const sc = Math.max(1, FULL_WIDTH / Math.max(w, h));   // camera pixels per preview pixel
+  // per plane: the mean of the tile over each preview pixel's footprint (rows summed, then a running sum along the row)
+  const field = (t: Float32Array, TW: number, TH: number, k: number) => {
+    const out = new Float32Array(w * h), acc = new Float64Array(TW), P = new Float64Array(TW + 1);
+    const cx = new Int32Array(w + 1);
+    for (let x = 0; x <= w; x++) cx[x] = Math.round((x * sc) / k);
+    const sumTo = (c: number) => Math.floor(c / TW) * P[TW] + P[c % TW];
+    for (let y = 0; y < h; y++) {
+      const r0 = Math.round((y * sc) / k) + 211, r1 = Math.max(r0 + 1, Math.round(((y + 1) * sc) / k) + 211);
+      acc.fill(0);
+      for (let r = r0; r < r1; r++) { const o = (r % TH) * TW; for (let x = 0; x < TW; x++) acc[x] += t[o + x]; }
+      for (let x = 0; x < TW; x++) P[x + 1] = P[x] + acc[x];
+      for (let x = 0; x < w; x++) {
+        const c0 = cx[x] + 97, c1 = Math.max(c0 + 1, cx[x + 1] + 97);
+        out[y * w + x] = (sumTo(c1) - sumTo(c0)) / ((c1 - c0) * (r1 - r0));
+      }
     }
+    return out;
+  };
+  const nY = field(tiles[0], GT_W, GT_H, 1), nB = field(tiles[1], GT_W / 2, GT_H / 2, 2), nR = field(tiles[2], GT_W / 2, GT_H / 2, 2);
+  for (let i = 0; i < w * h; i++) {
+    const q = i * 3, r = img[q], g = img[q + 1], b = img[q + 2];
+    const Y = clamp01(0.299 * r + 0.587 * g + 0.114 * b + gy * nY[i]);
+    const cb = -0.168736 * r - 0.331264 * g + 0.5 * b + gc * nB[i], cr = 0.5 * r - 0.418688 * g - 0.081312 * b + gc * nR[i];
+    img[q] = clamp01(Y + 1.402 * cr); img[q + 1] = clamp01(Y - 0.344136 * cb - 0.714136 * cr); img[q + 2] = clamp01(Y + 1.772 * cb);
   }
 }
