@@ -7405,3 +7405,13 @@ camera's own info-display settings, with show / hide per item, several set-ups, 
   owner's "set-ups" map onto Information 1 / 2 / 3 per screen (rear and EVF separately) with the stock ticks deciding
   the cycle; more than three would mean new display modes (not planned).
 - Plan sent to the owner; waiting for the OK before any firmware.
+
+## v0.41-dev test 1: grain g3 + screen info s2 together (2026-11-18; emulator, on the owner's card, not camera-tested)
+- Owner (2026-11-18, after grain g3 on the camera: "the new grain looks good and works well"): "combine it with the
+  screen info update". `try/v0.41-dev` = `try/grain-g3-v0.40` (d1d11c4) + `feature/screen-info` (9acc085), merge
+  b3b721a; conflicts only in VERSION and this file. editor.s is grain's plus screen info's seven lines, nothing mixed.
+- Grain g3 camera result (log of the test): 28 grain tiles made, 0 failed, all 28 the fast way, last 268 ms; nothing
+  unusual.
+- Build `58db258b…cbfc` (a second clean build matches). Suite: 65 pass, 2 FAIL = screen info's hook 0x6123043d and its
+  patch sites (0x60e57478, 0x6152a064 / 70 / 7c, 0x6156d0a4 / bc / d4), as on s2; not yet in `hooks.json` (owner's OK
+  needed). On the owner's card 2026-11-18 (sha256 checked).
