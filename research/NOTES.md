@@ -8151,3 +8151,9 @@ Test driver tools/emulator/focus_stacking.mjs runs this routine with controlled 
   om-emu has one exec trace) / `expect:atmem`, `expect:ink:` / `expect:noink:` (a screen box with / without drawing).
 - Start-up rule: hook_fv runs only inside the page's build (a menu key); the hook is in section 7, our code in ext13
   (section 6), section-order passes. hooks.json: hook_fv and the 7 width runs 0x614200ec..0x6142014c:2, reviewed.
+
+## v0.41-dev test 9: crop83-3 + fwver 1 (2026-11-18; emulator, on the owner's card)
+- Owner approved fwver 1's hook ("Yes, approve it"); merged feature/firmware-version-screen at 41d3087 on top of the
+  camera-tested crop83-3 (try/v0.41-dev at 01eefc9). Conflicts: VERSION, NOTES. Build `ac702af7…3065` (a second build
+  matches); static checks all pass; suite **99 of 99**. On the owner's card 2026-11-18 ("copy it to the card when
+  ready"), sha256 checked. Camera test pending.
