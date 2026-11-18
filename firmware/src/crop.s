@@ -590,7 +590,7 @@ cr_dst:
 cr_daf:
  .long 0
 cr_t1:
- .asciz "\r\n\r\nCROP MODES (crop round 9c): tag at the first half-press "
+ .asciz "\r\n\r\nCROP MODES (crop round 10): tag at the first half-press "
 cr_t2:
  .asciz ", Image Aspect then "
 cr_t3:
@@ -1123,3 +1123,147 @@ cr_pbk1:                          /* jmp from 0x6111341e (d0 = the stock code; a
  .byte 0xcb
 .section .ext12,"ax"
 
+
+/* ---- Crop round 10: the playback quality label (2026-11-17). The play component (Cmp_PlayComponentBase, section 6)
+ * looks a photo's record mode up by its shape class and exact size (0x60c7c18a: {k, w, h, 0, code} per class); a
+ * crop's size is in no table, so it gets 57, and the GUI's quality lookup (0x6110130d: file type d0, record mode d1
+ * -> the quality picture code; SimplePlayCommon 0x611133cd -> item 197 + 260) has no entry for 57: no label. Round 9
+ * changed 0x60c7c18a's result (and rebooted, most likely for its label elements). Round 10 changes no stock result:
+ * cr_pqo only reads 0x60c7c18a's inputs and notes (cr_pqm / cr_pqw / cr_pqh) the code the crop's base size has (the
+ * 16:9 entry of the same k and width for a wide crop, the 4:3 entry of the same k and height for a 5:4), and returns
+ * into the stock function unchanged; cr_pqg gives SimplePlayCommon's quality lookup that code instead of 57 when the
+ * photo's pictureSize is the noted one. Item 197 then holds the quality code a stock photo of the base size has. */
+ .balign 4
+cr_pqm:                           /* the base size's record mode for the last crop looked up (0: none) */
+ .long 0
+cr_pqw:
+ .short 0
+cr_pqh:
+ .short 0
+cr_pqsv:
+ .space 12
+
+cr_pqo:                           /* jmp from 0x60c7c18a ([d2,d3,a2,a3],20 frame, retf: mdr is the return, so no
+                                     mul / div / call): d0 the mode, d1 the class (0 4:3, 1 16:9), a1 the compression,
+                                     (24,sp) w, (28,sp) h. Reads only; d0 / d1 / a1 and the stack as they were. */
+ mov d0,(cr_pqsv)
+ mov d1,(cr_pqsv + 4)
+ cmp 1,d0                         /* the modes the stock looks up */
+ beq 1f
+ cmp 5,d0
+ bne 9f
+1:
+ movhu (28,sp),d3                 /* h */
+ cmp 0,d3
+ beq 8f
+ movhu (24,sp),d2                 /* w */
+ mov a1,d0                        /* k as the stock makes it: <= 3 0, <= 6 1, <= 8 2, else 3 */
+ exthu d0
+ mov 0,a3
+ cmp 3,d0
+ ble 2f
+ mov 1,a3
+ cmp 6,d0
+ ble 2f
+ mov 2,a3
+ cmp 8,d0
+ ble 2f
+ mov 3,a3
+2:
+ cmp 1,d1
+ bne 4f
+ mov d3,d0                        /* 16:9 class: a wide crop when w > 2.0625 h */
+ lsr 4,d0
+ add d3,d0
+ add d3,d0
+ cmp d0,d2
+ bls 8f
+ mov 0x60ead1f8,a0                /* the 16:9 table (28): the entry of this k and width */
+ mov 28,d1
+3:
+ movhu (a0),d0
+ cmp a3,d0
+ bne 31f
+ movhu (2,a0),d0
+ cmp d2,d0
+ beq 7f
+31:
+ add 12,a0
+ add -1,d1
+ bne 3b
+ bra 8f
+4:
+ cmp 0,d1
+ bne 8f
+ mov d3,d0                        /* 4:3 class: a 5:4 crop when w <= 1.28 h */
+ lsr 5,d0
+ add d3,d0
+ mov d3,d1
+ lsr 2,d1
+ add d1,d0
+ cmp d0,d2
+ bhi 8f
+ mov 0x60ead048,a0                /* the 4:3 table (36): the entry of this k and height */
+ mov 36,d1
+5:
+ movhu (a0),d0
+ cmp a3,d0
+ bne 51f
+ movhu (4,a0),d0
+ cmp d3,d0
+ beq 7f
+51:
+ add 12,a0
+ add -1,d1
+ bne 5b
+ bra 8f
+7:
+ mov (8,a0),d0                    /* its code */
+ mov d0,(cr_pqm)
+ movhu d2,(cr_pqw)
+ movhu d3,(cr_pqh)
+ bra 9f
+8:
+ clr d0
+ mov d0,(cr_pqm)
+9:
+ mov (cr_pqsv),d0
+ mov (cr_pqsv + 4),d1
+ mov d0,d3                        /* the stock instructions */
+ mov 57,a3
+ mov a3,(sp)
+ jmp cr_pq_back                   /* 0x60c7c18f */
+.section .hook_crq,"ax"
+ jmp cr_pqo                       /* stock 0x60c7c18a: mov d0,d3; mov 57,a3; mov a3,(sp) */
+.section .ext12,"ax"
+
+cr_pqg:                           /* jmp from 0x611133cd (SimplePlayCommon: (1012,sp) the file type, (1016,sp) the
+                                     record mode, (872,sp) / (874,sp) pictureSize; a0 / a1 free) */
+ mov (1012,sp),d0                 /* the stock instructions */
+ mov (1016,sp),d1
+ cmp 57,d1                        /* the play component's miss */
+ bne 9f
+ mov d0,(cr_pqsv + 8)
+ mov (cr_pqm),d0
+ cmp 0,d0
+ beq 8f
+ movhu (872,sp),d0
+ movhu (cr_pqw),d1
+ cmp d1,d0
+ bne 7f
+ movhu (874,sp),d0
+ movhu (cr_pqh),d1
+ cmp d1,d0
+ bne 7f
+ mov (cr_pqm),d1                  /* the base size's record mode */
+ bra 8f
+7:
+ mov 57,d1
+8:
+ mov (cr_pqsv + 8),d0
+9:
+ jmp cr_pqg_back                  /* 0x611133d5: call 0x6110130d */
+.section .hook_crr,"ax"
+ jmp cr_pqg                       /* stock 0x611133cd: mov (1012,sp),d0; mov (1016,sp),d1 */
+ .byte 0xcb, 0xcb, 0xcb
+.section .ext12,"ax"

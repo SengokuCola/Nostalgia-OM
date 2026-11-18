@@ -37,6 +37,8 @@ HOOKS = {'.hook_color': (0x60518615, bytes.fromhex('cd6cfdf060')),
          '.hook_crg': (0x611cb24d, bytes.fromhex('5c0870f85309')),       # crop round 3: the GUI screen spec's ratio byte
          '.hook_crh': (0x60dc4bb1, bytes.fromhex('cff0fafe00ff')),       # crop round 5: the live histogram's area
          '.hook_crk': (0x6111341e, bytes.fromhex('fab61c0b904e')),       # crop round 9c: SimplePlayCommon after its label code (s7)
+         '.hook_crq': (0x60c7c18a, bytes.fromhex('839f394f00')),         # crop round 10: the record-mode lookup, read only (s6)
+         '.hook_crr': (0x611133cd, bytes.fromhex('fab4f403fab5f803')),   # crop round 10: SimplePlayCommon's quality lookup (s7)
          '.hook_shutter': (0x60415216, bytes.fromhex('cd2d01f024')),
          '.hook_set': (0x60b8798b, bytes.fromhex('dd04d90200f044')),
          '.hook_pmod': (0x6129ba07, bytes.fromhex('0cfcde10ec')),

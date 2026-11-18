@@ -70,9 +70,19 @@ CROPPL_KIND = {(5184, 1920): 7, (3200, 1184): 7, (5184, 2224): 8, (4864, 3888): 
 CROPPL_PICTURE = {   # (GUI class, cr_pbk, picture id): our picture k (CR_IC0 + k), or None: the stock picture
     (5, 7, 10930): 4, (5, 8, 10930): 5, (5, 6, 10931): 3, (5, 6, 10930): None, (5, 7, 10931): None, (5, 0, 10930): None,
     (5, 8, 10933): None, (1, 7, 10930): None}
-CROPPL_STOCK_BYTES = {0x611509bc: 'f0439828ff14', 0x611525b9: 'f0439828ff14', 0x61101393: '8003faca2e22',
-                      0x60c7c18a: '839f394f00'}
+CROPPL_STOCK_BYTES = {0x611509bc: 'f0439828ff14', 0x611525b9: 'f0439828ff14', 0x61101393: '8003faca2e22'}
 CROPPL_ELEMENTS = {0x613f8d08: 0x613f5afc, 0x613fe9cc: 0x613fb194, 0x6147d568: 0x6147bff8}
+# crop round 10: the playback quality label, by direct calls (om-emu's playback does not run the play component's
+# lookup). 0x60c7c18a's results stay stock (57 for a crop size) while cr_pqo notes the base size's code; SimplePlayCommon's
+# quality lookup (cr_pqg at 0x611133cd) then asks 0x6110130d with that code instead of 57 for the noted pictureSize.
+CROPQ = 'crop-playback-quality-label'
+CROPQ_NOTE = {   # (class, compression, w, h): (the stock result, the note)
+    (1, 1, 5184, 1920): (57, 1), (1, 1, 5184, 2224): (57, 1), (1, 5, 5184, 1920): (57, 2), (1, 1, 3200, 1184): (57, 5),
+    (0, 1, 4864, 3888): (57, 1), (1, 1, 5184, 2920): (1, 0), (0, 1, 5184, 3888): (1, 0), (3, 1, 1000, 999): (57, 0)}
+CROPQ_GUI = {   # (the record mode asked, w, h, the note's code, w, h): the record mode 0x6110130d gets
+    (57, 5184, 1920, 1, 5184, 1920): 1, (57, 5184, 1920, 2, 5184, 1920): 2, (57, 5184, 2224, 1, 5184, 1920): 57,
+    (57, 5184, 1920, 0, 5184, 1920): 57, (1, 5184, 2920, 5, 5184, 2920): 1}
+CROPQ_PICTURE = {(5, 1): 16, (1, 1): 1, (5, 57): 0}   # 0x6110130d (file type, record mode): the quality picture code
 GRAIN_GAINS = {1: (400, 175), 3: (1024, 448), 5: (1536, 672)}   # strength -> texture Y gain, Cb / Cr gain (xblock.s)
 REAR_DIAL = 0x9032                               # the rear dial's event (cv_ev); a1 its signed clicks
 # (name, a1): first no clicks (the value as it is), then a fast turn of 3, then one past the range.
@@ -911,6 +921,58 @@ def run_croppl(emu, build, out, card0):
     return CROPPL, errors
 
 
+def run_cropq(emu, build, out, card0):
+    """0x60c7c18a for CROPQ_NOTE (result and note), cr_pqg for CROPQ_GUI, 0x6110130d for CROPQ_PICTURE."""
+    d = out / CROPQ
+    d.mkdir(parents=True, exist_ok=True)
+    sym = elf_symbols(build / 'p.elf')
+    word = lambda v: v.to_bytes(4, 'little').hex()
+    half = lambda v: v.to_bytes(2, 'little').hex()
+    note = [[f"{sym.get(n, 0):#x}", s] for n, s in (('cr_pqm', 4), ('cr_pqw', 2), ('cr_pqh', 2))]
+    spec = []
+    for (c, k, w, h), _ in CROPQ_NOTE.items():
+        spec.append({'name': f'lookup {c} {k} {w}x{h}', 'pc': 'B', 'stop': ['B+7'], 'max': 5000,
+                     'mem': [['B', 'dd'], ['B+1', '=0x60c7c18a-B'], ['B+5', 'f014'], ['SP+4', word(w)], ['SP+8', word(h)],
+                             [note[0][0], word(0)]],
+                     'regs': {'d0': '1', 'd1': str(c), 'a1': str(k)}, 'read': [[a, s] for a, s in note]})
+    for (mode, w, h, m, nw, nh), _ in CROPQ_GUI.items():
+        spec.append({'name': f'gui {mode} {w}x{h} {m} {nw}x{nh}', 'pc': 'B', 'stop': ['0x611133d5'], 'max': 2000,
+                     'mem': [['B', 'dc'], ['B+1', f"={sym.get('cr_pqg', 0):#x}-B"], ['SP+1012', word(5)],
+                             ['SP+1016', word(mode)], ['SP+872', half(w) + half(h)],
+                             [note[0][0], word(m)], [note[1][0], half(nw)], [note[2][0], half(nh)]]})
+    for (ft, mode), _ in CROPQ_PICTURE.items():
+        spec.append({'name': f'picture {ft} {mode}', 'pc': 'B', 'stop': ['B+7'], 'max': 50000,
+                     'mem': [['B', 'dd'], ['B+1', '=0x6110130d-B'], ['B+5', 'e020']], 'regs': {'d0': str(ft), 'd1': str(mode)}})
+    res = run_ncall(emu, build, d, card0, 's1 wait wait ncall', spec)
+    if isinstance(res, str):
+        return CROPQ, [res]
+    errors = []
+    reg = lambda r, k: int(r['regs'][k], 16)
+    for (c, k, w, h), (want, wnote) in CROPQ_NOTE.items():
+        r = res[f'lookup {c} {k} {w}x{h}']
+        if r['steps'] >= 5000:
+            errors.append(f'0x60c7c18a class {c}, {w} x {h}: did not return')
+            continue
+        got = reg(r, 'd0')
+        m = int.from_bytes(bytes.fromhex(r['mem'][0]), 'little')
+        nw, nh = (int.from_bytes(bytes.fromhex(r['mem'][i]), 'little') for i in (1, 2))
+        if got != want:
+            errors.append(f'0x60c7c18a class {c}, compression {k}, {w} x {h}: {got}, not the stock {want}')
+        if m != wnote or (wnote and (nw, nh) != (w, h)):
+            errors.append(f'0x60c7c18a class {c}, compression {k}, {w} x {h}: noted {m} for {nw} x {nh}, not {wnote}')
+    for (mode, w, h, m, nw, nh), want in CROPQ_GUI.items():
+        r = res[f'gui {mode} {w}x{h} {m} {nw}x{nh}']
+        got = (reg(r, 'd0'), reg(r, 'd1')) if r['steps'] < 2000 else 'no return'
+        if got != (5, want):
+            errors.append(f'cr_pqg: mode {mode}, {w} x {h}, noted {m} for {nw} x {nh}: d0 / d1 {got}, not (5, {want})')
+    for (ft, mode), want in CROPQ_PICTURE.items():
+        r = res[f'picture {ft} {mode}']
+        got = reg(r, 'd0') if r['steps'] < 50000 else 'no return'
+        if got != want:
+            errors.append(f'0x6110130d file type {ft}, record mode {mode}: {got}, not {want}')
+    return CROPQ, errors
+
+
 def run_dial(emu, build, out, card0):
     """The RGB page open: one rear-dial event carrying several clicks (a fast turn on the camera) moves the selected
     value by all of them, clamped to -7..+7. om-emu's dial tokens send one click an event, so the test calls cv_ev."""
@@ -1031,7 +1093,7 @@ def newest_looks():
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('build', type=pathlib.Path)
-    ap.add_argument('--only', nargs='+', choices=sorted([*TESTS, AUDIT, HALATION, BORDER, ENGINE, DIAL, VIDEO, GRAINMIX, CROPHIST, CROPPL, *STATIC]))
+    ap.add_argument('--only', nargs='+', choices=sorted([*TESTS, AUDIT, HALATION, BORDER, ENGINE, DIAL, VIDEO, GRAINMIX, CROPHIST, CROPPL, CROPQ, *STATIC]))
     ap.add_argument('--jobs', type=lambda v: max(1, int(v)), default=DEFAULT_JOBS)
     ap.add_argument('--out', type=pathlib.Path)
     ap.add_argument('--looks', type=pathlib.Path)
@@ -1054,7 +1116,7 @@ def main():
     looks = (a.looks or newest_looks()).resolve()
     make_card(emu, build, looks, card0)
     fixtures = make_fixtures(out, looks)
-    names = a.only or sorted([*TESTS, AUDIT, HALATION, BORDER, ENGINE, DIAL, VIDEO, GRAINMIX, CROPHIST, CROPPL, *STATIC])
+    names = a.only or sorted([*TESTS, AUDIT, HALATION, BORDER, ENGINE, DIAL, VIDEO, GRAINMIX, CROPHIST, CROPPL, CROPQ, *STATIC])
     stock = static_check.find_stock(a.stock) if any(n in STATIC for n in names) else None
     runs = [(n, k) for n in names for k in range(1, a.repeat + 1)]
     print(f'{len(names)} tests{f" x {a.repeat}" if a.repeat > 1 else ""} on {build}, results in {out}')
@@ -1091,6 +1153,8 @@ def main():
                 return run_crophist(emu, build, d, card0)
             if n == CROPPL:
                 return run_croppl(emu, build, d, card0)
+            if n == CROPQ:
+                return run_cropq(emu, build, d, card0)
             first = shared.get((k, boot_key(TESTS[n][0])))
             return run_test(n, TESTS[n], emu, build, card0, d, first and first.result(), fixtures)
         except static_check.Skip as e:
