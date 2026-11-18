@@ -297,6 +297,32 @@ MATCHED = {'Portra 400', 'Portra 800', 'Gold 200', 'Ektar 100', 'ColorPlus 200',
            'Superia 400', 'Fuji C200', 'Provia 100F', 'Portra 160', 'Fujifilm 200', 'Fujifilm 400', 'Natura 1600', 'NHG II 800',
            'NPS 160', 'Pro 160S'}
 TUNED_SHARP = {'Gold 200': -1}
+# RGB curves + colour mix per camera film (feature/rgb-curves; 2026-11-15, LookLab preview fit, not camera-tested):
+# (R 5 points, G 5 points, B 5 points, mix [hue R, sat R, hue G, sat G, hue B, sat B]), -7..7. Fitted on top of GRADED
+# to the films' colour-chart reference (Kodachrome 64 / CineStill 800T: the mix only, to reference-photo statistics);
+# research/NOTES.md "LookLab: RGB curves and colour mix". Not in LOOKS.BIN: the camera's films don't carry them yet.
+CURVES_MIX = {
+    'Pro 400H': ([0, -3, -1, 2, 0], [0, 0, 1, 0, 0], [-1, 1, 0, -1, 0], [1, 1, 0, -1, 0, 1]),
+    'Pro 160S': ([1, -1, -3, -2, -1], [0, -1, 2, 1, -1], [-1, 2, 1, 1, 0], [0, 0, -2, -2, 1, 0]),
+    'NPS 160': ([1, 1, 3, 1, 1], [1, -1, 0, 1, -2], [1, -1, -1, 2, 0], [1, 1, 0, 1, 1, 1]),
+    'Provia 100F': ([-1, -4, -4, 2, -2], [1, 1, -1, 2, -1], [2, 0, -3, -1, -3], [0, 0, 2, -1, 1, 0]),
+    'Velvia 50': ([-1, 0, -2, 1, 4], [1, 0, -2, 0, 2], [3, 0, -4, 2, -1], [1, 1, 7, 0, 2, -1]),
+    'Fujifilm 200': ([0, 1, 3, -1, -5], [1, -1, 2, 0, 1], [-1, -4, -1, -1, 1], [0, 0, -1, -1, 0, 1]),
+    'Fuji C200': ([0, 3, 4, -2, -3], [0, -1, 1, 0, 1], [-1, 0, 0, 0, 0], [0, 0, -1, -2, 0, 1]),
+    'Superia 400': ([0, 0, 1, 1, 0], [0, 0, -1, 0, 0], [0, 0, 2, 4, 0], [0, 0, 0, -2, 0, 0]),
+    'Fujifilm 400': ([0, 3, 2, -2, -4], [0, -1, 2, 1, 0], [0, -4, 2, 1, 0], [0, 0, -2, -2, -1, 0]),
+    'Natura 1600': ([0, -2, 1, 3, 1], [0, 0, -1, -1, 0], [0, 3, -1, -1, 0], [0, 0, 0, -1, 0, -1]),
+    'NHG II 800': ([0, -3, -2, 1, 0], [0, 1, -1, -1, 1], [0, 3, 1, 3, 0], [0, 0, 1, -2, 0, 0]),
+    'Portra 160': ([0, -1, -2, 1, 0], [0, 0, 0, 0, 0], [1, 0, 1, 1, 1], [0, 0, 0, -1, 0, 0]),
+    'Portra 400': ([0, 0, 0, -1, 0], [0, 0, 0, 0, 0], [0, 0, 2, 1, 1], [0, 0, -1, -1, -1, 0]),
+    'Portra 800': ([0, -1, -1, -1, -2], [-1, 0, 1, 0, 0], [-1, 1, 0, 1, 1], [0, 0, -1, 0, 0, 0]),
+    'Gold 200': ([-1, 1, -1, -2, 0], [0, 0, 0, 0, -1], [1, 1, 4, 4, 0], [0, 0, 0, -2, 0, 1]),
+    'Ektar 100': ([0, -3, 3, 0, 0], [0, 0, 0, 0, 0], [0, -2, -4, -3, 0], [0, 2, 1, 1, 0, -1]),
+    'Ektachrome E100': ([-1, -3, -3, 0, 0], [1, 1, 0, 1, -1], [1, -2, -3, -3, -1], [-1, 0, 6, 0, 1, -1]),
+    'ColorPlus 200': ([0, 1, 0, 0, 1], [-1, 0, 0, -1, 0], [0, -1, 2, 4, 0], [0, 0, -2, -3, -1, 1]),
+    'Kodachrome 64': ([0, 0, 0, 0, 0], [0, 0, 0, 0, 0], [0, 0, 0, 0, 0], [0, 0, 1, -1, 0, 0]),   # internet photos
+    'CineStill 800T': ([0, 0, 0, 0, 0], [0, 0, 0, 0, 0], [0, 0, 0, 0, 0], [1, -1, 0, -2, 0, 1]),   # internet photos
+}
 
 def tuned(name, s):
     t = GRADED.get(name)
@@ -328,7 +354,11 @@ out = []
 for name, grp, film, desc, recipe in FILMS:
     assert len(name) <= 15 and name.isascii() and name == name.strip(), name
     s = settings(recipe) if RECIPES else tuned(name, settings(recipe))
-    out.append({'name': name, 'group': grp, 'film': film, 'desc': desc, **s, 'sharp': TUNED_SHARP.get(name, SHARP.get(name, 0)), **({'matched': True} if name in MATCHED else {})})
+    cm = {} if RECIPES or name not in CURVES_MIX else CURVES_MIX[name]
+    if cm:
+        assert all(len(a) == 5 for a in cm[:3]) and len(cm[3]) == 6 and all(abs(x) <= 7 for a in cm for x in a), name
+        cm = {**({'rgb': dict(zip('rgb', cm[:3]))} if any(x for a in cm[:3] for x in a) else {}), **({'mix': cm[3]} if any(cm[3]) else {})}
+    out.append({'name': name, 'group': grp, 'film': film, 'desc': desc, **s, 'sharp': TUNED_SHARP.get(name, SHARP.get(name, 0)), **({'matched': True} if name in MATCHED else {}), **cm})
 if RECIPES:
     json.dump({'films': out, 'camera': CAMERA}, open(RECIPES, 'w'), separators=(',', ':')); print(len(out), 'recipes'); sys.exit()
 names = [f['name'] for f in out]
@@ -337,6 +367,7 @@ assert all(k in names and -4 <= v <= 2 for k, v in SHARP.items()), 'SHARP: unkno
 assert all(v in names and k not in names for k, v in ALIASES.items())
 assert set(GRADED) == set(names) and set(TUNED_SHARP) <= set(GRADED), 'GRADED: every film once'
 assert MATCHED <= set(names), 'MATCHED: known films'
+assert set(CURVES_MIX) <= set(CAMERA), 'CURVES_MIX: camera films only'
 assert len(CAMERA) == 20 and len(set(CAMERA)) == 20 and all(n in names for n in CAMERA), 'CAMERA: 20 known films'
 json.dump({'note': 'Our own film looks (webapp/scripts/films.py); edit the recipes there, not this file.', 'films': out, 'aliases': ALIASES, 'camera': CAMERA},
           open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'src', 'data', 'om3films.json'), 'w'), separators=(',', ':'))

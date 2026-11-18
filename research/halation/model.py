@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Caduceus for OM-3 halation (v0.28 h4): the exact integer model of the camera's pass (editor.s `hl_run`).
+"""Caduceus for OM-3 halation (v0.28 h4, h8 tail): the exact integer model of the camera's pass (editor.s `hl_run`).
 
 Our own code. The method (a threshold-excess grid of 64 px cells, a small blur, a soft knee, then a tint that fades on
 bright pixels) follows Caduceus for the E-P7's halation by cakelesscoder (docs/HALATION_RED.md, camera-tested there);
@@ -11,8 +11,9 @@ Buffer: YCbYCr 4:2:2 (byte 0 Y0, 1 Cb, 2 Y1, 3 Cr per pixel pair; Cb / Cr offset
   A. grids: every 2nd row, every pair's Y0: e = Y0 - T if > T summed (u16) into 64 x 64 px cells, and Y0 >> 2
      summed into a second grid; the cell's mean B = (4 sum) // samples
   B. blur:  [1 2 1] / 4 (rounded, edges repeated) BLUR times across and down (tight) and BLUR2 times (broad),
-            mixed v = (tight (256 - MIX) + broad MIX + 128) >> 8 (h4)
-  map:      u = 255 v / (v + K) by table (`tables`); n = cells with u >= COV_U: none when n >= COV_HI % of the
+            mixed v0 = (tight (256 - MIX) + broad MIX + 128) >> 8 (h4); h8: the broad layer blurred BLUR3 more
+            times (wide), v = v0 + ((wide WIDE + 128) >> 8): a long, even tail
+  map:      u = 255 v / (v + K) by table (`tables`); n = cells with u(v0) >= COV_U: none when n >= COV_HI % of the
             cells, full strength up to COV_LO %, in between sc = ((n_hi - n) 256) // (n_hi - n_lo);
             g = (((u gmax[level]) >> 8) sc) >> 8;  w = min(255, WMUL (255 - B))
   C. each row: g and w each lerped between the two nearest cell rows (centres 32 + 64 k, /64 rounded) and then
@@ -24,7 +25,7 @@ import numpy as np
 
 import os, sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'firmware'))
-from halation import T, K, BLUR, BLUR2, MIX, GMAX, KY, KCB, KCR, WMUL, COV_U, COV_LO, COV_HI, curve, tables   # one set of numbers for both
+from halation import T, K, BLUR, BLUR2, BLUR3, WIDE, MIX, GMAX, KY, KCB, KCR, WMUL, COV_U, COV_LO, COV_HI, curve, tables   # one set of numbers for both
 
 
 def grid_sums(buf, W, H, pitch):
@@ -56,23 +57,29 @@ def blur_n(a, passes):
 
 
 def blur(a):
-    """h4: a tight layer (BLUR passes) and a broad one (BLUR2), mixed: a long, soft tail."""
-    return (blur_n(a, BLUR) * (256 - MIX) + blur_n(a, BLUR2) * MIX + 128) >> 8
+    """-> (v0, v). h4: a tight layer (BLUR passes) and a broad one (BLUR2), mixed: v0 (the bright-frame count uses it).
+    h8: v = v0 + the wide layer (the broad one blurred BLUR3 more times) x WIDE / 256: a long, even tail."""
+    broad = blur_n(a, BLUR2)
+    v0 = (blur_n(a, BLUR) * (256 - MIX) + broad * MIX + 128) >> 8
+    return v0, v0 + ((blur_n(broad, BLUR3) * WIDE + 128) >> 8)
+
+
+def u_of(v):
+    lo, hi = (np.frombuffer(x, np.uint8).astype(np.int64) for x in tables())
+    return np.where(v < 1024, lo[np.minimum(v >> 2, 255)], hi[np.minimum(v >> 8, 255)])
 
 
 def grids(buf, W, H, pitch, level):
     """-> (G, Wc) or None (too much of the frame is bright)."""
     E, B = grid_sums(buf, W, H, pitch)
-    v = blur(E)
-    lo, hi = (np.frombuffer(x, np.uint8).astype(np.int64) for x in tables())
-    u = np.where(v < 1024, lo[np.minimum(v >> 2, 255)], hi[np.minimum(v >> 8, 255)])
-    cells = u.size
-    n = int((u >= COV_U).sum())
+    v0, v = blur(E)
+    cells = v.size
+    n = int((u_of(v0) >= COV_U).sum())
     n_lo, n_hi = cells * COV_LO // 100, cells * COV_HI // 100
     if n >= n_hi:
         return None
     sc = 256 if n <= n_lo else ((n_hi - n) * 256) // (n_hi - n_lo)
-    G = (((u * GMAX[level]) >> 8) * sc) >> 8
+    G = (((u_of(v) * GMAX[level]) >> 8) * sc) >> 8
     return G, np.minimum(255, WMUL * (255 - B))
 
 

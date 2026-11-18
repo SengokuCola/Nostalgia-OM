@@ -390,6 +390,18 @@ dialog.modal:has(.replace-grid) { width: min(780px, calc(100vw - 32px)); }
 .bw-lab { font-size: 15px; font-weight: 700; } .bw-lab.bk { fill: #f4f2ec; } .bw-lab.wh { fill: #111; }
 .bw-limit { fill: none; stroke: rgba(241, 239, 233, .55); stroke-dasharray: 3 3; pointer-events: none; }
 .tc-knob.ro { cursor: default; pointer-events: none; }
+/* RGB curves (the camera's RGB row) */
+.rgb-ch { margin: 2px auto 6px; align-self: center; }
+.rgb-ch button { min-width: 44px; font-weight: 600; }
+.rgb-ch .rc-r { color: #e5484d; } .rgb-ch .rc-g { color: #30a46c; } .rgb-ch .rc-b { color: #3e8ef7; }
+.rgb-ch button.on { color: var(--accent-ink); }
+.rgb-ch button.on.rc-r { background: #e5484d; } .rgb-ch button.on.rc-g { background: #30a46c; } .rgb-ch button.on.rc-b { background: #3e8ef7; }
+.rgb-curve .rc-curve { fill: none; stroke-width: 1.2; opacity: .45; stroke-linejoin: round; }
+.rgb-curve .rc-curve.sel { stroke-width: 2.2; opacity: 1; }
+.rgb-curve .rc-r { stroke: #ff6b6b; } .rgb-curve .rc-g { stroke: #4cd18a; } .rgb-curve .rc-b { stroke: #5aa2ff; }
+.rgb-curve .tc-knob .pip { stroke-width: 1.8; }
+.rgb-curve .rc-k-r .pip { stroke: #ff6b6b; } .rgb-curve .rc-k-g .pip { stroke: #4cd18a; } .rgb-curve .rc-k-b .pip { stroke: #5aa2ff; }
+.rgb-curve .tc-knob.on.rc-k-r .pip { fill: #ff6b6b; } .rgb-curve .tc-knob.on.rc-k-g .pip { fill: #4cd18a; } .rgb-curve .tc-knob.on.rc-k-b .pip { fill: #5aa2ff; }
 /* v0.28 the film's WB mode */
 .wb-mode { display: grid; gap: 2px; margin-bottom: 6px; }
 .wb-mode .crow { grid-template-columns: 112px minmax(0, 1fr) 64px; }
@@ -420,3 +432,14 @@ dialog.modal:has(.replace-grid) { width: min(780px, calc(100vw - 32px)); }
 .grade-name { display: flex; gap: 8px; align-items: center; }
 .grade-name input { flex: 1; max-width: 220px; }
 @media (max-width: 600px) { .grade-pv { grid-template-columns: 1fr; } }
+
+/* Colour mix ring (the camera's Mix page; colours set in main.ts mixPanel, as the camera draws them) */
+.mix-ring .mx-dot { cursor: pointer; }
+
+/* The camera's Picture Mode row pictures (colour menu, test 7) */
+.pm-ic { vertical-align: -4px; margin-right: 6px; flex: none; color: var(--ink); }
+.cname .pm-ic { margin-right: 5px; }
+.tc-top .rgb-letter { font-weight: 700; font-size: 1.15em; }
+.tc-top .rgb-letter.rc-r { color: #ff6a2a; } .tc-top .rgb-letter.rc-g { color: #22e83a; } .tc-top .rgb-letter.rc-b { color: #4d7dff; }
+.tc-top.mx-top { display: grid; grid-template-columns: 1fr auto 1fr; align-items: baseline; }
+.tc-top.mx-top > :first-child { justify-self: start; } .tc-top.mx-top > :last-child { justify-self: end; }

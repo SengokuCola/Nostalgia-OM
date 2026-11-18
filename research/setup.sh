@@ -7,7 +7,9 @@
 #   toolchain/   GNU binutils 2.42 for MN10300 (as, ld, objcopy, objdump, nm), built from the GNU release
 #   stock/       the official OM-3 firmware 1.1 (checked by sha256)
 #   decoded/     its decoded main block (for tools/dis.sh and analysis)
-#   om-emu/      the emulator (github.com/flatpanda/om-emu) with the OM-3 (E147) blocks unpacked
+#   om-emu/      the emulator (github.com/flatpanda/om-emu) at the commit tools/emulator/om-emu.pin names, with the
+#                OM-3 (E147) blocks unpacked. A pin checked more than 7 days ago gets a warning to run
+#                tools/emulator/bump_om_emu.sh.
 #   out-check/   a build of this checkout, compared with the newest release
 #   env.sh       paths for later commands:  . ~/om3-work/env.sh
 #
@@ -23,7 +25,6 @@ STOCK_SHA=8c133084414533159f587bf46bfb4152714c4074312a47c8d8503e33d605696d
 MAIN_SHA=5e8d376e9111a44ac0352f26030d7c1b17026d42c45f3600cfa02a0e8c5b7d59
 BU_URL=http://archive.ubuntu.com/ubuntu/pool/main/b/binutils/binutils_2.42.orig.tar.xz
 BU_SHA=f6e4d41fd5fc778b06b7891457b3620da5ecea1006c6a4a41ae998109f85a800
-EMU_GIT=https://github.com/flatpanda/om-emu
 
 mkdir -p "$WORK"
 say() { printf '\n== %s\n' "$*"; }
@@ -115,11 +116,13 @@ fi
 
 say "5/6 emulator (om-emu, OM-3 = E147)"
 EMU=$WORK/om-emu
-[ -d "$EMU/.git" ] || git clone --quiet --depth 1 "$EMU_GIT" "$EMU"
-mkdir -p "$EMU/fw" && { [ -f "$EMU/fw/OLY_E_147_1100_0000_0000.BIN" ] || cp "$STOCK" "$EMU/fw/"; }
-(cd "$EMU" && node emu/bin/fetch-fw.mjs --model E147 --bin fw/OLY_E_147_1100_0000_0000.BIN >/dev/null 2>&1 \
-  || node emu/bin/fetch-fw.mjs --model E147 --bin fw/OLY_E_147_1100_0000_0000.BIN)
-echo "ok: $EMU (unpacked/E147)"
+. "$REPO/tools/emulator/om_emu.sh"
+emu_read_pin || exit 1
+emu_use "$EMU_REV" "$STOCK"
+echo "ok: $EMU at ${EMU_REV:0:7} (unpacked/E147)"
+age=$(emu_pin_age)
+((age <= EMU_MAX_AGE_DAYS)) \
+  || echo "om-emu: the pin was last checked $age days ago. Run tools/emulator/bump_om_emu.sh (research/TESTING.md)."
 
 say "6/6 build check"
 OUT=$WORK/out-check

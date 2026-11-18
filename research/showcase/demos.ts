@@ -17,6 +17,8 @@ const none = (_l: Look) => {};
 const split = (sh: number, hl: number, shC = 8, hlC = 1) => ({ sh_color: shC, sh, hl_color: hlC, hl });   // strengths in v0.26 steps (camera 10 = 5)
 // [id, photo, before, after]
 const DEMOS: [string, string, (l: Look) => void, (l: Look) => void][] = [
+  ['mix', 'taxi', none, (l) => { l.mix = [4, 3, 0, 0, 0, 0]; }],                               // v0.30: Red Hue +4, Sat +3
+  ['rgb', 'meadow', none, (l) => { l.rgb = { r: [0, 0, 0, 0, 0], g: [0, 0, 0, 0, 0], b: [0, 5, 0, -4, 0] }; }],   // Blue pt 2 +5, pt 4 -4
   ['hsl-color', 'portrait', none, (l) => { l.sat[6] = -5; l.sat[7] = -5; }],
   ['hsl-hue', 'taxi', none, (l) => { l.hue[0] = 5; }],
   ['hsl-luminance', 'ocean', none, (l) => { l.light[6] = -5; l.light[7] = -5; l.light[8] = -5; }],

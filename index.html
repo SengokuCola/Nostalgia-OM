@@ -128,6 +128,9 @@ section:nth-of-type(even) { background: var(--bg2); }
 .rows button:hover { color: var(--ink); background: #15181d; }
 .rows button[aria-selected="true"] { background: #5e6a10; color: #fff; box-shadow: inset 0 0 0 2px #c8dc1e; }
 .rows .new { margin: 0; }
+.rows-group { font-size: 12px; font-weight: 600; color: var(--faint); padding: 10px 12px 3px; }
+.rows-group:first-child { padding-top: 4px; }
+.row-text .pic { color: var(--muted); font-size: 14px; margin-top: 8px; }
 .editor-main { display: grid; gap: 20px; align-content: start; min-width: 0; }
 .editor-media { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 22px; align-items: start; }
 .editor-media .compare { aspect-ratio: 3 / 2; background: #08090b; }
@@ -199,6 +202,33 @@ footer { border-top: 1px solid var(--line); padding: 36px 0 56px; color: var(--f
 footer .in { display: grid; gap: 8px; }
 footer a { color: var(--muted); }
 
+/* the debug log example (v0.30) */
+.log-wrap { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); gap: 36px; align-items: start; margin-top: 36px; scroll-margin-top: 70px; }
+.log-text h3 { font-size: 24px; font-weight: 800; margin: 8px 0 10px; }
+.log-text p { color: #c9ced8; }
+.log-parts { list-style: none; padding: 0; margin: 14px 0; display: grid; gap: 8px; }
+.log-parts li { color: #c9ced8; }
+.log-parts b { color: var(--ink); }
+.logfile { margin: 0; background: #0a0b0d; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; font: 13px/1.5 var(--mono); box-shadow: 0 18px 50px rgba(0,0,0,.45); }
+.logfile figcaption { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 10px 16px; background: #15181d; color: var(--muted); }
+.logfile figcaption b { color: var(--ink); font-weight: 600; }
+.log-sec { padding: 12px 16px; border-top: 1px solid var(--line); }
+.log-sec h4 { font: 600 11px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--accent); margin-bottom: 6px; }
+.log-sec dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px 14px; margin: 0; }
+.log-sec dt { color: var(--faint); }
+.log-sec dd { margin: 0; color: var(--ink); }
+.log-sec .ok { color: #7fd6a2; }
+.log-sec .ok::before { content: "✓ "; }
+.log-sec ul { list-style: none; padding: 0; margin: 0; }
+.log-cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 14px; }
+.log-scroll { overflow-x: auto; }
+.log-sec table { border-collapse: collapse; white-space: nowrap; font-size: 12.5px; }
+.log-sec th { text-align: left; color: var(--faint); font-weight: 500; padding: 1px 12px 3px 0; }
+.log-sec td { padding: 1px 12px 1px 0; color: var(--ink); }
+.log-sec td.y { color: var(--accent); }
+.log-sec .more-rows { color: var(--faint); margin-top: 4px; }
+@media (max-width: 980px) { .log-wrap { grid-template-columns: 1fr; } }
+
 /* responsive */
 @media (max-width: 980px) {
   .hero .in, .viewer, .hal { grid-template-columns: 1fr; }
@@ -206,6 +236,7 @@ footer a { color: var(--muted); }
   .editor { grid-template-columns: 1fr; }
   .rows { display: flex; overflow-x: auto; scrollbar-width: none; }
   .rows button { white-space: nowrap; }
+  .rows-group { display: none; }
   .three { grid-template-columns: 1fr; max-width: 560px; }
 }
 @media (max-width: 1080px) {
@@ -230,11 +261,12 @@ footer a { color: var(--muted); }
   <a class="brand" href="./">Caduceus for OM-3</a>
   <a class="tab opt" href="#films">Films</a>
   <a class="tab opt" href="#editor">Colour editor</a>
-  <a class="tab opt" href="#v029">New in v0.29</a>
+  <a class="tab opt" href="#v030">New in v0.30</a>
   <a class="tab opt" href="#help">Help</a>
   <a class="tab" href="pages/install/">Install</a>
   <a class="tab" href="looklab/">LookLab</a>
   <a class="tab" href="https://github.com/androidfanman/caduceus-om3/releases/latest">Download</a>
+  <a class="tab" href="https://discord.gg/fKpcKGsNPY">Discord</a>
   <a class="tab report" href="https://github.com/androidfanman/caduceus-om3/issues/new?template=bug.yml">Report a problem</a>
   <a class="tab gh" href="https://github.com/androidfanman/caduceus-om3" aria-label="Caduceus for OM-3 on GitHub">GitHub&nbsp;↗</a>
 </div></nav>
@@ -250,7 +282,7 @@ footer a { color: var(--muted); }
         <a class="btn" href="looklab/">Open LookLab</a>
         <a class="btn" href="pages/install/">How to install</a>
       </div>
-      <div class="facts"><span><b>20</b> film looks, 18 colour matched</span><span><b>13</b> settings per film</span><span><b>Any</b> SD card (v0.29)</span><span><b>Free</b> and open source</span></div>
+      <div class="facts"><span><b>20</b> film looks, 18 colour matched</span><span><b>15</b> settings per film</span><span><b>Any</b> SD card (v0.29)</span><span><b>Free</b> and open source</span></div>
     </div>
     <div class="hero-visual" aria-label="The camera's Picture Mode list stepping through the films, with a photo in each film's look">
       <div class="hero-photo fade" id="heroPhoto">
@@ -266,12 +298,48 @@ footer a { color: var(--muted); }
 
 <main>
 
+<section id="v030">
+  <div class="in">
+    <div class="head">
+      <div class="eyebrow">New in v0.30</div>
+      <h2>Shape each film’s colour, right on the camera.</h2>
+      <p>Two new rows for each film, Color Mix and RGB curves, and the 20 films regraded with them against scans of the real films. Plus a Picture Mode laid out in the order the camera works on a photo, with a picture for every row.</p>
+    </div>
+    <div class="three">
+      <div>
+        <div class="lcd"><div class="screen"><img alt="Camera screen: the Color Mix page, a ring with red, green and blue as dots; red is chosen, Sat +3, Hue +4" src="pages/showcase/img/screens/row-mix.png" loading="lazy"></div></div>
+        <p class="cap"><b>Color Mix.</b> Make red, green or blue stronger or weaker, or turn it toward its neighbour. Each colour is a dot on the ring: the front dial turns it, the rear dial moves it out or in. Greys stay grey.</p>
+      </div>
+      <div>
+        <div class="lcd"><div class="screen"><img alt="Camera screen: the RGB curves page with the blue curve raised at point 2 and lowered at point 4" src="pages/showcase/img/screens/row-rgb.png" loading="lazy"></div></div>
+        <p class="cap"><b>RGB curves.</b> A tone curve for each of red, green and blue, with five points from black to white: add a colour to the shadows, take it out of the highlights, cross-process.</p>
+      </div>
+      <div>
+        <div class="lcd"><div class="screen"><img alt="Camera screen: Picture Mode on FILM 1, the rows down the left with their new pictures" src="pages/showcase/img/screens/film-01.png" loading="lazy"></div></div>
+        <p class="cap"><b>A new Picture Mode.</b> The film and its colour first, then white balance and tone, then lens and effects, five rows a page, each with its own picture.</p>
+      </div>
+    </div>
+    <div class="cards" style="margin-top:22px">
+      <div class="card">
+        <h3>Ready at switch-on</h3>
+        <p>The right film and your changes are there as soon as you switch on, in every mode, before the first half-press.</p>
+      </div>
+      <div class="card">
+        <h3>A fuller debug log</h3>
+        <p>When something goes wrong, the log now reports everything: what the camera loaded, the film on each COLOR, its own settings, each custom mode and the last 32 shutter presses.</p>
+        <a class="more" href="#debuglog">See an example →</a>
+      </div>
+    </div>
+    <p style="margin-top:14px"><a class="more" href="#editor">See every row and what it does to a photo →</a></p>
+  </div>
+</section>
+
 <section id="films">
   <div class="in">
     <div class="head">
       <div class="eyebrow">Picture Mode</div>
       <h2>Twenty films, right where COLOR 1–4 are.</h2>
-      <p>Turn the creative dial to COLOR and open Picture Mode. After COLOR 1–4 the list goes on with FILM 1–20, each with its own name as the big title. The standard 20: 18 films colour matched against film scans of a colour chart, plus CineStill 800T and Kodachrome 64, tuned by hand. Step through them below, and drag across the photo to compare with the original.</p>
+      <p>Turn the creative dial to COLOR and open Picture Mode. After COLOR 1–4 the list goes on with FILM 1–20, each with its own name as the big title. The standard 20: 18 films colour matched against film scans of a colour chart, plus CineStill 800T and Kodachrome 64, tuned by hand. From v0.30 each film also has its own colour mix and RGB curves, fitted to those scans; the camera takes them from a small card file, <code>CURVES.BIN</code>, once. Step through them below, and drag across the photo to compare with the original.</p>
     </div>
     <div class="viewer">
       <div class="viewer-left">
@@ -309,9 +377,9 @@ footer a { color: var(--muted); }
 <section id="editor">
   <div class="in">
     <div class="head">
-      <div class="eyebrow">Picture Mode rows</div>
+      <div class="eyebrow">Picture Mode rows · new order in v0.30</div>
       <h2>A colour editor on the camera.</h2>
-      <p>Below the film list, each film gets a column of settings. Change any of them on the camera and the photo follows at once. Pick a setting to see its screen on the camera and what it does to a photo.</p>
+      <p>Press OK on a film and its settings run down the left of the screen, five rows to a page, in the order the camera applies them to a photo: the film and its colour first, then white balance and tone, then lens and effects, then grain. Each row has a small picture of what it does. Change any of them on the camera and the photo follows at once. Pick a setting to see its screen on the camera and what it does to a photo.</p>
     </div>
     <div class="editor">
       <div class="rows" id="rows" role="tablist" aria-label="Settings"></div>
@@ -392,6 +460,16 @@ footer a { color: var(--muted); }
         <p class="cap"><b>On the shooting screen</b> and in the viewfinder. <b>Hold OK</b> on a film to put it back as it was built.</p>
       </div>
     </div>
+    <div class="cards" style="margin-top:22px">
+      <div class="card">
+        <h3>Each custom mode keeps its own</h3>
+        <p>Assign › Set copies the films, every change you made to them and the camera’s own picture settings into that custom mode. Nothing you do in another mode changes it. Changes made inside it follow its Save Settings, like the camera’s own, and Assign › Reset puts it back to the films as built. (v0.29.5)</p>
+      </div>
+      <div class="card">
+        <h3>A star only for a real change</h3>
+        <p>A row gets its star only when it differs from the film as built, a changed film shows FILM 1* on the shooting screen, and leaving Picture Mode saves at once. (v0.29.4)</p>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -425,7 +503,7 @@ footer a { color: var(--muted); }
       </div>
       <div>
         <div class="lcd"><div class="screen"><img alt="Camera screen: the options for the Delete button, Digital Tele-converter chosen: switches between x1/x2" src="pages/showcase/img/screens/btn-delete-options.png" loading="lazy"></div></div>
-        <p class="cap"><b>Here, one press for the 2&times; tele-converter.</b> The Delete button is by crombach (v0.29.3).</p>
+        <p class="cap"><b>Here, one press for the 2&times; tele-converter.</b> (v0.29.3)</p>
       </div>
     </div>
   </div>
@@ -472,7 +550,7 @@ footer a { color: var(--muted); }
       <div class="card">
         <div class="ico">🖥️</div>
         <h3>Make films on your computer</h3>
-        <p>LookLab is a web page for making and changing films with a live preview, on sample photos or your own. It has 67 films to start from (18 colour matched), and can turn your own LUT or Lightroom preset into a film. Nothing is uploaded.</p>
+        <p>LookLab is a web page for making and changing films with a live preview, on sample photos or your own. It has 67 films to start from (18 colour matched), edits Color Mix and RGB curves with the camera’s own maths, and can turn your own LUT or Lightroom preset into a film. Nothing is uploaded.</p>
         <a class="more" href="looklab/">Open LookLab →</a>
       </div>
       <div class="card">
@@ -512,6 +590,22 @@ footer a { color: var(--muted); }
   </div>
 </section>
 
+<section id="cameras">
+  <div class="in">
+    <div class="head">
+      <div class="eyebrow">Other cameras</div>
+      <h2>Only the OM-3, for now.</h2>
+      <p>Caduceus changes the OM-3’s own firmware at hundreds of exact places, and every camera (even every firmware version) is different inside. A port means finding all of them again, starting from the official firmware update for that camera, then testing each change on the real camera. I only own an OM-3, so I can’t make or test versions for other models.</p>
+      <p><b>The new OM SYSTEM PEN:</b> a different camera inside from both the OM-3 and the PEN E-P7. As far as we know it has had no firmware update yet, so there’s no firmware file to start from.</p>
+    </div>
+    <div class="ctas">
+      <a class="btn" href="https://github.com/cakelesscoder/caduceus-ep7">PEN E-P7: Caduceus for the E-P7</a>
+      <a class="btn" href="https://discord.gg/fKpcKGsNPY">Port it yourself? Say hello on Discord</a>
+      <a class="btn" href="https://github.com/androidfanman/caduceus-om3#other-cameras">Why it’s hard, in detail</a>
+    </div>
+  </div>
+</section>
+
 <section id="help">
   <div class="in">
     <div class="head">
@@ -531,8 +625,57 @@ footer a { color: var(--muted); }
       <p><b>When you’re done,</b> delete <code>DEBUG.TXT</code> from the card, so the camera stops writing the log.</p>
       <p><b>No <code>CADLOG.TXT</code> after switching on and half-pressing?</b> Then the camera isn’t running Caduceus: the update didn’t install. See <a href="pages/install/#step-4-update-the-camera">Install, step 4</a>.</p>
     </div>
+    <div class="log-wrap" id="debuglog">
+      <div class="log-text">
+        <span class="new" style="margin-left:0">new in v0.30</span>
+        <h3>A debug log that tells the whole story.</h3>
+        <p>The log is rewritten at every half-press, so it always shows the moment things went wrong. From v0.30 it covers everything the camera is doing, in plain words you can read yourself:</p>
+        <ul class="log-parts">
+          <li><b>Summary:</b> the mode, exposure and film right now, and anything that looks wrong.</li>
+          <li><b>Start-up:</b> what loaded when the camera switched on, and whether each card file matches the firmware.</li>
+          <li><b>Now:</b> the picture mode, the film on each COLOR, and which films you changed.</li>
+          <li><b>Camera:</b> its own settings: exposure as set and as metered, white balance, drive, AF, quality.</li>
+          <li><b>Saves and custom modes:</b> what was saved, and each custom mode’s films and Save Settings.</li>
+          <li><b>Buttons and dials:</b> what each button, dial and the Fn lever do.</li>
+          <li><b>The last 32 shutter presses:</b> one line each.</li>
+        </ul>
+        <p class="note">It only reads the camera’s settings, never changes them, and holds no photos and nothing personal. The example is shortened, from the emulator.</p>
+      </div>
+      <figure class="logfile" aria-label="An example debug log, shortened">
+        <figcaption><b>OM3MOD/CADLOG.TXT</b><span>written at shutter press 43</span></figcaption>
+        <div class="log-sec"><h4>Summary</h4><dl>
+          <dt>Now</dt><dd>P · 1/13 f/2.8 · ISO Auto · ±0.0 · WB Auto · FILM 15</dd>
+          <dt>Films</dt><dd>from the camera’s memory · card files match</dd>
+          <dt>This power-on</dt><dd>4 saves · 6 mode changes · C1 has its own films</dd>
+          <dt>Look at</dt><dd class="ok">nothing unusual</dd></dl></div>
+        <div class="log-sec"><h4>Start-up</h4><ul>
+          <li class="ok">Settings block found; films from the camera’s memory (valid)</li>
+          <li class="ok">Films, film changes and tones loaded</li>
+          <li class="ok">GUIDES.BIN, LABELS.BIN, TONES.BIN match this firmware</li></ul></div>
+        <div class="log-sec"><h4>Now</h4><dl>
+          <dt>Picture mode</dt><dd>COLOR 3 · FILM 15 NHG II 800 · Creative Dial on COLOR</dd></dl>
+          <div class="log-cols" style="margin-top:4px"><span>COLOR 1 · FILM 4 Gold 200</span><span>COLOR 2 · FILM 10 Velvia 50</span><span>COLOR 3 · FILM 15 NHG II 800</span><span>COLOR 4 · FILM 19 Fujifilm 400</span></div>
+          <dl style="margin-top:4px"><dt>Changed (*)</dt><dd>films 4, 5, 10, 15, 19</dd></dl></div>
+        <div class="log-sec"><h4>Camera</h4><dl>
+          <dt>Exposure</dt><dd>metered 1/13 f/2.8 · set 1/250 f/5.6</dd>
+          <dt>WB</dt><dd>Auto · Custom WB 5400 K</dd>
+          <dt>Drive / AF</dt><dd>drive [0] · AF mode [0] · quality [11] (the camera’s codes)</dd></dl></div>
+        <div class="log-sec"><h4>Custom modes</h4><div class="log-scroll"><table>
+          <tr><th>Mode</th><th>Save Settings</th><th>Films on COLOR 1–4</th><th>Picture</th></tr>
+          <tr><td>P/A/S/M/B</td><td>–</td><td>4 10 15 19</td><td>FILM 15</td></tr>
+          <tr><td>C1</td><td>Reset</td><td>4 10 15 19</td><td>FILM 15</td></tr>
+          <tr><td>C2–C5</td><td>Reset</td><td>not assigned</td><td>–</td></tr></table></div></div>
+        <div class="log-sec"><h4>Last shutter presses</h4><div class="log-scroll"><table>
+          <tr><th>#</th><th>Mode</th><th>Shutter</th><th>Aper.</th><th>ISO</th><th>WB</th><th>Picture</th><th>Edits</th><th>Saved</th></tr>
+          <tr><td>43</td><td>P</td><td>1/13</td><td>f/2.8</td><td>Auto</td><td>Auto</td><td>FILM 15</td><td>no</td><td>yes</td></tr>
+          <tr><td>14</td><td>P</td><td>1/13</td><td>f/2.8</td><td>Auto</td><td>Auto</td><td>FILM 15</td><td class="y">waiting</td><td>yes</td></tr>
+          <tr><td>13</td><td>C1</td><td>1/13</td><td>f/2.8</td><td>Auto</td><td>Auto</td><td>FILM 15</td><td>no</td><td>yes</td></tr></table></div>
+          <p class="more-rows">… 32 presses in all</p></div>
+      </figure>
+    </div>
     <div class="help-ctas">
       <a class="btn" href="https://github.com/androidfanman/caduceus-om3/issues">See open issues</a>
+      <a class="btn" href="https://discord.gg/fKpcKGsNPY">Ask on Discord</a>
       <a class="btn" href="pages/faq/">FAQ</a>
       <a class="btn" href="https://github.com/androidfanman/caduceus-om3/tree/main/debug-log">The debug log in detail</a>
       <a class="btn" href="https://github.com/androidfanman/caduceus-om3">The project on GitHub</a>
@@ -546,7 +689,7 @@ footer a { color: var(--muted); }
 <footer><div class="in">
   <p><b>About these pictures.</b> The camera screens are the v0.29 firmware (the camera-tested build f2) running in <a href="https://github.com/flatpanda/om-emu">om-emu</a>, an emulator of the OM-3: the firmware's own drawing, not photos of a camera. The emulator can't draw the colour wheel, so the wheels are drawn by us in LookLab's style, from the values on each screen. The film and setting photos are previews from LookLab: close to what the camera makes, but not camera JPEGs. Noise Filter and Vignette Correction aren't in the preview, so their photos are illustrations.</p>
   <p><b>Sample photos</b> (public domain): meadow, portrait, taxi and the canal at blue hour from Unsplash (CC0); Paris by Pierre Blaché, Bourtzi harbour by Jebulon (CC0) and Roy's Motel &amp; Cafe at dusk by Blervis (CC0), all on Wikimedia Commons. <a href="https://github.com/androidfanman/caduceus-om3/blob/main/webapp/public/samples/CREDITS.md">Credits</a>.</p>
-  <p>Caduceus for OM-3 is an independent open-source project, part of the <a href="https://github.com/cakelesscoder/caduceus-ep7">Caduceus</a> family. It is not made or supported by OM Digital Solutions. <a href="https://github.com/androidfanman/caduceus-om3">Source on GitHub</a> · <a href="https://github.com/androidfanman/caduceus-om3/issues/new?template=bug.yml">Report a problem</a>.</p>
+  <p>Caduceus for OM-3 is an independent open-source project, part of the <a href="https://github.com/cakelesscoder/caduceus-ep7">Caduceus</a> family. It is not made or supported by OM Digital Solutions. <a href="https://github.com/androidfanman/caduceus-om3">Source on GitHub</a> · <a href="https://discord.gg/fKpcKGsNPY">Discord</a> · <a href="https://github.com/androidfanman/caduceus-om3/issues/new?template=bug.yml">Report a problem</a>.</p>
 </div></footer>
 
 <script>
@@ -665,31 +808,38 @@ footer a { color: var(--muted); }
       title: 'Highlights (split toning)', text: 'Tints the bright parts toward one colour, 0 to 10. Here Orange at 10: warm light on the clouds and rocks. Use Shadows and Highlights together for a classic split tone.' },
   ];
   const ROWS = [
-    { id: 'hsl', name: 'HSL', pages: HSL_PAGES },
-    { id: 'tone-balance', name: 'Tone Balance', tag: 'v0.28', labs: ['Tone Balance −5', 'Tone Balance +5'],
+    { id: 'film', name: 'Film', screen: 'film-01', before: 'pages/showcase/img/films/meadow-00.jpg', after: 'pages/showcase/img/films/meadow-01.jpg', labs: ['Original', 'FILM 1: Portra 400'], note: '<b>LookLab preview</b> of the film as the camera makes it', group: 'Page 1', pic: 'The film’s number, FILM 1 here.',
+      text: 'Which look: COLOR 1–4, then FILM 1–20. Turn the dial to change film; its name shows under the list. The rows below belong to this film.' },
+    { id: 'mix', pic: 'A ring with a red, a green and a blue dot.', name: 'Color Mix', tag: 'v0.30', labs: ['Original', 'Red: Sat +3, Hue +4'],
+      text: 'The first thing the camera does to a film’s colour: it mixes red, green and blue into each other, −7 to +7 each: Sat makes a colour stronger or weaker, Hue turns it toward the next one (red toward yellow, green toward cyan, blue toward purple). Greys stay grey. The page is a ring with each colour as a dot; INFO picks the colour. Here red turns toward orange and gets stronger.' },
+    { id: 'rgb', pic: 'The curve box with three curves.', name: 'RGB curves', tag: 'v0.30', labs: ['Original', 'Blue: point 2 +5, point 4 −4'],
+      text: 'A tone curve for each of red, green and blue, with five points from black to white, −7 to +7 each: raise a colour where you want more of it. Here blue goes up in the shadows and down in the highlights, for cool shadows and warm light. INFO picks the colour, the front dial the point, the rear dial its level.' },
+    { id: 'hsl', pic: 'A colour pie: the wheel’s 12 colours.', name: 'Color wheel (HSL)', pages: HSL_PAGES },
+    { id: 'tone-balance', pic: 'A dark-to-light bar with a small triangle.', name: 'Split Tone Balance', tag: 'v0.28', labs: ['Split Tone Balance −5', 'Split Tone Balance +5'],
       text: 'Where the split toning’s two colours meet, −5 to +5: minus lets the shadow colour reach further up, plus the highlight colour further down. Here with cyan shadows and orange highlights.' },
-    { id: 'contrast', name: 'Contrast', labs: ['Contrast −2', 'Contrast +2'], text: 'The camera’s own contrast, kept with each film.' },
-    { id: 'curve', name: 'Highlight & Shadow', labs: ['Original', 'Shadows +7, Highlights −7'],
-      text: 'The camera’s own tone curve: brighter or darker shadows, midtones and highlights, −7 to +7. Here the shadows open up and the bright clouds come down.' },
-    { id: 'blacks-whites', name: 'Blacks / Whites', tag: 'v0.28', labs: ['Original', 'Blacks +7'],
-      text: 'Blacks and Whites on one grid, −7 to +7 each: left / right for Blacks, up / down for Whites. Plus lifts the blacks or brightens the whites; minus deepens or softens them. Blacks +7 gives the faded look of a print.' },
-    { id: 'wb', name: 'WB shift', labs: ['B 7 (blue)', 'A 7 (amber)'],
+    { id: 'wb', group: 'Page 2', pic: 'The camera’s own WB± picture.', name: 'WB Compensation', labs: ['B 7 (blue)', 'A 7 (amber)'],
       text: 'Shifts the colour balance from blue to amber (and green to magenta), −7 to +7, in every white balance mode. Each film also remembers the white balance you last used with it.' },
-    { id: 'sharpness', name: 'Sharpness', labs: ['Off (−5)', '+2'], note: CROP,
+    { id: 'curve', pic: 'The camera’s own tone-curve picture.', name: 'Highlight & Shadow', labs: ['Original', 'Shadows +7, Highlights −7'],
+      text: 'The camera’s own tone curve: brighter or darker shadows, midtones and highlights, −7 to +7. Here the shadows open up and the bright clouds come down.' },
+    { id: 'blacks-whites', pic: 'A black and a white square (it used to say “B/W”, which read like black and white).', name: 'Blacks / Whites', tag: 'v0.28', labs: ['Original', 'Blacks +7'],
+      text: 'Blacks and Whites on one grid, −7 to +7 each: left / right for Blacks, up / down for Whites. Plus lifts the blacks or brightens the whites; minus deepens or softens them. Blacks +7 gives the faded look of a print.' },
+    { id: 'contrast', pic: 'The camera’s own contrast picture.', name: 'Contrast', labs: ['Contrast −2', 'Contrast +2'], text: 'The camera’s own contrast, kept with each film.' },
+    { id: 'sharpness', pic: 'The camera’s own sharpness picture.', name: 'Sharpness', labs: ['Off (−5)', '+2'], note: CROP,
       text: '−5 is off, −4 to −1 softer, 0 the camera’s normal, +1 and +2 crisper.' },
-    { id: 'noise', name: 'Noise Filter', labs: ['Off', 'High'], note: ILL, text: 'Off, Low, Std or High, set per film: from all the grit of a high ISO to smooth.' },
-    { id: 'vignette', name: 'Vignette Correction', labs: ['Off', 'On'], note: ILL,
+    { id: 'noise', group: 'Page 3', pic: 'Its setting in words.', name: 'Noise Filter', labs: ['Off', 'High'], note: ILL, text: 'Off, Low, Std or High, set per film: from all the grit of a high ISO to smooth.' },
+    { id: 'vignette', pic: 'Its setting in words.', name: 'Vignette Correction', labs: ['Off', 'On'], note: ILL,
       text: 'Off keeps the lens’s natural darker corners; On lets the camera correct them.' },
-    { id: 'shading', name: 'Shading', labs: ['Original', 'Shading −5'], text: 'Darker or lighter corners, as an effect, −5 to +5.' },
-    { id: 'glow', name: 'Glow', labs: ['Original', 'Glow +5'],
+    { id: 'shading', pic: 'The camera’s own shading picture.', name: 'Shading Effect', labs: ['Original', 'Shading −5'], text: 'Darker or lighter corners, as an effect, −5 to +5.' },
+    { id: 'glow', pic: 'A white dot with a soft glow round it.', name: 'Glow Effect', labs: ['Original', 'Glow +5'],
       text: '+1 to +5 adds a soft glow around the light; −1 to −5 adds Clarity (crisper local contrast) instead.' },
-    { id: 'halation', name: 'Halation', tag: 'v0.28', labs: ['Halation 0', 'Halation 5'], before: 'pages/showcase/img/halation/neon-0.jpg', after: 'pages/showcase/img/halation/neon-5.jpg',
+    { id: 'halation', pic: 'A white dot in a red-orange ring.', name: 'Halation Effect', tag: 'v0.28', labs: ['Halation 0', 'Halation 5'], before: 'pages/showcase/img/halation/neon-0.jpg', after: 'pages/showcase/img/halation/neon-5.jpg',
       text: 'A red-orange glow around bright lights, as on cinema film, 0 to 5. Works with or without Glow.' },
-    { id: 'grain', name: 'Film Grain', labs: ['Off', 'High'], note: CROP, text: 'Off, Low, Med or High. Added in colour, with no extra wait after the photo.' },
+    { id: 'grain', group: 'Page 4', pic: 'The camera’s own grain picture.', name: 'Film Grain Effect', labs: ['Off', 'High'], note: CROP, text: 'Off, Low, Med or High. Added in colour, with no extra wait after the photo.' },
   ];
   const rowsBox = $('rows'), pagesBox = $('hslPages');
   let curRow = 0, curPage = 0;
   ROWS.forEach((r, k) => {
+    if (r.group) { const g = document.createElement('div'); g.className = 'rows-group'; g.setAttribute('role', 'presentation'); g.textContent = r.group; rowsBox.appendChild(g); }
     const b = document.createElement('button');
     b.type = 'button'; b.setAttribute('role', 'tab'); b.id = 'row-' + r.id;
     b.innerHTML = `<span>${r.name}</span>${r.tag ? `<span class="new">${r.tag}</span>` : ''}`;
@@ -700,7 +850,7 @@ footer a { color: var(--muted); }
   HSL_PAGES.forEach((p, k) => {
     const b = document.createElement('button');
     b.type = 'button'; b.className = 'chip'; b.textContent = p.name;
-    b.addEventListener('click', () => { curPage = k; showRow(0, false, false); });
+    b.addEventListener('click', () => { curPage = k; showRow(ROWS.findIndex((r) => r.pages), false, false); });
     pagesBox.appendChild(b);
   });
   rowsBox.addEventListener('keydown', (e) => {
@@ -710,7 +860,7 @@ footer a { color: var(--muted); }
   function showRow(k, focus, fromUser = true) {
     curRow = k = (k + ROWS.length) % ROWS.length;
     const r = ROWS[k], p = r.pages ? r.pages[curPage] : r;
-    const screen = r.pages ? p.screen : `row-${r.id}`, demo = p.demo ?? r.id;
+    const screen = r.pages ? p.screen : r.screen ?? `row-${r.id}`, demo = p.demo ?? r.id;
     fadeTo($('rowLcd'), `pages/showcase/img/screens/${screen}.png`, `Camera screen: ${r.name}${r.pages ? ', ' + p.name + ' page' : ''}, ${p.labs[1]}`);
     $('rowBefore').src = p.before ?? `pages/showcase/img/demos/${demo}-a.jpg`;
     $('rowAfter').src = p.after ?? `pages/showcase/img/demos/${demo}-b.jpg`;
@@ -719,18 +869,18 @@ footer a { color: var(--muted); }
     $('lcdNote').innerHTML = r.pages ? WHEEL : `On the camera: ${p.labs[1]} (emulator screen)`;
     $('photoNote').innerHTML = p.note ?? PV;
     const title = r.pages ? p.title : r.name, tag = r.tag;
-    $('rowText').innerHTML = `<h3>${title}${tag ? ` <span class="new">new in ${tag}</span>` : ''}</h3><p>${p.text}</p>`;
+    $('rowText').innerHTML = `<h3>${title}${tag ? ` <span class="new">new in ${tag}</span>` : ''}</h3><p>${p.text}</p>${r.pic ? `<p class="pic">Its picture in the camera’s list: ${r.pic}</p>` : ''}`;
     pagesBox.hidden = !r.pages;
     pagesBox.querySelectorAll('.chip').forEach((b, j) => b.setAttribute('aria-pressed', String(j === curPage)));
     rowsBox.querySelectorAll('button').forEach((b, j) => { b.setAttribute('aria-selected', String(j === k)); b.tabIndex = j === k ? 0 : -1; });
-    const btn = rowsBox.children[k];
+    const btn = rowsBox.querySelectorAll('button')[k];
     if (focus) btn.focus();
     if (fromUser && rowsBox.scrollWidth > rowsBox.clientWidth) btn.scrollIntoView({ block: 'nearest', inline: 'center', behavior: reduce ? 'auto' : 'smooth' });
     const nx = ROWS[(k + 1) % ROWS.length];      // warm up the next setting's pictures
-    if (!nx.pages) preload([`pages/showcase/img/demos/${nx.id}-a.jpg`, `pages/showcase/img/demos/${nx.id}-b.jpg`]);
+    if (!nx.pages) preload([nx.before ?? `pages/showcase/img/demos/${nx.id}-a.jpg`, nx.after ?? `pages/showcase/img/demos/${nx.id}-b.jpg`]);
   }
   showRow(0, false, false);
-  preload([...ROWS.filter((r) => !r.pages).map((r) => `pages/showcase/img/screens/row-${r.id}.png`), ...HSL_PAGES.map((p) => `pages/showcase/img/screens/${p.screen}.png`)]);
+  preload([...ROWS.filter((r) => !r.pages).map((r) => `pages/showcase/img/screens/${r.screen ?? 'row-' + r.id}.png`), ...HSL_PAGES.map((p) => `pages/showcase/img/screens/${p.screen}.png`)]);
 })();
 </script>
 </body>

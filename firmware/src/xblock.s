@@ -7,6 +7,7 @@
  .set XB_SHG, 0                   /* film test 11's Shading check before the camera grain (1: on; rebooted on the camera) */
  .set XB_H0, 0                    /* v0.28 halation probe h0 (camera-tested 2026-11-12): off */
  .set XB_HL, 1                    /* v0.28: the Halation row (slot +30, 1..5) on our looks' stills (editor.s hl_run) */
+ .set XB_BD, 1                    /* borders: the Border row (slot +50, 1..5; Frame's old byte) on our looks' stills (editor.s bd_run) */
 /* Caduceus for OM-3 v0.20 test 5: the Extras code block (appended to GUIDES.BIN, our own code).
  *
  * Runs from its heap buffer (uncached pool, as the camera's malloc returns), relocated in place by entry 0. Linked at
@@ -40,7 +41,7 @@ xb_base:
  .balign 8
  jmp xb_dev                       /* +64 grain, camera route: request configuration (s_cl) */
  .balign 8
- jmp xb_lw                        /* +72 after each half-press save (pf_save, `calls`): fg1 writes GLOG.BIN */
+ jmp xb_lw                        /* +72 after each half-press save (ub_save, `calls`): fg1 writes GLOG.BIN */
  .balign 8
  jmp xb_lkd                       /* +80 the '*' with a look selected (lk_pm, `calls`; calls the firmware: uncached) */
  .balign 8
@@ -155,6 +156,12 @@ xb_cap:
  cmp 0,d0
  bgt 2f
  .endif
+ .if XB_BD
+ movbu (50,a1),d0                 /* borders: the Border row alone -> the Soft Focus passes too (w 1024: xb_gs draws it) */
+ extb d0
+ cmp 0,d0
+ bgt 2f
+ .endif
  .if XB_FX
  ARTB d0
  .else
@@ -205,12 +212,49 @@ xb_cap:
  bne 6f
  call xb_art,[],0
 6:
+ call xb_rv,[d2,d3],12            /* #65: not on a shot's small extra pictures (Image Review) */
  mov d1,(a2)
  jmp fx_tail
 7:
  clr d0
 8:
  jmp fx_back
+
+/* xb_rv (#65, 2026-11-17): `call xb_rv,[d2,d3],12` from xb_cap before it stores the flags, d1 = the COLOR job's
+ * flags, a2 = params+12 -> d1. The camera strips its multi-pass effect flags (0x40 Star Light, 0x80 Soft Focus, ...)
+ * from Art Filter jobs whose type is 0x1xx or 0x4x: the extra small developments of a shot (types 0x110 / 0x120 for
+ * capture kinds 0x2001 / 0x2006, e.g. the Image Review picture), not the saved photo (type 0x1000). That strip never
+ * runs for COLOR (key 11), so our Glow / Halation flag 0x80 reached them: the review picture came out black, and the
+ * next switch to a standard picture mode froze live view (#65, #27). Here the same rule for our COLOR jobs. The job
+ * type comes from the camera's own mapper 0x60555b58 (a0 = the source request at params+4, `call ..,[d2,a2],12`, as
+ * the request builders 0x6054f71d.. / 0x60553ae4 call it right after this converter). Found by Caduceus for the
+ * E-P7 (cakelesscoder/caduceus-ep7, v0.31 "Rec View fix", patches/recview), ported here in our own code.
+ * Keeps a2, a3 and MDR; uses d0, a0, a1. */
+xb_rv:
+ mov d1,d2
+ mov mdr,d0
+ mov d0,d3
+ mov d2,d0
+ and 0xc0,d0
+ beq 9f
+ mov (-8,a2),a0                   /* the source request (params+4) */
+ cmp 0,a0
+ beq 9f
+ call TYPEMAP,[d2,a2],12          /* d0 = the job type */
+ mov d0,d1
+ and 0xf00,d1
+ cmp 0x100,d1
+ beq 8f
+ and 0xf0,d0
+ cmp 0x40,d0
+ bne 9f
+8:
+ and 0xffffff3f,d2                /* 0x40 and 0x80 off, as the camera does for Art Filter jobs */
+9:
+ mov d3,d0
+ mov d0,mdr
+ mov d2,d1
+ ret [d2,d3],12
 
 /* live view / movie (record -> development request 0x6046b86c, COLOR, the stock Art Effect gates passed):
  * a2 = request (+12 flags), a3 = record+248, d3 live. Glow only (Clarity is invisible on combiner 12, as Caduceus). */
@@ -491,10 +535,11 @@ xb_rec:                           /* `call xb_rec,[d2,d3],12`, a0 = job -> a1 = 
  .set P_LPTR, 708
 xb_gs:                            /* `calls` (0,sp) = return, a0 = job */
  movm [d2,d3,a2,a3],(sp)
- add -20,sp                       /* (0) call slot, (4) job, (8) level, (12) result, (16) halation 0..5 */
+ add -24,sp                       /* (0) call slot, (4) job, (8) level, (12) result, (16) halation 0..5, (20) border 0..5 */
  mov a0,(4,sp)
  clr d0
  mov d0,(16,sp)
+ mov d0,(20,sp)
  call xb_slot,[d2,d3],12
  cmp 0,a1
  beq 90f
@@ -509,6 +554,18 @@ xb_gs:                            /* `calls` (0,sp) = return, a0 = job */
 7:
  mov d0,(16,sp)
 6:
+ .endif
+ .if XB_BD
+ movbu (50,a1),d0                 /* borders: the Border row 1..5 (slot +50; 0 and below: none) */
+ extb d0
+ cmp 0,d0
+ ble 16f
+ cmp 5,d0
+ bls 17f
+ mov 5,d0
+17:
+ mov d0,(20,sp)
+16:
  .endif
  movbu (53,a1),d0                 /* Grain 1..3 (older 4, 5 -> 3) */
  cmp 0,d0
@@ -525,16 +582,20 @@ xb_gs:                            /* `calls` (0,sp) = return, a0 = job */
  clr d0                           /* h0: still the setup, then the probe (level 0 = no grain) */
  bra 10f
  .endif
+ clr d0                           /* level 0 = no CPU grain */
  .if XB_HL
- mov (16,sp),d1                   /* h1: halation -> the setup, then the pass (level 0 = no CPU grain) */
+ mov (16,sp),d1                   /* h1: halation -> the setup, then the pass */
  cmp 0,d1
- beq 90f
- clr d0
- bra 10f
+ bne 10f
+ .endif
+ .if XB_BD
+ mov (20,sp),d1                   /* borders: a border -> the setup, then bd_run */
+ cmp 0,d1
+ bne 10f
  .endif
 90:                               /* no grain: the stock setup, as if called directly */
  mov (4,sp),a0
- add 20,sp
+ add 24,sp
  movm (sp),[d2,d3,a2,a3]
  jmp SF_ENT
 10:
@@ -578,9 +639,21 @@ xb_gs:                            /* `calls` (0,sp) = return, a0 = job */
  mov a1,a0
  call xb_h0,[d2,d3,a2,a3],48
  .endif
+ .if XB_BD
+ mov (20,sp),d0                   /* borders: last, so no glow, halo or grain on the border */
+ cmp 0,d0
+ beq 20f
+ mov (4,sp),a0
+ call xb_rec,[d2,d3],12
+ cmp 0,a1
+ beq 20f
+ mov a1,a0
+ mov (20,sp),d0
+ call BD_RUN,[d2,d3,a2,a3],88
+ .endif
 20:
  mov (12,sp),d0
- ret [d2,d3,a2,a3],36
+ ret [d2,d3,a2,a3],40
 
  .if XB_H0
 /* xb_h0 (v0.28 halation probe h0, experiment): which odd byte of buffer 0x1000 is Cb and which Cr, and whether chroma
@@ -820,7 +893,11 @@ xb_tex:
  cmp 5,d1
  beq 9f
 3:
- movbu d0,(xb_tl)                 /* ft9: Glow / Clarity too (Grainy Film's list) */
+ mov a1,a0                        /* better grain g2: the Film Grain strength 1..5 (the level is on) and Grain Size */
+ call GS_EFF,[d2,d3,a2],16        /* 0..2 of this COLOR (editor.s gs_eff; uses a0, a1; keeps a2 = the job) */
+ inc d1
+ movbu d1,(xb_tz)                 /* our tile's size 1..3 (Fine / Medium / Coarse) */
+ movbu d0,(xb_tl)                 /* ft9: Glow / Clarity too (Grainy Film's list); g2: the strength (xb_c1e's gains) */
  ARTB d1
  movbu d1,(xb_tart)
  mov a2,a3
@@ -850,9 +927,9 @@ xb_tex:
  movhu d3,(4,sp)
  movbu (44,a3),d0
  movbu d0,(6,sp)
- mov d3,d0
- movbu (55,a3),d1
- call TXPF,[],4
+ movbu (xb_tz),d0                 /* better grain g1: the key's 4th byte = 0x80 + our tile's size (the camera's own
+                                     are TXPF's 1 or 3): Grainy Film never gets our tile, nor we its, from the cache */
+ or 0x80,d0
  movbu d0,(7,sp)
  movbu (55,a3),d0
  movbu d0,(8,sp)
@@ -861,7 +938,11 @@ xb_tex:
  mov (10280,a2),a0
  mov sp,a1
  add 4,a1
+ movbu (xb_tz),d0                 /* g1: while TXGET runs, the builder's tile is ours (editor.s tr_sz / tr_ld) */
+ movbu d0,(TG_OWN)
  call TXGET,[d2,d3,a2,a3],28
+ clr d1
+ movbu d1,(TG_OWN)
  cmp 0,a0
  beq 9f
  mov (10276,a2),a1
@@ -907,27 +988,48 @@ xb_c1e:
  mov d1,(96,a2)
  mov 1024,d1
  mov d1,(100,a2)
- cmp 3,d0                         /* ft5: the texture's gain (+148) by Grain: Low 512, Med 768, High 1024 (ft4: 1024 =
-                                     even, 2048 = darker) */
+ movbu (TG_BAD),d1                /* better grain g1: a tile not written -> the texture gets no weight */
+ cmp 0,d1
+ beq 2f
+ clr d1
+ mov d1,(148,a2)
+ mov d1,(152,a2)
+ bra 9f
+2:
+ cmp 5,d0                         /* g2: the strength 1..5 */
  bls 1f
- mov 3,d0
+ mov 5,d0
 1:
  add d0,d0
  mov xb_tgain-2,a0
  add d0,a0
- movhu (a0),d1
+ movhu (a0),d1                    /* the texture's Y gain (+148 low half) */
+ movhu (10,a0),d0                 /* g1: its Cb / Cr gains (+148 high half, +152; the second input's three gains,
+                                     as +96 / +100 are the photo's: combiner cases 0x60504bad / 0x60504c8c) */
+ mov d0,(152,a2)
+ asl 16,d0
+ or d0,d1
  mov d1,(148,a2)
- movhu (6,a0),d1                  /* rc2: the texture is not zero-mean: it lifted Y by ~0.026 x gain (8-bit) on every
-                                     tone (owner test PB081496..499); the output's Y offset (+180 low half, 0 in
-                                     combiner 1's set-up, guess) takes it back: -0.102 x gain (10-bit) */
+ mov -4 * 48,d1                   /* g2c: our tile's Y mean 48 (8-bit; x 4 in the combiner's 10-bit) taken off on the
+                                     texture's own input, before its gain: +136 low half, its Y input offset (the init
+                                     0x605047c1 writes 0 there and -512 for Cb / Cr, which is how the chroma is centred) */
+ movhu d1,(136,a2)
+ mov -512,d1                      /* its Y clamp minimum (+160 low half; init 0, as the chroma's -512): the centred grain
+                                     keeps its lower half */
+ movhu d1,(160,a2)
+ clr d1                           /* no output Y offset (+180 low half) any more. g1 / g2 took the mean off there, after
+                                     the sum is clamped: the grain's mean (48 x gain) filled the headroom over white, so
+                                     highlights stopped near 218 at strength 3 and 204 at 5 (camera, PB162962..980) and
+                                     Halation (Y > 200) lost its lamps */
  movhu d1,(180,a2)
 9:
  rets
  .balign 2
-xb_tgain:                         /* rc2: Low / Med / High (Med and High looked alike at 768 / 1024; 2048 went dark) */
- .hword 448, 832, 1280
-xb_tbias:                         /* -(0.102 x gain) as 16 bits, the same order */
- .hword -46 & 0xffff, -85 & 0xffff, -131 & 0xffff
+xb_tgain:                         /* g2: Y gain by the Film Grain strength 1..5 (g1, camera: 1024 about today's Med = 3;
+                                     today's Low / High about 0.6 / 1.5 of it, so films' Low / Med / High -> 2 / 3 / 5) */
+ .hword 400, 650, 1024, 1280, 1536
+xb_tcgain:                        /* Cb / Cr gain: 0.4375 of Y's, as g1 (our tile's chroma sigma 16 -> 7 at 3) */
+ .hword 175, 284, 448, 560, 672
 
 /* xb_wl (ft8): `calls` from s_wl in the work-list builder 0x604b8cf7, a0 = job, before it picks the list by the
  * job's key (job+5352). A COLOR still (11) that already has our texture (job+8324, made at the set-up) and whose
@@ -969,9 +1071,6 @@ xb_wl:                            /* a0 = S (ft8b: the builder's (4,sp)) */
  mov d2,d0
  add 4,sp
  movm (sp),[d2,d3,a2,a3]
- rets
-
-xb_sv:                            /* `calls` from pf_save: (0,sp) = return */
  rets
 
 /* ---- fg1 (fast-grain log 1, 2026-11-08): how the Grainy Film Art Filter gets its grain, with and without an Art
@@ -1196,7 +1295,7 @@ xb_lg:                            /* jmp from xb_dev in the frame of `call s_cl,
  mov d2,d0
  ret [d2,a2],12
 
-xb_lw:                            /* `calls` from pf_save (the half-press save, HLS_EVENT task): (0,sp) = return */
+xb_lw:                            /* `calls` from ub_save (the half-press save, HLS_EVENT task): (0,sp) = return */
  .if XB_LOG
  add -16,sp                       /* (0) call slot, (4) handle */
  mov (xb_lbuf),a3
@@ -2043,11 +2142,11 @@ xb_reloc:                         /* a2 = P (x_load) */
  movm (sp),[d2,d3,a2,a3]
  rets
 
-/* ---- dial labels: OM3MOD/LABELS.BIN v2 = 'OM3V' | u32 total | u32 CRC-32 of bytes 12.. | u32 n (24) | n bitmaps
+/* ---- dial labels: OM3MOD/LABELS.BIN v2 = 'OM3V' | u32 total | u32 CRC-32 of bytes 12.. | u32 n (XL_N) | n bitmaps
  * 30 rows x 9 bytes (70 px, MSB first, 1 = letter fill). One heap copy (XL_FILE B) and one 2 KB stream buffer; the
  * label is drawn and encoded (OSD type 11, 70 x 30) only when it changes. */
- .set XL_N, 27
  .include "wbglyph.inc"           /* the build's: XL_FILE, the WB cell's layout (WBC_*) */
+ .include "wheeldef.inc"          /* XL_N, WLL, XL_W0, the page labels XL_SAT.. (build.py) */
  .set XL_BM, 270
  /* XL_FILE: the file's size, from the build (wbglyph.inc: v0.25 the WB cell glyphs after the bitmaps) */
  .set XL_OUT, 2048
@@ -2304,16 +2403,13 @@ xb_rend:
 
 /* label vl (vl_s jump; frame [d2,d3,a2,a3],20 of vl_s): d2 = slice, a2 = P, a3 = the caller's a0, d3 its a1.
  * On the Extras page, slices 1..8: the "Vivid" picture's descriptor (VDESC, 70 x 30) shows the label for the slice
- * and its value; anywhere else the stock picture. Only a descriptor that is 70 x 30 with the stock payload or ours is
+ * and its value; on the other pages the page's label (xb_va), the stock picture where it has none or d2 is -1. Only a descriptor
+ * that is 70 x 30 with the stock payload or ours is
  * touched. Stores: VDESC +12 size, +16 payload (as gd_set does for the guide picture), xb_lc, the stream buffer. */
 xb_vl:
  add -12,sp                       /* (0) call slot (xb_rend's return word), (4) the caller's a1, (8) its a0 */
  mov d3,(4,sp)
  mov a3,(8,sp)
- mov xb_lb,a0
- mov (a0),d0
- cmp 0,d0
- beq 9f                           /* no labels */
  mov VDESC,a0
  movhu (2,a0),d0
  cmp 70,d0
@@ -2327,11 +2423,29 @@ xb_vl:
  mov xb_lo,a1
  mov (a1),d1
  cmp d1,d0
- bne 9f
+ beq 2f
+ mov WL_BLK,a1                    /* or a wheel page's label (wl_blk) */
+ mov (a1),d1
+ cmp 0,d1
+ beq 9f
+ sub d1,d0
+ cmp WLL,d0
+ bcc 9f
 2:
+ cmp -1,d2                        /* the camera's picture asked for (ed_trig) */
+ beq 7f
  movbu (AXIS,a2),d3
  cmp 3,d3
- bne 7f
+ beq 1f
+ cmp 7,d3
+ bcc 7f
+ mov xb_va,a0
+ add d3,a0
+ movbu (a0),d1
+ cmp 0xff,d1
+ beq 7f
+ bra 6f
+1:
  cmp 10,d2
  bcc 7f
  movbu (EDK,a2),d3
@@ -2377,6 +2491,26 @@ xb_vl:
  bgt 6f
  inc d1
 6:
+ cmp XL_W0,d1                     /* a wheel page's label: encoded by the build (wl_blk), no drawing */
+ bcs 10f
+ mov WL_BLK,a0
+ mov (a0),d0
+ cmp 0,d0
+ beq 10f
+ mov d0,a1
+ add -XL_W0,d1
+ asl 3,d1
+ mov a1,a0
+ add d1,a0
+ mov (4,a0),d0
+ mov (a0),d1
+ add a1,d1
+ bra 8f
+10:
+ mov xb_lb,a0                     /* drawing needs LABELS.BIN (wl_blk's labels do not) */
+ mov (a0),d0
+ cmp 0,d0
+ beq 9f
  mov xb_lc,a0                     /* label d1: draw it if it is not the one in the buffer */
  mov (a0),d0
  cmp d1,d0
@@ -2428,6 +2562,8 @@ xb_vt:                            /* slice 1..10: slot byte, mode, first label, 
  .byte 0,2,0,0                    /* 8 */
  .byte 0,2,0,0                    /* 9 */
  .byte 0,2,0,0                    /* 10 */
+xb_va:                            /* axis 0..6: the page's label, 0xff the stock picture */
+ .byte XL_SAT,XL_LUM,XL_HUE,0xff,0xff,XL_TINT,XL_TINT   /* Sat, Lum, Hue, (Extras: xb_vt), (Film), Tint, Tint */
 xb_glpath:
  .asciz "C:\\OM3MOD\\GLOG.BIN"
 xb_glmode:
@@ -2439,7 +2575,10 @@ xb_gt:                            /* camera-route grain level of the last captur
  .byte 0
 xb_tx:                            /* ft1: 1 = xb_su gave this still a texture, 2 = attached to xb_rq */
  .byte 0
-xb_tl:                            /* ft2: that still's Grain level (1 / 3: combiner 1 with key 11, 2: with GF II's key) */
+xb_tl:                            /* ft2: that still's Grain level (1 / 3: combiner 1 with key 11, 2: with GF II's key);
+                                     g2: its Film Grain strength 1..5 */
+ .byte 0
+xb_tz:                            /* g2: that still's grain tile size 1..3 (Grain Size Fine / Medium / Coarse) */
  .byte 0
 xb_ck:                            /* ft3: 1 = xb_lg answers combiner 1 for this configuration */
  .byte 0

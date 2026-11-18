@@ -15,8 +15,9 @@
  * return to shooting and at power-off. We never write flash.
  *
  * Screen: .hook_si at 0x6123043d, in the shooting screen's updater (0x6122fb93), just before it compares each item
- * buffer with the previous update's copy and sends only the changed ones. While STATE is 0 (before the first
- * half-press after switch-on) it does nothing at all (owner's rule: leave the start-up alone). After it, on the
+ * buffer with the previous update's copy and sends only the changed ones. Until the first shutter event after
+ * switch-on (STATE 0, or el_hold set after v0.30's early load: the gate border preview uses) it does nothing at all
+ * (owner's rule: leave the start-up alone). After it, on the
  * rear screen ((6916,this) != 5, as the camera's own split), photo only (setting 44 != 1 and (2116,this) != 1, as
  * 0x6123d16a), Information 1 / 2 / 3 ((6992,this) = 19 / 20 / 23), it clears the chosen items' fields in the buffers
  * to the values Image Only leaves there (0), so the screen draws them as not shown. Item fields: si_tab (om-emu map,
@@ -33,7 +34,10 @@
 si_upd:
  movhu (STATE),d0
  cmp 0,d0
- beq 9f                           /* before the first half-press: nothing */
+ beq 9f                           /* before the films load: nothing */
+ movbu (el_hold),d0               /* v0.40: after an early load, not before the first shutter event (as bl_gv) */
+ cmp 0,d0
+ bne 9f
  movm [d2,d3,a2,a3],(sp)
  add -16,sp                       /* (0) call slot, (4) getter out, (8) MDR */
  mov mdr,d0
@@ -111,6 +115,7 @@ si_upd:
  .byte \k, \slot
  .hword \off
  .endm
+ .balign 4                        /* the walk reads the offsets as halfwords: never odd (s2: an odd si_tab faulted) */
 si_tab:
  SIF 0, 4, 0                      /* 0 Shooting Mode: the mode icon (u16) */
  SIF 0, 4, 1
@@ -358,9 +363,9 @@ si_sel:
  mov 1,d0
 1:
  rets
-si_dfl:                           /* <- facade +156 word 0x60e57510 (build.py; was ed_default): ours, else ed_default */
+si_dfl:                           /* <- facade +156 word 0x60e57510 (build.py; was cv_dflt): ours, else cv_dflt */
  SICHK si_def
- jmp ed_default
+ jmp cv_dflt                      /* v0.40: GetDefault goes cv_dflt -> ed_default */
 si_def:
  cmp 0,a1
  beq 1f

@@ -1,9 +1,5 @@
 // Editor test 1 in a full om-emu E147 play session (our script).
 //   OM_EMU_MODEL=E147 node session_ed1.mjs EMU_DIR IMAGE CARD.omsd OUT.json SAVE.omsd 'tokens...'
-// DEVICE=evf runs the session (and its shots) on the viewfinder instead of the rear screen. More tokens (screen-info
-// research, 2026-11-14): rdump:ADDR:LEN:FILE (hex) writes memory to a file, w8:ADDR=HEX writes bytes, strdump:FILE the
-// camera's text table as JSON, dbdump:FILE the GUI variable store (0x6036f6e4: every variable's address, size, bytes),
-// panels prints the GUI panels shown so far, warm arms the WRANGE watch (as 'down' does) without a key.
 // NV_FILE=PATH keeps the camera's settings between runs (S-NVRAM). Tokens: s1 (half-press click), ok/down/info/... (key click), main+N / sub+N (dials), wait. After each token: STATE,
 // the editor fields of P (marker, axis, dirty, status), slot 0..3 hue/light/flags, and the settings 928..975 + 2197.
 const [EMU, IMAGE, CARD, OUT, SAVE, SCRIPT] = process.argv.slice(2);
@@ -23,7 +19,7 @@ const rom = expandImage(new Uint8Array(fs.readFileSync(IMAGE)));
 const nvram = process.env.NV_FILE ? (await import(EMU + '/host/nvram.mjs')).fileNvram(process.env.NV_FILE) : null;
 const env = { rom, resBlock: loadBlock(), createHash, card, ...(nvram ? { nvram } : {}),
   deflate: (b, l) => new Uint8Array(zlib.deflateSync(b, { level: l })), inflate: (b) => new Uint8Array(zlib.inflateSync(b)) };
-const pl = new Player({ ...PLAYER_PARSER, no_browser: true, idle: 'off', a15: 'on', out: '<out>', no_wait_on_error: true, device: process.env.DEVICE || 'tft' },
+const pl = new Player({ ...PLAYER_PARSER, no_browser: true, idle: 'off', a15: 'on', out: '<out>', no_wait_on_error: true, device: 'tft' },
   { ...env, wallClock: () => performance.now() / 1000 });
 pl.open_session();
 const s = pl.session, lab = s.lab, log = []; let saved_sp_for_desc;
@@ -43,6 +39,14 @@ const snap = (k) => {
   log.push(e);
   console.log(JSON.stringify(e));
 };
+const PHOTO_VIDEO_SWITCH = 0x1909;   // uiin input code of the photo/video switch
+const { uiin_layout, set_bit } = await import(EMU + '/src/lab/play.mjs');
+const pset = (code, k) => { const { groups } = uiin_layout(rom); const pos = []; groups.forEach(({ entries }, g) => entries.forEach(([b, bit, c, typ, pol]) => { if (c === code && typ === 1) pos.push([g, b, bit, pol]); }));
+  pos.forEach(([g, b, bit, pol], i) => set_bit(s.images[g], b, bit, i === k ? pol : 1 - pol));
+  for (const g of new Set(pos.map((x) => x[0]))) { const [codes] = s.push_group(g); for (const c of codes || []) { const [idx] = s.keymap(c); if (idx !== null) s.event(idx); } }
+  if (s.camapp) s.camapp.pump(); return pos.length; };
+if (process.env.PSET0) console.error('pset0', pset(PHOTO_VIDEO_SWITCH, parseInt(process.env.PSET0, 10)));
+if (process.env.MODE0) s.switch_input('mode_dial', parseInt(process.env.MODE0, 10));
 s.idle_slice(lab.lab_time() + 1500e6); snap('start');
 const { Debugger } = await import(EMU + '/src/debug/debugger.mjs');
 const WATCH = new Set((process.env.WATCH || '').split(',').filter(Boolean).map((x) => parseInt(x, 16) >>> 0));
@@ -54,41 +58,66 @@ if (WATCH.size) {
   dbg.traceExec((r) => { const g = dbg.regs(); if (process.env.WIDS && !((g.d0 >>> 0) >= 928 && (g.d0 >>> 0) <= 975) && !(((g.d0 >>> 0) >> 4) >= 928 && ((g.d0 >>> 0) >> 4) <= 975 && (g.d0 >>> 0) < 0x10000)) return; if (process.env.WFROM && !globalThis.__armed) return; if (hits.length < 200000) { const h = { step: curStep, pc: r.pc.toString(16), mdr: (g.mdr >>> 0).toString(16), sp: (g.sp >>> 0), d0: g.d0 | 0, d1: g.d1 | 0, d2: g.d2 | 0, d3: g.d3 | 0, a0: (g.a0 >>> 0).toString(16) }; if (r.pc === 0x6051861a) { const out = u32((g.a2 >>> 0) + 12); h.rec = []; for (let i = 0; i < 12; i++) { const b = rd(out + 836 + 24 * i + 18, 6); const sh = (o) => ((b[o] | b[o + 1] << 8) << 16) >> 16; h.rec.push([sh(0), sh(2), sh(4)]); } } if (process.env.WTID) { const cpu = u32(0x8050), t1 = u32((0x97f00004 + 4 * cpu) >>> 0), t2 = u32((t1 + 96) >>> 0), t3 = u32(t2); h.tid = u16((t3 + 16) >>> 0); h.hls = u16(0x62b4dd14); } if (process.env.WSTACK) { h.stk = []; for (let k = 0; k < 160; k++) { const v = u32(((g.sp >>> 0) + 4 * k) >>> 0); if (v >= 0x60021020 && v < 0x62020fe0) h.stk.push(k * 4 + ':' + v.toString(16)); } } hits.push(h); if (process.env.WLIVE) console.log('HIT ' + JSON.stringify(h)); } }, { pcs: [...WATCH] });   // WLIVE=1: each hit printed at once (a run that crashes writes no OUT)
 }
 lab.sim.write(0xa32de590, new Uint8Array([0xff, 0x03, 0, 0])); lab.sim.write(0x60369308, new Uint8Array([0x00, 0xf0, 0, 0]));
-for (const t of SCRIPT.split(/\s+/).filter(Boolean)) {
-  if (process.env.WFROM && t === process.env.WFROM) globalThis.__armed = true;
-  curStep = t + "#" + log.length;
-  const m = /^(main|sub)([+-]\d+)$/.exec(t);
-  if (m) { s.dial_input(m[1], parseInt(m[2], 10)); s.camapp.pump(); }
-  else if (t.startsWith('dump:')) {
-    const parts = []; for (const [lo, hi] of [[0x60000000, 0x63000000], [0xa2000000, 0xa6000000]]) { for (let a = lo; a < hi; a += 0x100000) parts.push(Buffer.from(rd(a, 0x100000))); }
-    fs.writeFileSync(t.slice(5), Buffer.concat(parts));
-  }
-  else if (t.startsWith('rdump:')) { const [lo, n, f] = t.slice(6).split(':'); fs.writeFileSync(f, Buffer.from(rd(parseInt(lo, 16) >>> 0, parseInt(n, 16)))); }
-  else if (t.startsWith('w8:')) { const [a, hex] = t.slice(3).split('='); lab.sim.write(parseInt(a, 16) >>> 0, Uint8Array.from(Buffer.from(hex, 'hex'))); }
-  else if (t.startsWith('strdump:')) {
-    const tab = u32((0x603794a0 + 4 * rd(0x6036f980, 1)[0]) >>> 0), out = {};
-    for (let i = 0; i < 40000; i++) { let p; try { p = u32(tab + 4 * i); } catch (e) { break; } if (p < 0x60000000 || p > 0xb0000000) continue;
-      try { const b = rd(p, 2), wide = b[1] === 0; let s = '', o = p; for (let k = 0; k < 400; k++) { if (wide) { const c = u16(o); if (!c) break; s += String.fromCharCode(c); o += 2; } else { const c = rd(o, 1)[0]; if (!c) break; s += String.fromCharCode(c); o += 1; } } out[i] = s; } catch (e) {} }
-    fs.writeFileSync(t.slice(8), JSON.stringify(out)); console.log('STRDUMP', tab.toString(16), Object.keys(out).length);
-  }
-  else if (t.startsWith('dbdump:')) {      // the display DB (0x6036f6e4): every entry's {get, set, ptr, size} and its bytes
-    const obj = u32(0x6036f6e4), tab = u32(obj + 8), n = u16(obj + 12), out = { obj: obj.toString(16), tab: tab.toString(16), n, e: {} };
-    for (let i = 0; i < n; i++) { const e = tab + 16 * i, g = u32(e), st = u32(e + 4), p = u32(e + 8), sz = u32(e + 12); let b = '';
-      if (p && sz && sz < 0x10000) { try { b = Buffer.from(rd(p, sz)).toString('hex'); } catch (x) { b = 'ERR'; } }
-      out.e[i] = [g.toString(16), st.toString(16), p.toString(16), sz, b]; }
-    fs.writeFileSync(t.slice(7), JSON.stringify(out)); console.log('DBDUMP', out.obj, out.tab, n);
-  }
-  else if (t === 'panels') { console.log('PANELS', JSON.stringify(lab.panels.slice(-30))); }
-  else if (t.startsWith('shot:')) {
-    const DV = process.env.DEVICE || 'tft'; s.scene_frame(); s.a15_apply(DV); const comp = lab.compose(DV, true, true); const w = comp.header.width, h = comp.header.height, px = comp.raw; const bpp = px.length / (w * h); console.log('shot', w, h, bpp, comp.status, comp.errors.length);
+const shot = (file, tick = true) => {
+    if (tick) s.scene_frame(); s.a15_apply('tft'); const comp = lab.compose('tft', true, true); const w = comp.header.width, h = comp.header.height, px = comp.raw; const bpp = px.length / (w * h); console.log('shot', w, h, bpp, comp.status, comp.errors.length);
     const raw = Buffer.alloc((w * 3 + 1) * h);
     for (let y = 0; y < h; y++) { raw[y * (w * 3 + 1)] = 0; for (let x = 0; x < w; x++) { const i = (y * w + x) * bpp, o = y * (w * 3 + 1) + 1 + x * 3; raw[o] = px[i]; raw[o + 1] = px[i + 1]; raw[o + 2] = px[i + 2]; } }
     const crcT = []; for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; crcT[n] = c >>> 0; }
     const crc = (b) => { let c = 0xffffffff; for (const x of b) c = crcT[(c ^ x) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
     const chunk = (ty, d) => { const l = Buffer.alloc(4); l.writeUInt32BE(d.length); const td = Buffer.concat([Buffer.from(ty), d]); const c = Buffer.alloc(4); c.writeUInt32BE(crc(td)); return Buffer.concat([l, td, c]); };
     const ih = Buffer.alloc(13); ih.writeUInt32BE(w, 0); ih.writeUInt32BE(h, 4); ih[8] = 8; ih[9] = 2;
-    fs.writeFileSync(t.slice(5), Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ih), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]));
+    fs.writeFileSync(file, Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ih), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]));
+};
+// TRACE=PC,... (hex): log each time the code reaches a PC, with its step and d0 / a0 (trace.jsonl), from the trace record
+// itself (the debugger cannot read registers while the run is paused in the trace).
+if (process.env.TRACE) Debugger.attach(lab.sim, { lab }).traceExec((r) => fs.appendFileSync('trace.jsonl', JSON.stringify({ step: curStep, pc: r.pc.toString(16), d0: r.d0, d1: r.d1, a0: r.a0.toString(16), insns: r.insns }) + '\n'),
+  { pcs: process.env.TRACE.split(',').map((x) => parseInt(x, 16) >>> 0) });
+// MMIO=1: log the CPU's MMIO writes (name, address, insns) to mmio.jsonl, to time display updates against TRACE.
+if (process.env.MMIO) Debugger.attach(lab.sim, { lab }).traceMmio((r) => fs.appendFileSync(process.env.TRACE ? 'trace.jsonl' : 'mmio.jsonl', JSON.stringify({ step: curStep, name: r.name, addr: (r.addr >>> 0).toString(16), value: (r.value >>> 0).toString(16), pc: r.pc?.toString(16), insns: r.insns }) + '\n'), { dir: 'w' });
+// SHOTAT=PC,... (hex): during a frames: token, also shoot the screen as it stands when the code reaches each PC
+// (at_PC_N.png, no scene tick first), the state the camera's display can show mid-update.
+let shotArm = false, shotN = 0; let kept = 0;   // keep: checks passed
+const counts = new Map();   // count: / expect:count: (PC -> { any, d0, n })
+let hits_n = 0;                                 // hit: matches
+if (process.env.SHOTAT) Debugger.attach(lab.sim, { lab }).traceExec((r) => { if (shotArm) shot('at_' + r.pc.toString(16) + '_' + shotN++ + '.png', false); },
+  { pcs: process.env.SHOTAT.split(',').map((x) => parseInt(x, 16) >>> 0) });
+// getv(id): the camera's setting id through the getter 0x603f0111, run on a stub below the stack ('X' if it never returns).
+let gvd = null;                           // one debugger for every getv call
+function getv(id) {
+  const SG = 0x603f0111, dd = gvd ??= Debugger.attach(lab.sim, { lab }), saved = dd.m.getRegs().slice();
+  const sp = (saved[8] - 0x800) & ~3, stub = sp - 0x100, call_at = stub + 6, rel = (SG - call_at) | 0;
+  dd.write(stub, new Uint8Array([0xfc, 0xcc, id & 255, id >> 8 & 255, 0, 0, 0xdd, rel & 255, rel >> 8 & 255, rel >> 16 & 255, rel >>> 24, 0x00, 0x04, 0xcb, 0xcb]));
+  const r = saved.slice(); r[9] = stub >>> 0; r[8] = sp >>> 0; r[14] = 0; dd.m.setRegs(r);
+  let n = 0; while ((dd.m.getRegs()[9] >>> 0) !== ((call_at + 7) >>> 0) && n < 50000) { dd.m.step(); n++; }
+  const v = n >= 50000 ? 'X' : dd.m.getRegs()[0] | 0;
+  dd.m.setRegs(saved);
+  return v;
+}
+for (const t of SCRIPT.split(/\s+/).filter(Boolean)) {
+  if (process.env.WFROM && t === process.env.WFROM) globalThis.__armed = true;
+  curStep = t + "#" + log.length;
+  const m = /^(main|sub)([+-]\d+)$/.exec(t);
+  if (t.startsWith('pset:')) { console.error('pset', pset(PHOTO_VIDEO_SWITCH, parseInt(t.slice(5), 10))); continue; }
+  if (t.startsWith('mode:')) { s.switch_input('mode_dial', parseInt(t.slice(5), 10)); if (s.camapp) s.camapp.pump(); continue; }
+  if (m) { s.dial_input(m[1], parseInt(m[2], 10)); s.camapp.pump(); }
+  else if (t.startsWith('dump:')) {
+    const parts = []; for (const [lo, hi] of [[0x60000000, 0x63000000], [0xa2000000, 0xa6000000]]) { for (let a = lo; a < hi; a += 0x100000) parts.push(Buffer.from(rd(a, 0x100000))); }
+    fs.writeFileSync(t.slice(5), Buffer.concat(parts));
   }
+  else if (t.startsWith('frames:')) {
+    // frames:KEY:N:MS:PREFIX presses KEY, then shoots N frames MS ms apart (PREFIX0.png..), the key held 150 ms:
+    // shows a redraw before it settles (a plain key token idles 1350 ms first). Each frame is a fresh compose.
+    const [k, n, ms, pre] = t.slice(7).split(':'); let held = true, at = lab.lab_time();
+    shotArm = true; s.key(k, 'down'); s.camapp.pump();
+    for (let i = 0; i < Number(n); i++) {
+      if (held && i * Number(ms) >= 150) { s.key(k, 'up'); s.camapp.pump(); held = false; }
+      at += Number(ms) * 1e6;
+      s.idle_slice(at); shot(pre + i + '.png', !process.env.RAWFRAMES);
+    }
+    if (held) { s.key(k, 'up'); s.camapp.pump(); }
+    shotArm = false;
+  }
+  else if (t.startsWith('shot:')) shot(t.slice(5));
   else if (t.startsWith('descswap:')) {
     const [da, file, w, h] = t.slice(9).split('@'); const dd = Debugger.attach(lab.sim, { lab });
     const buf = fs.readFileSync(file), at = ((saved_sp_for_desc ??= (dd.m.getRegs()[8] - 0x20000) & ~0xff) >>> 0);
@@ -97,6 +126,86 @@ for (const t of SCRIPT.split(/\s+/).filter(Boolean)) {
     dd.write(D + 2, Uint8Array.from([W & 255, W >> 8, H & 255, H >> 8]));
     dd.write(D + 12, Uint8Array.from([buf.length & 255, buf.length >> 8 & 255, buf.length >> 16 & 255, 0, at & 255, at >> 8 & 255, at >> 16 & 255, at >>> 24]));
     console.log('DESCSWAP', D.toString(16), at.toString(16), buf.length);
+  }
+  else if (t.startsWith('poke:')) {
+    // poke:ADDR=HEX writes the bytes at ADDR. poke:ADDR+OFF*=HEX writes them at the pointer stored at ADDR, plus OFF. All hex.
+    const [where, hex] = t.slice(5).split('='), m = /^([0-9a-f]+)(?:\+([0-9a-f]+)\*)?$/i.exec(where);
+    const at = m[2] === undefined ? parseInt(m[1], 16) : u32(parseInt(m[1], 16)) + parseInt(m[2], 16);
+    Debugger.attach(lab.sim, { lab }).write(at >>> 0, Uint8Array.from(Buffer.from(hex, 'hex')));
+  }
+  else if (t.startsWith('expect:mem:')) {
+    // expect:mem:ADDR=HEX ends the run with exit 1 unless the bytes at ADDR are HEX, as om-emu's session.mjs. All hex.
+    // ADDR may follow pointers: BASE+OFF*+OFF*...+OFF reads the word at BASE + OFF for each OFF* (poke:'s form, chained).
+    const [where, hex] = t.slice(11).split('='), [base, ...offs] = where.split('+');
+    let at = parseInt(base, 16);
+    for (const o of offs) at = o.endsWith('*') ? u32((at + parseInt(o, 16)) >>> 0) : (at + parseInt(o, 16)) >>> 0;
+    const got = Buffer.from(rd(at >>> 0, hex.length / 2)).toString('hex');
+    if (got !== hex.toLowerCase()) { console.error(`expect:mem ${where}: ${got}, not ${hex}`); process.exit(1); }
+  }
+  else if (t.startsWith('expect:pxsame:') || t.startsWith('expect:pxdiff:')) {
+    // expect:pxsame:X,Y,X2,Y2 / expect:pxdiff:X,Y,X2,Y2 (border preview, 2026-11-17): the rear screen drawn as shot:
+    // draws it; ends the run with exit 1 unless the pixels at (X, Y) and (X2, Y2) are the same / differ.
+    const same = t.startsWith('expect:pxsame:'), [x, y, x2, y2] = t.slice(14).split(',').map(Number);
+    s.scene_frame(); s.a15_apply('tft'); const comp = lab.compose('tft', true, true);
+    const w = comp.header.width, px = comp.raw, bpp = px.length / (w * comp.header.height);
+    const at = (X, Y) => Buffer.from(px.slice((Y * w + X) * bpp, (Y * w + X) * bpp + 3)).toString('hex');
+    if ((at(x, y) === at(x2, y2)) !== same) { console.error(`${t}: ${at(x, y)} / ${at(x2, y2)}`); process.exit(1); }
+  }
+  else if (t.startsWith('expect:gui:')) {
+    // expect:gui:NAME ends the run with exit 1 unless the GUI state's name ends with NAME.
+    const got = String(lab.state_names.get(lab.state()) ?? lab.state());
+    if (!got.endsWith(t.slice(11))) { console.error(`expect:gui: ${got}, not ${t.slice(11)}`); process.exit(1); }
+  }
+  else if (t.startsWith('keep:')) {
+    // keep:ENTRY:EXIT:REG ends the run with exit 1 if REG at EXIT differs from REG at the last ENTRY (hex PCs): a
+    // callee-saved register the function must give back. expect:kept checks that EXIT was reached at least once.
+    const [entry, exit, reg] = t.slice(5).split(':'), E = parseInt(entry, 16) >>> 0, X = parseInt(exit, 16) >>> 0;
+    const dk = Debugger.attach(lab.sim, { lab }); let held = null;
+    dk.traceExec((r) => {
+      const v = dk.regs()[reg] >>> 0;
+      if (r.pc === E) held = v;
+      else if (held !== null) { if (v !== held) { console.error(`keep ${reg}: ${v.toString(16)} at ${exit}, not ${held.toString(16)}`); process.exit(1); } kept++; held = null; }
+    }, { pcs: [E, X] });
+  }
+  else if (t === 'expect:kept') { if (!kept) { console.error('expect:kept: no keep: check ran'); process.exit(1); } }
+  else if (t.startsWith('expect:p:')) {
+    // expect:p:OFF=HEX: as expect:mem at P + OFF (OFF decimal, as pokep:), e.g. expect:p:82=03 = COLOR 1's slot +50
+    const [o, hex] = t.slice(9).split('='), at = (POOL + u16(STATE) - 1 + parseInt(o, 10)) >>> 0;
+    const got = Buffer.from(rd(at, hex.length / 2)).toString('hex');
+    if (got !== hex.toLowerCase()) { console.error(`expect:p ${o}: ${got}, not ${hex}`); process.exit(1); }
+  }
+  else if (t.startsWith('hit:')) {
+    // hit:PC:REG=V,... counts each time the code reaches PC (hex) with each REG = V (decimal). expect:hit fails if
+    // none did.
+    const [pc, cond] = t.slice(4).split(':'), P = parseInt(pc, 16) >>> 0;
+    const want = cond.split(',').map((kv) => { const [reg, v] = kv.split('='); return [reg, parseInt(v, 10) >>> 0]; });
+    const dh = Debugger.attach(lab.sim, { lab });
+    dh.traceExec(() => { const g = dh.regs(); if (want.every(([reg, v]) => (g[reg] >>> 0) === v)) hits_n++; }, { pcs: [P] });
+  }
+  else if (t === 'expect:hit') { if (!hits_n) { console.error('expect:hit: no hit: match'); process.exit(1); } }
+  else if (t.startsWith('expect:isdef:')) {
+    // expect:isdef:FN:ID=V ends the run with exit 1 unless FN (hex, an "is at default" entered as the stock one,
+    // `call FN,[d2,d3,a2],24`, d0 id -> d0 1 default) answers V (0 or 1) for ID (hex): a row's '*' is V = 0.
+    const [fn, kv] = t.slice(13).split(':'), [id, want] = kv.split('='), FN = parseInt(fn, 16) >>> 0, idn = parseInt(id, 16);
+    const dd = Debugger.attach(lab.sim, { lab }), saved = dd.m.getRegs().slice();
+    const sp = (saved[8] - 0x800) & ~3, stub = sp - 0x100, call_at = stub + 6, rel = (FN - call_at) | 0;
+    dd.write(stub, new Uint8Array([0xfc, 0xcc, idn & 255, idn >> 8 & 255, 0, 0, 0xdd, rel & 255, rel >> 8 & 255, rel >> 16 & 255, rel >>> 24, 0xe0, 0x18, 0xcb, 0xcb]));
+    const r = saved.slice(); r[9] = stub >>> 0; r[8] = sp >>> 0; r[14] = 0; dd.m.setRegs(r);
+    let n = 0; while ((dd.m.getRegs()[9] >>> 0) !== ((call_at + 7) >>> 0) && n < 5000000) { dd.m.step(); n++; }
+    const got = n >= 5000000 ? 'X' : String(dd.m.getRegs()[0] | 0); dd.m.setRegs(saved);
+    if (got !== want) { console.error(`expect:isdef ${id}: ${got}, not ${want}`); process.exit(1); }
+  }
+  else if (t.startsWith('count:')) {
+    // count:PC:D0 (v0.30.4, #72) counts, from here, how often the code reaches PC (hex) with d0 = D0 (hex; * any d0);
+    // expect:count:PC=N ends the run with exit 1 unless that count is N (decimal). count: again starts it over.
+    const [pc, d0] = t.slice(6).split(':'), PC = parseInt(pc, 16) >>> 0;
+    let c = counts.get(PC);
+    if (!c) { c = { n: 0 }; counts.set(PC, c); Debugger.attach(lab.sim, { lab }).traceExec((r) => { if (c.any || (r.d0 >>> 0) === c.d0) c.n++; }, { pcs: [PC] }); }
+    c.any = d0 === '*'; c.d0 = c.any ? 0 : parseInt(d0, 16) >>> 0; c.n = 0;
+  }
+  else if (t.startsWith('expect:count:')) {
+    const [pc, want] = t.slice(13).split('='), c = counts.get(parseInt(pc, 16) >>> 0), got = c ? String(c.n) : 'not counted';
+    if (got !== want) { console.error(`expect:count ${pc}: ${got}, not ${want}`); process.exit(1); }
   }
   else if (t === 'strpoke') {
     const dd = Debugger.attach(lab.sim, { lab });
@@ -131,7 +240,8 @@ for (const t of SCRIPT.split(/\s+/).filter(Boolean)) {
     const dd = Debugger.attach(lab.sim, { lab }); const saved = dd.m.getRegs().slice();
     const st = u16(STATE), P = (POOL + st - 1) >>> 0;
     const SP = ((saved[8] - 0x800) & ~3) >>> 0, B = ((SP - 0x6000) & ~0xff) >>> 0;
-    const ev = (x) => (typeof x === 'number' ? x : Function('P', 'SP', 'B', 'return (' + x + ')')(P, SP, B)) >>> 0;
+    // better grain g2c: W(addr) in an expression reads the word there (e.g. the code block: W(P+692) + an offset)
+    const ev = (x) => (typeof x === 'number' ? x : Function('P', 'SP', 'B', 'W', 'return (' + x + ')')(P, SP, B, u32)) >>> 0;
     const RN = ['d0', 'd1', 'd2', 'd3', 'a0', 'a1', 'a2', 'a3', 'sp', 'pc', 'psw', 'mdr'];
     for (const cs of spec) {
       for (const [a, hex] of cs.mem || []) { if (hex.startsWith('=')) { const v = ev(hex.slice(1)); dd.write(ev(a), Uint8Array.from([v & 255, v >> 8 & 255, v >> 16 & 255, v >>> 24])); } else dd.write(ev(a), Uint8Array.from(Buffer.from(hex, 'hex'))); }
@@ -188,20 +298,17 @@ for (const t of SCRIPT.split(/\s+/).filter(Boolean)) {
     dd.m.setRegs(saved); console.log('WBCALL', JSON.stringify(out));
   }
   else if (t === 'vals') {                // the camera's own settings of COLOR1..4 through the getter 0x603f0111
-    const SG = 0x603f0111, dd = Debugger.attach(lab.sim, { lab }), saved = dd.m.getRegs().slice(), out = [];
+    const out = [];
     const ids = (k) => [...Array(12).keys()].map((i) => 928 + 12 * k + i).concat([908 + k, 904 + k, 912 + k, 978 + 3 * k, 977 + 3 * k, 976 + 3 * k, 2197 + k, 2201 + k]);
     for (let k = 0; k < 4; k++) {
-      const row = [];
-      for (const id of ids(k)) {
-        const sp = (saved[8] - 0x800) & ~3, stub = sp - 0x100, call_at = stub + 6, rel = (SG - call_at) | 0;
-        dd.write(stub, new Uint8Array([0xfc, 0xcc, id & 255, id >> 8 & 255, 0, 0, 0xdd, rel & 255, rel >> 8 & 255, rel >> 16 & 255, rel >>> 24, 0x00, 0x04, 0xcb, 0xcb]));
-        const r = saved.slice(); r[9] = stub >>> 0; r[8] = sp >>> 0; r[14] = 0; dd.m.setRegs(r);
-        let n = 0; while ((dd.m.getRegs()[9] >>> 0) !== ((call_at + 7) >>> 0) && n < 50000) { dd.m.step(); n++; }
-        row.push(n >= 50000 ? 'X' : dd.m.getRegs()[0] | 0);
-      }
+      const row = ids(k).map(getv);
       out.push('S ' + row.slice(0, 12).join(',') + ' | C' + row[12] + ' Sh' + row[13] + ' Sd' + row[14] + ' | ' + row.slice(15).join('/'));
     }
-    dd.m.setRegs(saved); console.log('VALS ' + JSON.stringify(out));
+    console.log('VALS ' + JSON.stringify(out));
+  }
+  else if (t.startsWith('expect:val:')) {  // expect:val:ID=V ends the run with exit 1 unless setting ID reads V (decimal)
+    const [id, v] = t.slice(11).split('=').map(Number), got = getv(id);
+    if (got !== v) { console.error(`expect:val ${id}: ${got}, not ${v}`); process.exit(1); }
   }
   else if (t === 'pmod') {                // '*' per COLOR: stock "profile changed?" 0x6129ba07 (our ed_pmod), d0 = picture mode
     const SG = 0x6129ba07, dd = Debugger.attach(lab.sim, { lab }), saved = dd.m.getRegs().slice(), out = [];
@@ -225,16 +332,22 @@ for (const t of SCRIPT.split(/\s+/).filter(Boolean)) {
     }
     dd.m.setRegs(saved); console.log('DFLT ' + JSON.stringify(out));
   }
+  else if (t.startsWith('pokeb:')) {      // pokeb:ADDR=V writes one byte at an absolute address (hex), e.g. a flag of a simulation build
+    const [a, v] = t.slice(6).split('='); lab.sim.write(parseInt(a, 16) >>> 0, Uint8Array.from([Number(v) & 255]));
+  }
   else if (t.startsWith('pokep:')) {      // pokep:OFF=HEX,... writes bytes at P + OFF (decimal), e.g. pokep:685=01 sets the editor's dirty byte
     const P = POOL + u16(STATE) - 1; for (const kv of t.slice(6).split(',')) { const [o, hex] = kv.split('='); lab.sim.write((P + parseInt(o, 10)) >>> 0, Uint8Array.from(Buffer.from(hex, 'hex'))); }
   }
   else if (t === 'poweroff') {           // the power lever off and the firmware's own power-off (om-emu H-POWER, S-SHUTDOWN); ends the run
     s.switch_input('power', 1 - s.bit_of('power')); const off = s.power_down(); log.push({ step: t, power_off: off ? true : null }); break;
   }
+  else if (t.startsWith('tap:')) {        // tap:X:Y touches the rear screen at X,Y (pixels) for 150 ms
+    const [x, y] = t.slice(4).split(':').map(Number); s.touch('down', x, y); s.idle_slice(lab.lab_time() + 150e6); s.touch('up', x, y);
+  }
   else if (t.startsWith('hold:')) { const k = t.slice(5); s.key(k, 'down'); s.camapp.pump(); s.idle_slice(lab.lab_time() + 2000e6); s.key(k, 'up'); s.camapp.pump(); }
-  else if (t !== 'wait' && t !== 'warm' && t !== 'panels') { s.key(t, 'down'); s.camapp.pump(); s.idle_slice(lab.lab_time() + 150e6); s.key(t, 'up'); s.camapp.pump(); }
+  else if (t !== 'wait') { s.key(t, 'down'); s.camapp.pump(); s.idle_slice(lab.lab_time() + 150e6); s.key(t, 'up'); s.camapp.pump(); }
   curStep = t; s.idle_slice(lab.lab_time() + 1200e6); snap(t);
-  if (wdbg) { if (t === 'down' || t === 'warm') wdbg.watch(WRANGE.split(',').map((r, i) => { const [lo, n] = r.split(':'); return { id: i, lo: parseInt(lo, 16), len: parseInt(n, 16), kind: process.env.WKIND || 'r', action: 'log' }; })); for (const r of wdbg.watchLog()) wlog.push({ step: t, id: r.id, pc: r.pc.toString(16), addr: (r.addr >>> 0).toString(16) }); }
+  if (wdbg) { if (t === 'down') wdbg.watch(WRANGE.split(',').map((r, i) => { const [lo, n] = r.split(':'); return { id: i, lo: parseInt(lo, 16), len: parseInt(n, 16), kind: process.env.WKIND || 'r', action: 'log' }; })); for (const r of wdbg.watchLog()) wlog.push({ step: t, id: r.id, pc: r.pc.toString(16), addr: (r.addr >>> 0).toString(16) }); }
 }
 const st = s.storage;
 const nv = lab.store_log?.nvram;

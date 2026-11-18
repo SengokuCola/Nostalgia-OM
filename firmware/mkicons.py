@@ -18,13 +18,14 @@ W, H = 46, 46                      # slider-row icon
 CW, CH = 100, 76                   # choice-row cell picture
 # (lines, width, height): one line = (text, cap height px, baseline row)
 PICTURES = [
-    ([('Blk', 18, 30), ('Wht', 18, 60)], CW, CH), ([], 8, 2), ([], 8, 2), ([], 8, 2),  # v0.28 the Blacks / Whites grid row's left cell before it is drawn with its values (was the Blk / Wht slider icons); A-B / G-M unused (the WB grid row shows the camera's WB± picture)
+    ([('Blk', 18, 30), ('Wht', 18, 60)], CW, CH), ([], 8, 2), ([], 8, 2), ([], W, H),  # v0.28 the Blacks / Whites grid row's left cell before it is drawn with its values (was the Blk / Wht slider icons); A-B unused (the WB grid row shows the camera's WB± picture); borders b1c: the Border row's icon in G-M's place (border_icon)
     ([('Vignette', 15, 30), ('Off', 18, 60)], CW, CH), ([('Vignette', 15, 30), ('On', 18, 60)], CW, CH),
     ([('Noise', 15, 30), ('Off', 18, 60)], CW, CH), ([('Noise', 15, 30), ('Low', 18, 60)], CW, CH),
     ([('Noise', 15, 30), ('Std', 18, 60)], CW, CH), ([('Noise', 15, 30), ('High', 18, 60)], CW, CH),
     ([('HSL', 26, 44)], 82, 62),   # v0.24 film test 7 (owner): the Color row's cell, stock "Color / Vivid" (82 x 62)
     ([('Glow', 20, 33)], W, H),    # v0.25: the Glow (+) / Clarity (-) slider's icon (owner: named for the + side)
     ([('Halo', 20, 33)], W, H), ([('Bal', 20, 33)], W, H),  # v0.28: the Halation and Tone Balance sliders' icons (Frame Off / On's places)
+    ([('Grain', 20, 33)], W, H),   # better grain g2 (id 0x7f78): the Film Grain strength slider's icon (grain_icon)
 ]
 STYLE = {10: (0.88, (0.20, 0.40, 0.60))}   # width, coverage thresholds (as the FILM cells, matched to the stock lettering)
 
@@ -173,19 +174,21 @@ def _sp_word(txt):
     return out
 
 
+def _pad(a, w=None):
+    """a at the left of a picture w wide, by default its own width rounded up to even"""
+    out = np.zeros((a.shape[0], a.shape[1] + a.shape[1] % 2 if w is None else w), dtype=np.uint8)
+    out[:, :a.shape[1]] = a
+    return out
+
+
 def sp_parts():
     """(word picture, its width even-padded; digit boxes 10 x SPH x WD; digit ink widths)"""
     fw = _sp_word('FILM')
-    fwp = np.zeros((SPH, fw.shape[1] + fw.shape[1] % 2), dtype=np.uint8)
-    fwp[:, :fw.shape[1]] = fw
+    fwp = _pad(fw)
     ds = [_sp_part(str(d)) for d in range(10)]
     wd = max(d.shape[1] for d in ds)
     wd += wd % 2
-    boxes = []
-    for d in ds:
-        bx = np.zeros((SPH, wd), dtype=np.uint8)
-        bx[:, :d.shape[1]] = d
-        boxes.append(bx)
+    boxes = [_pad(d, wd) for d in ds]
     return fwp, fw.shape[1], boxes, [d.shape[1] for d in ds]
 
 
@@ -193,9 +196,7 @@ def sp_star():
     """v0.28 (owner: "FILM 1*"): the quick menu's '*' after the number, in its lettering (the asterisk sits high, as the
     camera's "COLOR*"); -> (picture even-padded, ink width)."""
     st = _sp_part('*')
-    stp = np.zeros((SPH, st.shape[1] + st.shape[1] % 2), dtype=np.uint8)
-    stp[:, :st.shape[1]] = st
-    return stp, st.shape[1]
+    return _pad(st), st.shape[1]
 
 
 def sp_film(n, parts=None):
@@ -223,13 +224,15 @@ def sp_film(n, parts=None):
 # DejaVu Sans Condensed squeezed 0.8; 3 px between the word and the number, digits 1 px overlapped at their rims).
 # The firmware composes it (fl_sp with the fl_LVL layout) from these parts, as sp_film below.
 LVW, LVH, LV_BASE, LV_CAP, LV_SQ, LV_GAP, LV_DGAP = 96, 44, 33, 24, 0.80, 3, -1
+# the '*' of a changed film, placed as the camera's "COLOR1*": its fill 8 rows above the cap line, its dark edge over the digit's edge
+LV_SCAP, LV_STOP, LV_SGAP = 18, LV_BASE - LV_CAP + 1 - 8, -5
 
 
-def _lv_glyph(txt):
+def _lv_glyph(txt, cap=LV_CAP):
     import sys, pathlib
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'card'))
     import mklabels
-    fs = next(f for f in range(10, 80) if (lambda r: r[1] - r[0] + 1)(mklabels.cap_rows(f)) >= LV_CAP)
+    fs = next(f for f in range(10, 80) if (lambda r: r[1] - r[0] + 1)(mklabels.cap_rows(f)) >= cap)
     a = mklabels.raster(txt, fs, LV_SQ)
     base = mklabels.cap_rows(fs)[1]
     lay = np.zeros((LVH, a.shape[1] + 8), dtype=np.uint8)
@@ -257,26 +260,40 @@ def _lv_glyph(txt):
 def lv_parts():
     """as sp_parts: (word picture even-padded, its ink width, digit boxes, digit ink widths)"""
     fw = _lv_glyph('FILM')
-    fwp = np.zeros((LVH, fw.shape[1] + fw.shape[1] % 2), dtype=np.uint8)
-    fwp[:, :fw.shape[1]] = fw
+    fwp = _pad(fw)
     ds = [_lv_glyph(str(d)) for d in range(10)]
     wd = max(d.shape[1] for d in ds)
     wd += wd % 2
-    boxes = []
-    for d in ds:
-        bx = np.zeros((LVH, wd), dtype=np.uint8)
-        bx[:, :d.shape[1]] = d
-        boxes.append(bx)
+    boxes = [_pad(d, wd) for d in ds]
     return fwp, fw.shape[1], boxes, [d.shape[1] for d in ds]
 
 
-def lv_film(n, parts=None):
+def lv_star():
+    """as sp_star, for the shooting screen -> (picture even-padded, ink width)"""
+    st = _lv_glyph('*', LV_SCAP)
+    sh = LV_STOP - np.argwhere(st == 10)[:, 0].min()
+    out = np.zeros_like(st)
+    if sh >= 0:
+        assert not st[st.shape[0] - sh:].any()
+        out[sh:] = st[:st.shape[0] - sh]
+    else:
+        assert not st[:-sh].any()
+        out[:sh] = st[-sh:]
+    st = out
+    return _pad(st), st.shape[1]
+
+
+def lv_film(n, parts=None, star=None):
     fwp, fwi, boxes, dw = lv_parts() if parts is None else parts
     ds = [int(c) for c in str(n)]
     tw = fwi + LV_GAP + sum(dw[d] for d in ds) + LV_DGAP * (len(ds) - 1)
+    if star is not None:
+        sx = tw + LV_SGAP
+        tw = sx + star[1]
     x = (LVW - tw) // 2
     px = np.zeros((LVH, LVW), dtype=np.uint8)
-    for a, xx in [(fwp, x)] + [(boxes[d], x + fwi + LV_GAP + sum(dw[e] + LV_DGAP for e in ds[:i])) for i, d in enumerate(ds)]:
+    for a, xx in [(fwp, x)] + [(boxes[d], x + fwi + LV_GAP + sum(dw[e] + LV_DGAP for e in ds[:i])) for i, d in enumerate(ds)] \
+            + ([(star[0], x + sx)] if star is not None else []):
         m = a != 0
         px[:, xx:xx + a.shape[1]][m[:, :LVW - xx]] = a[:, :LVW - xx][m[:, :LVW - xx]]
     return px
@@ -330,14 +347,16 @@ def sat_pictures():
     """Film test 8 (owner): the wheel's Saturation page always shows all colours, so its pictures say "Saturation":
     the dial label (70 x 30, in place of the camera's "Color" there; card/mklabels.py, the Extras labels' style) and
     the guide (film test 8: 180 x 50 for "Color Select [INFO]"; film test 11: 175 x 50 for "Color All [INFO]", the
-    Saturation page now showing one colour at a time; card/mkguides.py). Returns two palette arrays."""
+    Saturation page now showing one colour at a time; card/mkguides.py), and #64's "Sat. All [INFO]" guide for all
+    colours. Returns three palette arrays."""
     import sys, pathlib
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'card'))
     import mklabels, mkguides
     lab = np.asarray(mklabels.build('Saturation'), dtype=np.uint8)
     gd = np.asarray(mkguides.build('Saturation'), dtype=np.uint8)   # film test 11: 175 x 50, for the one-colour page
-    assert lab.shape == (30, 70) and gd.shape == (50, 175)
-    return lab, gd
+    gda = np.asarray(mkguides.build('Sat. All'), dtype=np.uint8)  # #64: the same page with all colours
+    assert lab.shape == (30, 70) and gd.shape == gda.shape == (50, 175)
+    return lab, gd, gda
 
 
 def hsl_labels():
@@ -425,19 +444,163 @@ def encode11(px, w, h):
     return bytes(out)
 
 
+# colour menu (test 7, owner-approved spec color-menu-design/SPEC.md): drawings instead of words for four cells. The
+# left column's palette (om-emu, 2026-11-15, a 16 x 16 probe in a cell): 0 clear, 7 black, 10 white, 11 / 12 soft
+# greys, greys 43..60 / 93 / 97..100 / 121 / 124, orange 34 (253,104,0) / 55 / 102 / 17 / 18 (darker), red 122, yellow
+# 123, yellow-green 38, green 40 / 41 / 54, blue 53; no cyan, magenta or purple (those are two colours alternated).
+GREYS = [(10, 254), (98, 235), (99, 198), (46, 178), (11, 170), (97, 147), (43, 115), (44, 90), (12, 85), (58, 77),
+         (100, 64), (51, 60), (59, 45), (45, 40), (60, 33)]
+
+
+def _grey(v):
+    return min(GREYS, key=lambda g: abs(g[1] - v))[0]
+
+
+def hsl_pie():
+    """the Color wheel row's cell (82 x 62, the "HSL" word's place): a disc of the wheel's 12 colours, yellow at 12
+    o'clock, clockwise, a thin white rim with a dark edge"""
+    import math
+    w, h, cx, cy, R = 82, 62, 41, 31, 24
+    secs = [(123,), (123, 34), (34,), (122,), (122, 53), (53, 53, 122), (53,), (53, 53, 40), (53, 40), (41, 41, 53),
+            (41,), (38,)]
+    px = np.zeros((h, w), dtype=np.uint8)
+    for y in range(h):
+        for x in range(w):
+            dx, dy = x + 0.5 - cx, y + 0.5 - cy
+            r = math.hypot(dx, dy)
+            if r > R + 2:
+                continue
+            if r > R + 0.5:
+                px[y, x] = 7
+            elif r > R - 1.5:
+                px[y, x] = 10
+            else:
+                a = (math.degrees(math.atan2(dy, dx)) + 90 + 15) % 360
+                c = secs[int(a // 30)]
+                px[y, x] = c[(x + y) % len(c)]
+    return px
+
+
+def glow_icon():
+    """Glow (46 x 46, the "Glow" word's place): a white dot with a soft white glow round it"""
+    import math
+    px = np.zeros((46, 46), dtype=np.uint8)
+    for y in range(46):
+        for x in range(46):
+            r = math.hypot(x + 0.5 - 23, y + 0.5 - 23)
+            if r <= 4.5:
+                px[y, x] = 10
+            elif r < 16:
+                t = (r - 4.5) / 11.5
+                v = 255 * (0.92 * (1 - t) ** 1.3)
+                if v >= 30:
+                    px[y, x] = _grey(v)
+    return px
+
+
+def halo_icon():
+    """Halation (46 x 46, the "Halo" word's place): a white dot with a red-orange ring"""
+    import math
+    px = np.zeros((46, 46), dtype=np.uint8)
+    for y in range(46):
+        for x in range(46):
+            r = math.hypot(x + 0.5 - 23, y + 0.5 - 23)
+            if r <= 5:
+                px[y, x] = 10
+                continue
+            q = 1 - abs(r - 10.5) / 5.5            # the ring: strongest at r 10.5, gone at 5 and 16
+            if q > 0.75:
+                px[y, x] = 34
+            elif q > 0.5:
+                px[y, x] = 55
+            elif q > 0.28:
+                px[y, x] = 17
+            elif q > 0.1:
+                px[y, x] = 18
+    return px
+
+
+def bal_icon():
+    """Split Tone Balance (46 x 46, the "Bal" word's place): a dark-to-light tone bar, white outline, a small white
+    triangle under its middle"""
+    px = np.zeros((46, 46), dtype=np.uint8)
+    x0, x1, y0, y1 = 5, 41, 13, 27
+    px[y0:y1, x0:x1] = 10
+    for x in range(x0 + 2, x1 - 2):
+        px[y0 + 2:y1 - 2, x] = _grey(30 + 225 * (x - x0 - 2) / (x1 - x0 - 5))
+    for y in range(7):
+        px[30 + y, 23 - y:23 + y + 1] = 10
+    return px
+
+
+def border_icon():
+    """Border (46 x 46, borders b1c; owner: the camera's own Frame picture is too big for this slot): a small photo
+    with a white border, the same width all round: white frame 4 px, a grey picture inside (light sky, a darker hill),
+    a 1 px dark line between them and a 2 px dark edge round the outside, as the other icons"""
+    px = np.zeros((46, 46), dtype=np.uint8)
+    x0, x1, y0, y1 = 6, 40, 10, 36                 # the print: 34 x 26
+    px[y0:y1, x0:x1] = 10
+    ix0, ix1, iy0, iy1 = x0 + 4, x1 - 4, y0 + 4, y1 - 4
+    px[iy0 - 1:iy1 + 1, ix0 - 1:ix1 + 1] = 7       # the line round the picture
+    px[iy0:iy1, ix0:ix1] = _grey(147)              # sky
+    for x in range(ix0, ix1):                      # a hill: rises from the left, falls to the right
+        top = iy0 + 7 + abs(x - (ix0 + 16)) // 3
+        px[top:iy1, x] = _grey(77)
+    ring = ndimage.binary_dilation(px > 0, structure=np.ones((3, 3)), iterations=2) & (px == 0)
+    px[ring] = 7
+    return px
+
+
+def grain_icon():
+    """Film Grain (46 x 46, better grain g2): a small square of film grain, 2 x 2 specks in greys from dark to white
+    with a few coloured specks (the grain's colour), a 2 px dark edge round it as the other icons"""
+    px = np.zeros((46, 46), dtype=np.uint8)
+    rng = np.random.default_rng(1103)
+    x0, x1, y0, y1 = 9, 37, 9, 37                 # 28 x 28: 14 x 14 specks
+    for y in range(y0, y1, 2):
+        for x in range(x0, x1, 2):
+            v = rng.normal(150, 55)
+            c = _grey(min(254, max(40, v)))
+            r = rng.random()
+            if r < 0.03:
+                c = 55                             # orange
+            elif r < 0.055:
+                c = 53                             # blue
+            elif r < 0.07:
+                c = 41                             # green
+            px[y:y + 2, x:x + 2] = c
+    for (y, x) in ((y0, x0), (y0, x1 - 1), (y1 - 1, x0), (y1 - 1, x1 - 1)):
+        px[y, x] = 0                               # rounded corners
+    ring = ndimage.binary_dilation(px > 0, structure=np.ones((3, 3)), iterations=2) & (px == 0)
+    px[ring] = 7
+    return px
+
+
+CUSTOM = {3: border_icon, 10: hsl_pie, 11: glow_icon, 12: halo_icon, 13: bal_icon, 14: grain_icon}
+
+
 def streams():
     """[(w, h, stream)] in PICTURES order."""
-    return [(w, h, encode11(bytes(picture(l, w, h, *STYLE.get(k, ())).flatten()), w, h)) for k, (l, w, h) in enumerate(PICTURES)]
+    out = []
+    for k, (l, w, h) in enumerate(PICTURES):
+        a = CUSTOM[k]() if k in CUSTOM else picture(l, w, h, *STYLE.get(k, ()))
+        assert a.shape == (h, w), (k, a.shape)
+        out.append((w, h, encode11(bytes(a.flatten()), w, h)))
+    return out
 
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser(); ap.add_argument('--preview'); a = ap.parse_args()
     print([len(s) for _, _, s in streams()], 'bytes')
     if a.preview:
-        pal = {0: (40, 40, 40), 7: (10, 10, 10), 10: (255, 255, 255), 11: (210, 210, 210), 12: (150, 150, 150)}
+        pal = {0: (40, 40, 40), 7: (10, 10, 10), 10: (255, 255, 255), 11: (170, 170, 170), 12: (85, 85, 85),
+               34: (253, 104, 0), 55: (206, 86, 1), 17: (168, 69, 0), 18: (82, 34, 0), 122: (254, 0, 0),
+               123: (254, 255, 0), 38: (140, 170, 0), 40: (0, 254, 0), 41: (0, 170, 0), 53: (40, 44, 205)}
+        pal.update({g: (v, v, v) for g, v in GREYS})
         sheet = Image.new('RGB', (len(PICTURES) * (CW + 10), CH), (40, 40, 40))
         for k, (l, w, h) in enumerate(PICTURES):
-            rgb = Image.new('RGB', (w, h)); rgb.putdata([pal[int(v)] for v in picture(l, w, h).flatten()])
+            a = CUSTOM[k]() if k in CUSTOM else picture(l, w, h)
+            rgb = Image.new('RGB', (w, h)); rgb.putdata([pal[int(v)] for v in a.flatten()])
             sheet.paste(rgb, (k * (CW + 10), 0))
         sheet.resize((sheet.width * 2, CH * 2), Image.NEAREST).save(a.preview)
 
@@ -484,13 +647,19 @@ def plate_icon(text, k=1.0):
         for x in range(e - y):
             for yy, xx in ((y, x), (y, w - 1 - x), (h - 1 - y, x), (h - 1 - y, w - 1 - x)):
                 px[yy, xx] = 0
-    cov, b = word(text, r(17), r(34), 1.0)
-    y0, xs = int(round(r(23) - b)), r(4) + (r(34) - cov.shape[1]) // 2
-    for y in range(cov.shape[0]):
-        for x in range(cov.shape[1]):
-            c, yy, xx = cov[y, x], y0 + y, xs + x
-            if 0 <= yy < h and 0 <= xx < w and px[yy, xx] == 10:
-                px[yy, xx] = 7 if c >= 0.6 else 12 if c >= 0.35 else 11 if c >= 0.15 else 10
+    if text == 'B/W':                            # colour menu (test 7): a black and a white square ("B/W" reads as
+        q, y0 = r(14), r(8)                      # monochrome on a camera), the white one outlined to show on the plate
+        px[y0:y0 + q, r(5):r(5) + q] = 7
+        px[y0:y0 + q, r(21):r(21) + q] = 7
+        px[y0 + r(2):y0 + q - r(2), r(21) + r(2):r(21) + q - r(2)] = 10
+    else:
+        cov, b = word(text, r(17), r(34), 1.0)
+        y0, xs = int(round(r(23) - b)), r(4) + (r(34) - cov.shape[1]) // 2
+        for y in range(cov.shape[0]):
+            for x in range(cov.shape[1]):
+                c, yy, xx = cov[y, x], y0 + y, xs + x
+                if 0 <= yy < h and 0 <= xx < w and px[yy, xx] == 10:
+                    px[yy, xx] = 7 if c >= 0.6 else 12 if c >= 0.35 else 11 if c >= 0.15 else 10
     sx, sy, n, t, a = r(40), r(4), r(22), r(2), r(4)
     for y in range(n):
         for x in range(n - 1 - y):
@@ -690,4 +859,45 @@ def dial_streams():
     out = []
     for p in [dial_label(t) for t in DIAL_WORDS] + [value_picture(t) for t in dial_value_words()]:
         out.append((p.shape[1], p.shape[0], encode11(bytes(p.flatten().tolist()), p.shape[1], p.shape[0])))
+    return out
+
+
+# Custom crop modes (feature/composition-guides): the SCP aspect strip's pictures for the new ratios, 100 x 76 as the
+# stock ones (471 / 472 / ...: white figures about 31 px tall, a 2 px dark edge, baseline row 53, measured from the
+# camera's "4:3"). Our drawing in DejaVu Sans Condensed; crop.py puts them at CR_IC0 + 0..2.
+CROP_LABELS = ('5:4', 'XPan', '21:9')
+
+
+def crop_pictures():
+    return [picture([(t, 31, 53)], CW, CH) for t in CROP_LABELS]
+
+
+def crop_streams():
+    return [(CW, CH, encode11(bytes(p.flatten()), CW, CH)) for p in crop_pictures()]
+
+
+# c2: the current-value labels. Top bar (46 x 34, as 10930 "16:9" / 10931 "4:3": figures rows 5..28 inside a 2 px
+# dark edge) and the SCP cell (160 x 48, as 5859 / 5863: no edge, fill 13, edge shades 14 / 15, rows 8..39).
+def cell_quant(cov):
+    px = np.zeros(cov.shape, dtype=np.uint8)
+    px[cov >= 0.15] = 15
+    px[cov >= 0.40] = 14
+    px[cov >= 0.66] = 13
+    return px
+
+
+def cell_picture(txt, w=160, h=48, cap=32, base=39):
+    small, b = word(txt, cap, w - 20)
+    cov = np.zeros((h, w))
+    y0, x0 = int(round(base - b)), (w - small.shape[1]) // 2
+    sh = cov[y0:y0 + small.shape[0], x0:x0 + small.shape[1]]
+    cov[y0:y0 + small.shape[0], x0:x0 + small.shape[1]] = small[:sh.shape[0], :sh.shape[1]]
+    return cell_quant(cov)
+
+
+def crop_label_streams():
+    """[(w, h, stream)]: the strip's 3 (100 x 76), the top bar's 3 (46 x 34), the SCP cell's 3 (160 x 48)."""
+    out = list(crop_streams())
+    out += [(46, 34, encode11(bytes(picture([(t, 24, 28)], 46, 34).flatten()), 46, 34)) for t in CROP_LABELS]
+    out += [(160, 48, encode11(bytes(cell_picture(t).flatten()), 160, 48)) for t in CROP_LABELS]
     return out

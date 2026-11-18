@@ -394,6 +394,127 @@ Stock: OLY_E_147_1100_0000_0000_3.BIN sha 8c133084…696d, main 5e8d376e…7d59.
 - The looks are only as good as the preview model (`src/preview.ts`) is of the camera; check a film on the camera
   before trusting it for anything critical.
 
+## v0.40-alpha (try/v0.40-alpha = crop round 10 + section gates + PR #76 + try/v0.30.4; test 1, camera-tested 2026-11-17; GitHub pre-release)
+
+- Base: `feature/crop-modes` (crop round 10) on `feature/border-live-view` (border preview 1) on `try/v0.31-alpha`
+  (v0.30.4 + borders b1 / 1c + better grain g2c). Each part's record is in `research/NOTES.md` ("Photo borders b1",
+  "Better grain g1 / g2 / g2b / g2c", "Border preview in live view", "Crop modes reopened" .. "Crop round 10").
+- Crop modes (`firmware/src/crop.s`, `firmware/crop.py`): Image Aspect 5 (5:4), 6 (XPan), 7 (21:9) through the
+  validator and the stills rule; the save guard (hooks `hook_crs` / `hook_crb` in section 1 behind `cr_g1` / `cr_g2`)
+  saves the base ratio with a tag, and `cr_rst` restores the crop at the first shutter event; the screen spec
+  (`hook_crg`), the histogram (`hook_crh`), the playback ratio label by picture (`hook_crk` notes the shape, `cr_ic`
+  swaps 10930 / 10931) and the quality label (`hook_crq` notes the base size's record mode read-only, `hook_crr`
+  passes it to the GUI's quality lookup). No stock result or layout changed in playback (rounds 9 / 9b rebooted with
+  a changed label element).
+- Section gates G1..G3 (`fix/section-gates`): `mx_g`, `tn_g`, `lv_g` in `.ext1` wait for section 6's ready bit
+  (SEC_READY 0xa32de58c); `static:section-order` follows paths on past each crossing. It found `cr_rst`'s three
+  section-7 calls (`ar_getv` / `ar_setv`): each now checks bit 0x40; not ready, the next shutter event tries again.
+- `.ext1` had no room for both branches' gates (1816 / 1744): `pf_cnt` / `pf_vbi` moved to `.ext11` beside `sl_cnt` /
+  `sl_vbi`, their only callers: `.ext1` 1704 / 1744.
+- PR #76 (crombach, #75): Picture Mode's nine id-500 idle arms 8000 -> 30000 ms; `hook_tch` (0x612a8db3, section 7)
+  -> `s_tch` raises a tap's re-arm to 30000 only in GUI state 0x0418.
+- `tools/test/hooks.json`: crop's seven hooks and patch sites recorded with the owner's OK. Suite on the test build: 61
+  pass, then all static checks pass.
+- `firmware/VERSION` "v0.40-alpha (crop modes, start-up gates, PR #76)", 48 characters as test 1's: main.bin differs
+  only in that string, the code-block tag and the built-in GUIDES CRC (42 bytes). E1479999.BIN fbef591d…72a2;
+  `patch.py` makes it by default on this branch. Extras as v0.30.4-alpha.
+
+## v0.30.4-alpha (try/v0.30.4 = main v0.30.3 + fix/72-record-keep + PR #70 + PR #73; test 5, camera-tested 2026-11-17; GitHub pre-release)
+
+- #72: `gx_map` holds `el_pk` (the group's record keep, `cm_hp`) while the Picture Mode list (GUI state 0x0418) or the
+  super control panel (0x0403) stays open (no state change, or one between the two), and keeps the record once at the
+  state change that closes them. Since v0.30 it ran after every picture-mode change: many record writes a second
+  while films were switched rebooted the camera (camera probe J). Tests `film-list-keeps-the-record-once-as-it-closes`,
+  `control-panel-dial-keeps-the-record-once-as-it-closes` (driver tokens `count:` / `expect:count:`). The full probe
+  record (A..J) is in `research/NOTES.md` "#72".
+- PR #70 (crombach, #64): the wheel's dial labels encoded by build.py (`mklabels`), `fl_mk` copies them to the heap;
+  the front dial skips Color All off Saturation (`ed_l` / `ed_r`); `ed_get`'s a2 fixed on Hue / Lum / Extras. Its
+  label-size tests now take the sizes from the drawing code (raqm and non-raqm builds differ by a few bytes).
+- PR #73 (crombach, #68): `st_run` and `s_lv` leave video and S&Q to the camera (`mx_photo`); `s_lv`'s body moved
+  to `.ext11` (`s_lv6`). Test `video-keeps-the-stock-tables`.
+- `firmware/VERSION` "v0.30.4-alpha (#72 fix, PR #70, PR #73; tested)", 47 characters as test 5's: main.bin differs only
+  in that string, the code-block tag and the built-in GUIDES CRC (47 bytes). E1479999.BIN 90a0325a…7bd; `patch.py`
+  makes it by default; `--release v0.30.3` still makes 60b6d954…. Extras as v0.30.3.
+
+## v0.30.3 release (try/v0.30.3 = main v0.30.2 + feature/faster-halation h7 / h8 + PR #69 + the debug log change; test 3, camera-tested 2026-11-17)
+
+- Halation h7 (`hl_run`, bit-exact with v0.30.2 in om-emu, 54-64 % fewer instructions on night frames; ideas from Caduceus
+  for the E-P7's h6) and h8 (a wide layer, the broad one blurred HL_BLUR3 more times, added at HL_WIDE / 256: a longer,
+  even tail; the bright-frame count unchanged). `research/halation/model.py` and LookLab's preview follow h8;
+  `halation-matches-the-model` checks the camera code against the model.
+- PR #69 (crombach): `cv_ev` / `mx_ev` take the event's whole click count (clamped); `cv_draw` scans each row's column
+  range per curve; `st_all` computes the split toning / curve basis once per table entry; `sd_crc` a nibble at a time
+  (`sd_nib`). No hook. Tests `look-tables-match-the-model`, `rgb-page-counts-every-click`.
+- Debug log: `lg_pr` notes the shutter handler's event byte (18,sp) (0x0100 half-press, 0x0101 release); `lg_due` writes
+  the report only at a release and not at a burst's release (2+ photos since the half-press). Test
+  `debug-log-written-at-releases-only`.
+- `firmware/VERSION` "v0.30.3 (faster halation + PR #69, camera-tested t3)", 52 characters as test 3's: main.bin differs
+  only in that string, the code-block tag and the built-in GUIDES CRC (53 bytes). E1479999.BIN 60b6d954…f546; `patch.py`
+  makes it by default; `--release v0.30.2` still makes 7fbd3957…. Extras as v0.30.2 (CURVES.BIN by hand).
+
+## v0.30.2 release (feature/fix-65-review on main 91ca69d; test 1, camera-tested 2026-11-17)
+
+v0.30.1 plus the #65 fix: `xb_rv` (xblock), called by `xb_cap` before it stores the COLOR job's flags, asks the camera's
+job-type mapper 0x60555b58 (a0 = the source request at params+4) and clears 0x40 / 0x80 for types 0x1xx / 0x4x, the
+shot's small extra developments (0x110 / 0x120 for capture kinds 0x2001 / 0x2006; the saved photo is 0x1000), as the
+camera does for Art Filter jobs (E-P7 strip 0x60353b15; idea from Caduceus for the E-P7 v0.31 `patches/recview`). No new
+hook; the block grew by xb_rv. The review picture and the playback preview show the film without Glow / Halation.
+- `firmware/VERSION` "v0.30.2 (Image Review fix for #65, camera-tested t1)", 52 characters as test 1's: main.bin differs
+  only in that string, the code-block tag and the built-in GUIDES CRC (51 bytes). E1479999.BIN 7fbd3957…445b;
+  `patch.py` makes it by default; `--release v0.30.1` still makes c2b583fd…. Extras as v0.30 (CURVES.BIN by hand).
+
+## v0.30.1 release (try/v0.30.1 = main 89b3520 with PR #67; test 1, camera-tested 2026-11-17)
+
+v0.30 plus PR #67 (crombach, #66): `.hook_pe` at 0x611d059c, the end of the Picture Mode update (stock `mov (12,sp),d0;
+cmp 0,d0; bne 0x611d05b2`, replayed by `gr_end` through pe_back 0x611d05a2 / pe_ret 0x611d05b2), gives the bottom bar's
+holder its own scene back after the update publishes the new row's values; `gr_upd` only clears `gr_flag`. Test
+`grid-row-gives-the-bottom-bar-back`; the flash itself is camera-only ("Past regressions" in `research/TESTING.md`).
+- `firmware/VERSION` "v0.30.1 (menu flash fix, crombach, camera-tested t1)", 52 characters as test 1's: main.bin differs
+  only in that string, the code-block tag and the built-in GUIDES CRC (53 bytes). E1479999.BIN c2b583fd…4bc5;
+  `patch.py` makes it by default; `--release v0.30` still makes 481f3678…. Extras as v0.30 (CURVES.BIN uploaded by hand).
+
+## v0.30 release (try/v0.30-dl9 with main and feature/tour-v030 merged; test 13, camera-tested 2026-11-16)
+
+v0.29.5 plus: RGB curves (`firmware/src/rgbcurves.inc`: the engine in st_run, record 'OM3R' at M+0x3B100, the RGB row
+and page) and Color Mix (the per-film 3 x 3 matrix `mx_go` at the camera's own colour-matrix call, the Mix row and its
+ring page), both photos only (`mx_photo`); the colour menu (pm_list order, cell pictures, titles, R / G / B headers);
+CURVES.BIN v1 (`docs/FORMATS.md`, `card/mkcurves.py`, `firmware/src/curvesfile.inc`: the file's copy at M+0x3BE20, read
+from the card at the first shutter event, each entry checked against its LOOKS record's CRC-32); the debug log dl9;
+PRs #55 (#53: no film work in video / S&Q), #56 (early load from M at the GUI's first state change, no card read), #57 /
+#58 / #63 (the emulator suite, om-emu pin) and #59 (#54: `rc_go` waits for the mode's code, B counts as a mode, the
+label held blank during the wait, data item 38 written back to redraw it); `vf_def` answers the Noise Filter rows' default
+with the camera's own Noise Filter. Details: `research/NOTES.md` ("RGB curves", "Colour mix", "Colour menu", "v0.30 test 8"
+to "v0.30 test 13", "Debug log dl8" / "dl9").
+- `firmware/VERSION` "v0.30 (colour mix and RGB curves, camera-tested t13)", the same length as test 13's: main.bin
+  differs only in that string, the code-block tag and the built-in GUIDES copy's CRC (53 bytes). E1479999.BIN
+  481f3678…7a54; `patch.py` makes it by default. Suite on the release build: all pass.
+- Release extras: `CURVES.BIN` 4c009f9c…2291 (test 9's sample: LookLab's 20 against v0.29.5's LOOKS.BIN, camera-tested
+  from test 9 on), uploaded to the GitHub release by hand (`.github/workflows/releases.yml` attaches only the older
+  extras; changing it needs a token with the `workflow` scope); `LOOKS.BIN`, `DEBUG.TXT` and the photo code kit as v0.29.5.
+
+## v0.29.5 release (feature/per-mode-settings-2; builds p1 and p2, camera-tested 2026-11-15)
+
+v0.29.4 plus per-mode settings: record 'OM3S' at M+0x3D000 holds one set per C1..C5 and one for P / A / S / M / B (our
+4 COLOR slots, the films' saved changes and the camera's 18 COLOR settings x 4). `rc_go` calls `ss_pre` / `ss_post`
+around `cm_go`; `rc_put` writes back only the COLORs `ss_post` leaves (`ss_mask`), and its record choice moved to
+`rc_rec`; Assign › Set copies the mode now (`ss_asg` from `cm_rec`); Assign › Reset goes through facade entry 19
+(`cm_rst`, word 0x60e574c0, stock 0x60b86aaf) and marks the set to be built from the films as built (`ss_rst`); Reset vs
+Hold as the camera's 1880+n. No new hooks; no new settings-manager writes. Details: `research/NOTES.md`,
+`research/per-mode-settings/PLAN.md`.
+- `firmware/VERSION` "v0.29.5 (per-mode settings, tested)", the same length as p2's: main.bin differs only in that
+  string, the code-block tag and the built-in GUIDES copy's CRC / tag (checked, 37 bytes). E1479999.BIN 01ea3d14…;
+  `patch.py` makes it by default.
+
+## v0.29.4 release (PRs #45, #46 by crombach and #48 by buburun, merged; build t1, camera-tested 2026-11-15)
+
+v0.29.3 plus #45 (dead card save / load code removed), #46 (Picture Mode stars `ed_isdef` / `ed_isd0` / `fl_isdef`,
+display fixes, `fl_LVL1` "FILM n*", `pm_save` from `gx_map` at 0x1804) and #48 (`fw_apply` also writes 1632, the stills
+Custom WB Kelvin). Details: `research/NOTES.md` ("Picture Mode display, stars and saving", "Film WB: Custom WB Kelvin
+lost").
+- `firmware/VERSION` "v0.29.4 (PRs 45 46 48, tested)", the same length as t1's: main.bin differs only in that string,
+  the code-block tag and the built-in GUIDES copy's CRC / tag (checked, 31 bytes). E1479999.BIN 757e2d39…; `patch.py`
+  makes it by default.
+
 ## v0.29.3 release (PR #40 by crombach, merged; build d1, camera-tested 2026-11-14)
 
 v0.29.2 plus the remappable Delete button (#37): keycode 14 -> sids 570 (stills) / 1276 (movie), another body's button

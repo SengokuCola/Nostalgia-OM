@@ -70,6 +70,54 @@ are read only when the camera's block is empty or invalid (the first start). Blo
 `GUIDES.BIN`, `LABELS.BIN` and `TONES.BIN` are built into the firmware from v0.29 (the formats below are unchanged;
 copies on a card are ignored).
 
+## The RGB curves record (feature/rgb-curves, not released)
+
+Per COLOR / film R / G / B tone curves (5 points each at 0 / 25 / 50 / 75 / 100 %, offsets −7..+7) are kept in a record of their own in the same
+store, at image offset 0x3B100 (3,348 bytes), so no file above changes and older firmware never reads it:
+`OM3R` | u16 version 2 | u16 length 3348 | CRC-32 of bytes 12.. | u32 the films block's generation when written (the
+record is used only with that block: a block saved by older firmware leaves every curve flat) | at 16: 196 slots of 17
+bytes: COLOR 1–4's slots now (4), EDITS record r's (24), then the same 28 for each per-mode set as `OM3S` (6). A slot
+= its 18 curve values (red 6, green 6, blue 6) two to a byte, low nibble first (a curve's points are its values 0, 2,
+3, 4, 5; value 1 was test 1–2b's 10 % point and is 0 since test 4), then 8 bytes for the per-film colour mix
+(colour mix: for red, green and blue a hue and a strength, −7..+7, stored h R, s R, h G, s G, h B, s B; all zero
+= no mix; the matrix they make: `research/colourmix/model.py`), byte 6 the slot's flags (v0.30, with `CURVES.BIN`:
+bit 0 its curves follow its film's built-in, bit 1 its mix does, bit 7 the flags are set; 0 from older firmware, whose
+all-zero parts then follow), byte 7 zero. Not in LOOKS.BIN, EDITS.BIN or the photo code yet.
+
+## CURVES.BIN v1 (432 bytes, v0.30)
+
+Each film's built-in RGB curves and colour mix: what a film shows before you change them on the camera, and what
+Reset on the RGB and Mix rows returns to. Written by LookLab with `LOOKS.BIN`; `card/mkcurves.py` makes the same
+bytes from a `LOOKS.BIN` and the films' values. Firmware before v0.30 never reads it.
+
+| Offset | Size | Field |
+|---|---|---|
+| 0 | 4 | magic `OM3K` |
+| 4 | 2 | version 1 |
+| 6 | 2 | total length 432 |
+| 8 | 4 | CRC-32 of bytes 12..431 |
+| 12 | 2 | entry count 20 |
+| 14 | 18 | zero |
+| 32 | 20 × 20 | entries: COLOR k (0..3) look v (1..5) at index 5k + v − 1, as `LOOKS.BIN` |
+
+Entry (20 bytes):
+
+| Offset | Size | Field |
+|---|---|---|
+| +0 | 4 | check: the CRC-32 of the 64-byte `LOOKS.BIN` record (index j) these values were made for |
+| +4 | 8 | the 15 curve values, two to a byte, low nibble first, 4-bit two's complement (−7..+7; −8 is refused): red's 5 points, then green's, then blue's, each at 0 / 25 / 50 / 75 / 100 % (the RGB page's points); the 16th nibble 0 |
+| +12 | 6 | colour mix, s8 −7..+7: hue R, strength R, hue G, strength G, hue B, strength B (the Mix page's values) |
+| +18 | 2 | zero |
+
+The camera reads `C:\OM3MOD\CURVES.BIN` at the first half-press with a card (never at start-up). It checks the
+size, magic, version, length, count, CRC, the zero bytes and every value's range; a file that fails is ignored. A
+valid file that differs from the one the camera already has is kept in the camera's memory (store M, image offset
+0x3BE20, the file's 432 bytes as they are), so any card works afterwards; the same file again changes nothing.
+Film j takes entry j's values only while its `LOOKS.BIN` record's CRC-32 equals the entry's check (as `EDITS.BIN`
+records): films changed or replaced since the file was made show flat curves and no mix, as without a file. A film
+you changed on the camera keeps your curves and mix; values you never changed follow the file. With no file the
+camera behaves as v0.29.5 with flat built-in curves and mix.
+
 ## EDITS.BIN (1648 bytes, v0.24)
 
 Written by the camera only (at the half-press save, when something changed); the changes you make to each film and

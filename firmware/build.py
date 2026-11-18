@@ -19,6 +19,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from oe_container import parse, encode, wordsum
+from provenance import source_digest
 
 
 class P:                                   # toolchain and stock identity (set from the command line)
@@ -31,6 +32,13 @@ class P:                                   # toolchain and stock identity (set f
 
 LAYOUT = HERE / 'vendor' / 'caduceus-bundles-layout.json'    # Caduceus (Apache-2.0) bundle-table layout
 HOOKS = {'.hook_color': (0x60518615, bytes.fromhex('cd6cfdf060')),
+         '.hook_crs': (0x60061183, bytes.fromhex('470c93cd79fd0000')),   # crop modes: the settings store write (power-off)
+         '.hook_crb': (0x6006120e, bytes.fromhex('fccf80d273a3')),       # crop modes: the buffer before the write (menus)
+         '.hook_crg': (0x611cb24d, bytes.fromhex('5c0870f85309')),       # crop round 3: the GUI screen spec's ratio byte
+         '.hook_crh': (0x60dc4bb1, bytes.fromhex('cff0fafe00ff')),       # crop round 5: the live histogram's area
+         '.hook_crk': (0x6111341e, bytes.fromhex('fab61c0b904e')),       # crop round 9c: SimplePlayCommon after its label code (s7)
+         '.hook_crq': (0x60c7c18a, bytes.fromhex('839f394f00')),         # crop round 10: the record-mode lookup, read only (s6)
+         '.hook_crr': (0x611133cd, bytes.fromhex('fab4f403fab5f803')),   # crop round 10: SimplePlayCommon's quality lookup (s7)
          '.hook_shutter': (0x60415216, bytes.fromhex('cd2d01f024')),
          '.hook_set': (0x60b8798b, bytes.fromhex('dd04d90200f044')),
          '.hook_pmod': (0x6129ba07, bytes.fromhex('0cfcde10ec')),
@@ -65,17 +73,29 @@ HOOKS = {'.hook_color': (0x60518615, bytes.fromhex('cd6cfdf060')),
          '.hook_gx': (0x610f6016, bytes.fromhex('831f8ef8ca08')),
          '.hook_sc': (0x610cdf05, bytes.fromhex('f1e3f1d38001')),
          '.hook_pu': (0x611d04ec, bytes.fromhex('fca460a33760')),
+         '.hook_pe': (0x611d059c, bytes.fromhex('580ca000c912')),
+         '.hook_inf': (0x611c29c2, bytes.fromhex('1efaca1515')),   # rgb-curves: exthu d2; cmp 5397,d2 (INFO: the row's panel for 5397 / 5398)
+         '.hook_rsi': (0x611c296f, bytes.fromhex('1efacabc13')),   # rgb-curves: exthu d2; cmp 5052,d2 (held-OK reset: 5052 / 5396 / 5397 / 5398)
+         '.hook_mx': (0x6051485a, bytes.fromhex('cd95fcf014')),    # colour mix: call 0x605144ef,[d2,d3,a2,a3],20 (the matrix's row scaling)
          '.hook_pme': (0x6125becc, bytes.fromhex('cfb0f8fec4')),
          '.hook_rsp': (0x611c3cb5, bytes.fromhex('5c14f8bc20f87058')),
          '.hook_su': (0x604b7730, bytes.fromhex('cdab20f088')),
          '.hook_sel2': (0x60504b5d, bytes.fromhex('dddc830200a00c')),
+         '.hook_tch': (0x612a8db3, bytes.fromhex('dd35e3feffc00c')),   # #75: the shared touch re-arm (call 0x612970e8,[d2,d3],12)
          '.hook_c1e': (0x605053cc, bytes.fromhex('fa129800dff01c')),
-         '.hook_wl': (0x604b8d91, bytes.fromhex('f1ecf000fa08e814'))}   # ft8: work-list key -> block +136   # ft4: end of combiner 1's set-up -> block +128   # ft3: the combiner set-up's selector call -> block +120   # ft1: still set-up -> code block +112 (grain texture)   # film test 9: the reset keeps the strip's scroll       # v0.23: Blacks / Whites bars top-down          # v0.23: our row title "Vignette Correction"          # v0.23: the bar's dot step   # v0.21 grain: request configuration -> selector
+         '.hook_wl': (0x604b8d91, bytes.fromhex('f1ecf000fa08e814')),
+         '.hook_trs': (0x604cf156, bytes.fromhex('ddf083d0ffe010')),   # better grain g1: the grain tile's size (texture builder)
+         '.hook_trl': (0x604cf1a4, bytes.fromhex('cd25f5f018')),
+         '.hook_bga': (0x6123825e, bytes.fromhex('dd9156ecfff01c')),   # border preview: grid builder 0x612380bf's grid read (call 0x610fd8ef,[d2,d3,a2,a3],28)
+         '.hook_bgb': (0x611cb433, bytes.fromhex('ddbc24f3fff01c')),   # the same in grid builder 0x611cb359
+         '.hook_bgc': (0x611e44d7, bytes.fromhex('dd1894f1fff01c')),   # the same in grid builder 0x611e4221
+         '.hook_bgd': (0x611eae1e, bytes.fromhex('ddd12af1fff01c')),   # the same in grid builder 0x611eab68
+         '.hook_blk': (0x611c7922, bytes.fromhex('4c2144a7d4'))}   # border preview: the line lookup's loop end (inc d3; add 68,a1; cmp d1,d3; lcs)   # better grain g1: the grain tile's load -> tg_fill   # ft8: work-list key -> block +136   # ft4: end of combiner 1's set-up -> block +128   # ft3: the combiner set-up's selector call -> block +120   # ft1: still set-up -> code block +112 (grain texture)   # film test 9: the reset keeps the strip's scroll       # v0.23: Blacks / Whites bars top-down          # v0.23: our row title "Vignette Correction"          # v0.23: the bar's dot step   # v0.21 grain: request configuration -> selector
 XB_SRC = HERE / 'src' / 'xblock.s'
 XB_L1, XB_L2 = 0x10000000, 0x12345670          # the code block is linked at both; fields that move = relocations
 ROOT = HERE.parent                               # card files: card/mkguides.py (pictures), card/mklabels.py
 # data words (flash image, patched at build time): stock target -> our symbol
-WORDS = {0x60e57480: (0x60b86de7, 'sl_get'), 0x60e57490: (0x60b86e09, 'sl_cnt'), 0x60e57494: (0x60b87031, 'sl_vbi'), 0x60e57510: (0x60b86e44, 'si_dfl'), 0x60e57478: (0x60b8781f, 'si_sv'), 0x60e574bc: (0x60b8764c, 'cm_asg'), 0x60e574c4: (0x60b871f3, 'cm_rcl'),
+WORDS = {0x60e57480: (0x60b86de7, 'cv_get'), 0x60e57490: (0x60b86e09, 'sl_cnt'), 0x60e57494: (0x60b87031, 'sl_vbi'), 0x60e57510: (0x60b86e44, 'si_dfl'), 0x60e57478: (0x60b8781f, 'si_sv'), 0x60e574bc: (0x60b8764c, 'cm_asg'), 0x60e574c4: (0x60b871f3, 'cm_rcl'), 0x60e574c0: (0x60b86aaf, 'cm_rst'),
          0x60e5749c: (0x60b86a01, 'sl_sel'),   # v0.23 sliders: the facade answers go through sl_* first (-> ed_get / pf_cnt / pf_vbi / stock)
          **{a + 4: (0x6122393a, 'ed_init') for a in (0x615adcc4, 0x615adcfc, 0x615add34, 0x615add6c)},
          **{a + 44: (0x6122661b, 'ed_info') for a in (0x615adcc4, 0x615adcfc, 0x615add34, 0x615add6c)},
@@ -84,11 +104,16 @@ WORDS = {0x60e57480: (0x60b86de7, 'sl_get'), 0x60e57490: (0x60b86e09, 'sl_cnt'),
          **{a + 24: (0x61224c1c, 'ed_r') for a in (0x615adcc4, 0x615adcfc, 0x615add34, 0x615add6c)},   # all colours stay
          # v0.22: the Picture Mode column for COLOR1-4 (modes 54/55/56/64 + 1 in the builder's switch table) -> pm_color
          **{a: (0x611bd8fd, 'pm_color') for a in (0x615335e4, 0x615335ec, 0x61533614, 0x61533574)}}
+PM_IDLE_SITES = (0x611c2243, 0x611c22ae, 0x611c232d, 0x611c2481, 0x611c25dc, 0x611c274b, 0x611c28ac, 0x611c29ef,
+                 0x611c3b20)
 # bytes, stock -> new (v0.22 used one for the column list; v0.23 builds the list in pm_list instead).
 # v0.23 sliders: the left-column readout of the Sharpness row (item 7) looks its value up in 5-entry tables (-2..+2):
 # both lookups (sign 0x611d1697, digit 0x611d1708) now take the 11-entry -5..+5 tables of Shading (item 5399).
 DATA = {0x611d16c2: (bytes.fromhex('fcdc48c65461ca10'), bytes.fromhex('fcdca0ca5461ca24')),   # mov 0x6154caa0,a0; bra -> mov 11,d3
-        0x611d1733: (bytes.fromhex('fcdc70c65461ca10'), bytes.fromhex('fcdcf8ca5461ca24'))}   # mov 0x6154caf8,a0; bra -> mov 11,d3
+        0x611d1733: (bytes.fromhex('fcdc70c65461ca10'), bytes.fromhex('fcdcf8ca5461ca24')),   # mov 0x6154caf8,a0; bra -> mov 11,d3
+        # Picture Mode's idle timer (id 500): mov 8000,d1 -> mov 30000,d1 at every id-500 arm in 0x611c20ad..0x611c3cc2.
+        # The white balance screen just after it keeps 8000, as do the others. Signed 16-bit: 32767 ms max.
+        **{a: (bytes.fromhex('2d401f'), bytes.fromhex('2d3075')) for a in PM_IDLE_SITES}}
 EXT2 = (0x607187a8, 0x60718800)            # section-2 tail (FF from 0x607187a4, end 0x60718800; v0.20)
 EXT7 = (0x6164afd0, 0x6164b000)            # section-7 tail (FF from 0x6164afcc, end 0x6164b000; v0.20)
 EXT9 = (0x619a9670, 0x619a97f0)            # section-9 tail (FF from 0x619a966c, end 0x619a9800)
@@ -117,6 +142,7 @@ EXT10 = (0x61aa4300, 0x61aa47f0)
 EXT8 = (0x617e45f0, 0x617e47f0)            # section-8 tail (FF from 0x617e45e0, end 0x617e4800)
 EXT11 = (0x60f49800, 0x60f59800)           # v0.23: section 6 extended by 64 KiB (loader end word 0x60045e9c raised; camera-proven GX2)
 EXT12 = (0x60f59800, 0x60f99800)           # v0.27: section 6 extended by 256 KiB more (camera-proven GX3, 2026-11-10)
+EXT13 = (0x60fac000, 0x60fbc000)           # v0.30 test 10: the debug log, after the RGB work area (GX4-proven reserve to 0x6103f000)
 EXT3 = (0x6081fe10, 0x6081fffc)            # section-3 tail (FF from 0x6081fe00, end 0x60820000)
 EXT5 = (0x60adb5b0, 0x60adb7f0)            # section-5 tail (FF from 0x60adb5a0, end 0x60adb800)
 EXT6 = (0x60f49590, 0x60f497f0)            # section-6 tail (FF from 0x60f49580, end 0x60f49800)          # section-10 tail (FF from 0x61aa42f0, end 0x61aa4800)          # section-4 tail (FF from 0x60a8f088, end 0x60a8f800)
@@ -191,14 +217,29 @@ def build(defaults, testfile, out):
     assert ldigs[0].shape[0] == mkicons.LD == 32 and ldw % 2 == 0 and (mkicons.LCW, mkicons.LT) == (82, 30)
     lvw, lvwi, lvboxes, lvdw = mkicons.lv_parts()  # film test 9: the shooting screen's "FILM n" (fl_sp, layout fl_LVL)
     assert lvw.shape[0] == mkicons.LVH == 44 and lvboxes[0].shape[1] % 2 == 0 and mkicons.LVW == 96
-    lvmax = max(len(mkicons.encode11(bytes(mkicons.lv_film(n, (lvw, lvwi, lvboxes, lvdw)).flatten().tolist()), 96, 44))
-                for n in range(1, 21))
+    lvst = mkicons.lv_star()
+    lvmax = max(len(mkicons.encode11(bytes(mkicons.lv_film(n, (lvw, lvwi, lvboxes, lvdw), st).flatten().tolist()), 96, 44))
+                for n in range(1, 21) for st in (None, lvst))
     assert lvmax <= 2800, lvmax                   # LV_SLOT in editor.s
-    assert all(lvwi + mkicons.LV_GAP + lvdw[a] + mkicons.LV_DGAP + lvdw[c] <= 96 for a in range(10) for c in range(10))
-    lab, gd = mkicons.sat_pictures()             # film test 8: the wheel's Saturation page (gd_sel swaps them in)
+    assert all(lvwi + mkicons.LV_GAP + lvdw[a] + mkicons.LV_DGAP + lvdw[c] + mkicons.LV_SGAP + lvst[1] <= 96
+               for a in range(10) for c in range(10))
+    lab, gd, gda = mkicons.sat_pictures()             # film test 8: the wheel's Saturation page (gd_sel swaps them in)
     slab = mkicons.encode11(bytes(lab.flatten().tolist()), 70, 30)
     sgd = mkicons.encode11(bytes(gd.flatten().tolist()), 175, 50)
+    sagd = mkicons.encode11(bytes(gda.flatten().tolist()), 175, 50)
     hlab, llab = (mkicons.encode11(bytes(a.flatten().tolist()), 70, 30) for a in mkicons.hsl_labels())
+    sys.path.insert(0, str(ROOT / 'card'))
+    import mklabels                              # #64: the wheel pages' dial labels, encoded here, not on the camera
+    w0 = mklabels.LABELS.index('Sat')
+    wls = [mklabels.encode11(bytes(mklabels.render(mklabels.bitmap(t)).flatten()), 70, 30) for t in mklabels.LABELS[w0:]]
+    wl, at = bytearray(), 8 * len(wls)           # wl_tab: u32 offset (from wl_tab), u32 size per label, then the streams
+    for s in wls:
+        wl += struct.pack('<II', at, len(s)); at += (len(s) + 3) & ~3
+    wl += b''.join(s + bytes(-len(s) % 4) for s in wls)
+    assert len(wl) % 4 == 0                       # fl_mk copies wl_tab a word at a time (ub_cpy)
+    (out / 'wheel.inc').write_text('.balign 4\nwl_tab:\n' + db(bytes(wl)) + ' .balign 4\nfl_sagd:\n' + db(sagd) + ' .balign 4\n')
+    (out / 'wheeldef.inc').write_text(f'.set XL_N, {len(mklabels.LABELS)}\n.set WLL, {len(wl)}\n.set XL_W0, {w0}\n.set SAS, {len(sagd)}\n'
+                                      + ''.join(f'.set XL_{t.upper()}, {mklabels.LABELS.index(t)}\n' for t in ('Sat', 'Lum', 'Hue', 'Tint')))
     fwp, fwi, boxes, dw = mkicons.sp_parts()     # the quick menu's "FILM n" (fl_sp draws it)
     assert fwp.shape[0] == mkicons.SPH == 48 and boxes[0].shape[1] % 2 == 0
     # v0.27 debug log: the build's name (firmware/VERSION, one line), written into CADLOG.TXT
@@ -222,6 +263,17 @@ def build(defaults, testfile, out):
     for i, st in enumerate(zc):
         bw += [' .balign 4', f'zc_p{i}:', db(st).rstrip('\n')]
     (out / 'bwg.inc').write_text('\n'.join(bw) + '\n')
+    import rgbpics                                # rgb-curves: the page's pictures (firmware/rgbpics.py; editor's cv_ent)
+    rp = rgbpics.streams()
+    rg = ['.balign 4', 'cv_ent:', ' .long ' + ', '.join(f'cvp_d{i}' for i in range(len(rp)))]
+    for i, (name, w, h, st) in enumerate(rp):
+        rg += [f'cvp_d{i}:                          /* {name} */', f' .short 14, {w}, {h}, 8, 0, 0', f' .long {len(st)}, cvp_s{i} + 0x40000000, 0']
+    rg2 = []                                      # colour mix: the Mix page's pictures (7..) live with its code (ext12)
+    for i, (name, w, h, st) in enumerate(rp):
+        (rg if i < 7 else rg2).extend([' .balign 4', f'cvp_s{i}:', db(st).rstrip('\n')])
+    (out / 'rgbpics.inc').write_text('\n'.join(rg) + '\n')
+    (out / 'rgbpics2.inc').write_text('\n'.join(rg2) + '\n')
+    (out / 'mixtab.inc').write_text('\n'.join(rgbpics.mixtables()) + '\n')   # colour mix: the Mix page's tables
     (out / 'films.inc').write_text('.balign 4\nfl_top:\n' + db(mkicons.pack4(mkicons.film_top())) + 'fl_tops:\n' +
                                    db(mkicons.pack4(mkicons.film_top(True))) + 'fl_dig:\n' +
                                    ''.join(db(mkicons.pack4(d)) for d in digs) +
@@ -242,11 +294,13 @@ def build(defaults, testfile, out):
                                    'fl_llab:\n' + db(llab) + f'.set LLS, {len(llab)}\n .balign 4\n' +
                                    'fl_lvw:\n' + db(mkicons.pack4(lvw)) + 'fl_lvd:\n' + ''.join(db(mkicons.pack4(x)) for x in lvboxes) +
                                    'fl_lvdw:\n' + db(bytes(lvdw)) + f'.set LVWB, {lvw.shape[1]}\n.set LVWI, {lvwi}\n'
-                                   f'.set LVDB, {lvboxes[0].shape[1]}\n.set LV_GAP, {mkicons.LV_GAP}\n.set LV_DGAP, {mkicons.LV_DGAP}\n .balign 2\n')
+                                   f'.set LVDB, {lvboxes[0].shape[1]}\n.set LV_GAP, {mkicons.LV_GAP}\n.set LV_DGAP, {mkicons.LV_DGAP}\n' +
+                                   'fl_lvst:\n' + db(mkicons.pack4(lvst[0])) + f'.set LVSTB, {lvst[0].shape[1]}\n'
+                                   f'.set LVSTI, {lvst[1]}\n.set LV_SGAP, {mkicons.LV_SGAP}\n .balign 2\n')
     subprocess.run([P.AS, '-I', out, '-I', HERE / 'src', '-o', out / 'p.o', HERE / 'src' / 'editor.s'], check=True)
     subprocess.run([P.LD, '-T', HERE / 'src' / 'editor.ld', '-o', out / 'p.elf', out / 'p.o'], check=True)
     blobs = {}
-    for s in list(HOOKS) + ['.ext1', '.ext4', '.ext10', '.ext6', '.ext5', '.ext3', '.ext8', '.ext9', '.ext2', '.ext7', '.ext11', '.ext12']:
+    for s in list(HOOKS) + ['.ext1', '.ext4', '.ext10', '.ext6', '.ext5', '.ext3', '.ext8', '.ext9', '.ext2', '.ext7', '.ext11', '.ext12', '.ext13']:
         subprocess.run([P.OBJCOPY, '-O', 'binary', '-j', s, out / 'p.elf', out / (s[1:] + '.bin')], check=True)
         blobs[s] = (out / (s[1:] + '.bin')).read_bytes()
     raw = Path(P.STOCK).read_bytes()
@@ -342,6 +396,12 @@ def build(defaults, testfile, out):
     struct.pack_into('<I', m, o(0x60045e9c), EXT12[1])   # v0.27: to the end of ext12 (GX3: 0x60f99800 loads)
     m[o(EXT11[0]):o(EXT11[0]) + len(blobs['.ext11'])] = blobs['.ext11']
     m[o(EXT12[0]):o(EXT12[0]) + len(blobs['.ext12'])] = blobs['.ext12']
+    import crop                          # custom crop modes (feature/crop-modes): tables after the code is in place
+    crop.apply(m, o, sy, log=lambda t: print(t, file=sys.stderr))
+    b13 = blobs['.ext13']                                # v0.30 test 10: the debug log (GX4-proven reserve to 0x6103f000)
+    print('SIZE .ext13', len(b13), EXT13[1] - EXT13[0], file=sys.stderr)
+    assert EXT13[0] + len(b13) <= EXT13[1] and set(m[o(EXT13[0]):o(EXT13[1])]) <= {0xff}, len(b13)
+    m[o(EXT13[0]):o(EXT13[0]) + len(b13)] = b13
     # v0.23 new Picture Mode choice rows (Noise Filter, Shading Comp.): the item table (17 x 40 B at 0x6154c2a8) -> it_tab
     # (the stock 17, then our 4), at both lookups (mov table,a0 ... cmp 17,d1); the rows join the column's 9 row switches
     IT = 0x6154c2a8
@@ -349,7 +409,7 @@ def build(defaults, testfile, out):
     for a, c in ((0x611d040d, 0x611d0422), (0x611d0846, 0x611d0859)):
         assert bytes(m[o(a):o(a) + 6]) == b'\xfc\xdc' + struct.pack('<I', IT) and bytes(m[o(c):o(c) + 2]) == b'\xa5\x11', hex(a)
         struct.pack_into('<I', m, o(a) + 2, sy['it_tab'])
-        m[o(c) + 1] = 27                         # v0.25: + Glow / Clarity, Frame; v0.28 + Halation, Tone Balance
+        m[o(c) + 1] = 31                         # v0.25: + Glow / Clarity, Frame; v0.28 + Halation, Tone Balance; rgb-curves + RG_IT; + MX_IT; better grain g2 + GS_IT, SZ_IT
     # v0.24 film list: item 111's option lists (title / left column / strip, 48 x 12 B) -> fl_l0..2 (the stock 48, then
     # the films, written by editor.s), and setting 901's value table entry (COLOR 1-4) -> fl_rec, 4 + 20 records
     e = struct.unpack_from('<10I', m, o(sy['it_tab']))
@@ -375,6 +435,7 @@ def build(defaults, testfile, out):
     assert bytes(m[o(0x611c3cae):o(0x611c3cb0)]) == b'\xa5\x08'
     m[o(0x611c3caf)] = 8 + 20
     NR_IT, VF_IT, BK_IT, WH_IT, AB_IT, GM_IT, GL_IT, FR_IT, HL_IT, TB_IT = 5394, 5389, 5386, 5385, 5384, 5383, 5382, 5381, 5380, 5379
+    GS_IT, SZ_IT = 5388, 5387                     # better grain g2: the Film Grain slider, the Grain Size choice row
     def sw_add(base, n, item, target):
         key = item - 6
         ents = [struct.unpack_from('<II', m, o(base) + 8 * i) for i in range(n)]
@@ -409,15 +470,52 @@ def build(defaults, testfile, out):
                     (0x615510cc, 32), (sy['sw11_tab'], 32), (0x6155124c, 32), (sy['sw13_tab'], 32)):
         tg = [t for k, t in (struct.unpack_from('<II', m, o(base) + 8 * i) for i in range(n)) if k == 5394]
         assert len(tg) == 1, hex(base)
-        for item, pre in ((NR_IT, 'nr'), (VF_IT, 'vf'), (FR_IT, 'fr'), (AB_IT, 'wg'), (BK_IT, 'bw')):   # v0.25: AB_IT = the WB grid row; v0.28 BK_IT the Blacks / Whites grid row
+        for item, pre in ((NR_IT, 'nr'), (VF_IT, 'vf'), (AB_IT, 'wg'), (BK_IT, 'bw'), (SZ_IT, 'sz')):   # v0.25: AB_IT = the WB grid row; v0.28 BK_IT the Blacks / Whites grid row (borders: FR_IT is a slider now)
             t = sy[pre + '_' + OWN[base]] if base in OWN else sy['lc_' + pre] if base == 0x6155124c else tg[0]
             sw_add(base, n, item, t)
         # Blacks / Whites: slider rows, as item 7's case (key 1) except the bar object's id (f2c) and the left column
         t7 = [t for k, t in (struct.unpack_from('<II', m, o(base) + 8 * i) for i in range(n)) if k == 1]
         assert len(t7) == 1, hex(base)
-        for item, pre in ((GL_IT, 'gl'), (HL_IT, 'hl'), (TB_IT, 'tb')):   # v0.28 + Halation, Tone Balance (Blacks / Whites: the grid row)
+        for item, pre in ((GL_IT, 'gl'), (HL_IT, 'hl'), (TB_IT, 'tb'), (FR_IT, 'fr'), (GS_IT, 'gs')):   # v0.28 + Halation, Tone Balance (Blacks / Whites: the grid row); borders + Border (Frame's old row)
             t = sy[pre + '_f'] if base == 0x61536f2c else t7[0]     # left column: item 7's slider cell
             sw_add(base, n, item, t)
+    # rgb-curves: the RGB row = the H&S row (item 5398, key 5392) in every switch that has it, except the column update's
+    # case (cv_case marks our page; H&S's own case -> cv_hs), the left cell (lc_rg, our "RGB" cell) and the row's
+    # "changed?" (cv_star: its '*' and Reset guide from our curves)
+    RG_IT, MX_IT = 5378, 5377
+    # colour mix: the camera functions mx_go calls, by name (a label of ours with the same name would win silently)
+    assert (sy['mx_mul'], sy['mx_row'], sy['MX_BACK'], sy['MX_RET']) == (0x60514290, 0x605144ef, 0x6051485f, 0x605196fb)
+    for base, n in ((0x61536a2c, 32), (0x61536b2c, 32), (0x61536c2c, 32), (0x61536d2c, 32), (0x61536f2c, 32),
+                    (0x615510cc, 32), (sy['sw11_tab'], 32), (0x6155124c, 32), (sy['sw13_tab'], 32)):
+        hs = [(i, t) for i, (k, t) in enumerate(struct.unpack_from('<II', m, o(base) + 8 * i) for i in range(n)) if k == 5392]
+        if not hs:
+            continue
+        (hi, ht), = hs
+        if base == 0x615510cc:
+            assert ht == 0x611d04e5 and sy['HS_CASE'] == ht, hex(ht)
+            struct.pack_into('<I', m, o(base) + 8 * hi + 4, sy['cv_hs'])
+            sw_add(base, n, RG_IT, sy['cv_case'])
+            sw_add(base, n, MX_IT, sy['mx_case'])                       # colour mix: the Mix row the same way
+        elif base == 0x6155124c:
+            sw_add(base, n, RG_IT, sy['lc_rg'])
+            sw_add(base, n, MX_IT, sy['lc_mx'])
+        elif base == sy['sw13_tab']:
+            assert ht == 0x611d1ab1 and sy['STAR_END'] == 0x611d1acb, hex(ht)
+            sw_add(base, n, RG_IT, sy['cv_star'])                       # the row's '*' and Reset guide: our curves
+            sw_add(base, n, MX_IT, sy['mx_star'])                       # ... and our mix
+        else:
+            sw_add(base, n, RG_IT, ht)
+            sw_add(base, n, MX_IT, ht)
+    # rgb-curves test 2 (owner: "the line isn't blue"): the Picture Mode curve layer's palette (record 0x614a63e0 ->
+    # 0x614a5fe0, read when Picture Mode opens; a 32-colour OSD plane) has no blue. Its fillers 27..31 are 0x01010101;
+    # 31 fills whole screens, 27..30 changed nothing on 29 screens (om-emu, each made magenta). 29 / 30 -> blue (and
+    # their copies 157 / 158), for the blue curve only (editor's cv_col).
+    PAL = 0x614a5fe0
+    assert struct.unpack_from('<II', m, o(0x614a63e0)) == (256, PAL)
+    for i, argb in ((29, 0xff3c78ff), (30, 0xff28469c)):
+        for j in (i, i + 128):
+            assert struct.unpack_from('<I', m, o(PAL) + 4 * j)[0] == 0x01010101, j
+            struct.pack_into('<I', m, o(PAL) + 4 * j, argb)
     assert sy['NR_IT'] == NR_IT if 'NR_IT' in sy else True
     # v0.23 Blacks / Whites icons: the left column's 5 slider-icon slots take ic_list (6 choices) instead of the stock
     # lists of 3 (layout records hold the list's start and end); the pictures from firmware/mkicons.py
@@ -427,12 +525,12 @@ def build(defaults, testfile, out):
         at = [i for i in range(o(0x61455000), o(0x61456000), 4) if bytes(m[i:i + 8]) == pat]
         assert len(at) == 1, hex(L)
         struct.pack_into('<II', m, at[0], sy['ic_list'], sy['ic_lend'])
-        assert m[at[0] - 3] == 3, hex(L)          # the record's choice count (object +131): 3 -> 11 (v0.25 + Glow, v0.28 + Halation, Balance)
-        m[at[0] - 3] = 11
+        assert m[at[0] - 3] == 3, hex(L)          # the record's choice count (object +131): 3 -> 12 (v0.25 + Glow, v0.28 + Halation, Balance; g2 + Film Grain)
+        m[at[0] - 3] = 12
     sys.path.insert(0, str(ROOT / 'firmware'))
     import mkicons
     pics = mkicons.streams()
-    assert len(pics) == 14 and sy['IC_END'] - sy['IC_BK'] == 14 and sy['ic_pay'] % 8 == 0
+    assert len(pics) == 15 and sy['IC_END'] - sy['IC_BK'] == 14 and sy['ic_pay'] % 8 == 0   # g2: + the Film Grain icon (id IC_GR)
     # film test 7: the Color row (item 5397) cell picture list {u16 type 3, u16 id, ptr} at 0x6154be9c: "Color / Vivid"
     # 11389 -> our "HSL"
     assert struct.unpack_from('<HH', m, o(0x6154be9c)) == (3, 11389)
@@ -751,6 +849,13 @@ def build(defaults, testfile, out):
         struct.pack_into('<II', m, o(vt) + 12 * i + 4, at, len(b))
         at = (at + len(b) + 15) & ~15
     vf_end = (at + 0xfff) & ~0xfff
+    # rgb-curves: the curve page's work area (editor's CV_WRK, uncached) right after, loaded too (GX4-proven space)
+    assert vf_end <= 0x60fa3000 and sy['CV_WRK'] == 0xa0fa3000, (hex(vf_end), hex(sy['CV_WRK']))
+    assert set(m[o(at):o(0x60fa3000 + 0x9000)]) <= {0xff}, 'the work area is not free in the firmware image'
+    vf_end = 0x60fa3000 + 0x9000
+    # v0.30 test 10: the debug log (.ext13, written with ext11 / ext12) right after the work area, loaded too
+    assert EXT13[0] == vf_end
+    vf_end = (EXT13[0] + len(blobs['.ext13']) + 0xfff) & ~0xfff
     assert vf_end <= 0x6103f000, hex(vf_end)
     struct.pack_into('<I', m, o(0x60045e9c), vf_end)
     print('BUILT IN: GUIDES, LABELS, TONES at 0x%x..0x%x, loader end word 0x%x' % (EXT12[1], at, vf_end))
@@ -772,7 +877,7 @@ def build(defaults, testfile, out):
     (out / 'main.bin').write_bytes(bytes(m)); (out / 'E1479999.BIN').write_bytes(pkg)
     nm = subprocess.run([P.TC / 'binutils/nm-new', out / 'p.elf'], capture_output=True, text=True).stdout
     syms = {l.split()[2]: int(l.split()[0], 16) for l in nm.splitlines() if len(l.split()) == 3}
-    rep = dict(package_sha256=hashlib.sha256(pkg).hexdigest(), main_sha256=hashlib.sha256(bytes(m)).hexdigest(),
+    rep = dict(source_sha256=source_digest(ROOT), package_sha256=hashlib.sha256(pkg).hexdigest(), main_sha256=hashlib.sha256(bytes(m)).hexdigest(),
                main_bytes_changed=sum(x != y for x, y in zip(m, mc['dec'])),
                ext1=dict(addr=hex(EXT1[0]), bytes=len(blobs['.ext1'])), ext4=dict(addr=hex(EXT4[0]), bytes=len(blobs['.ext4'])), ext10=dict(addr=hex(EXT10[0]), bytes=len(blobs['.ext10'])), ext6=dict(addr=hex(EXT6[0]), bytes=len(blobs['.ext6'])), ext5=dict(addr=hex(EXT5[0]), bytes=len(blobs['.ext5'])), ext3=dict(addr=hex(EXT3[0]), bytes=len(blobs['.ext3'])), ext8=dict(addr=hex(EXT8[0]), bytes=len(blobs['.ext8'])), ext9=dict(addr=hex(EXT9[0]), bytes=len(blobs['.ext9'])),
                bundles_bin_sha256=hashlib.sha256(test).hexdigest(), defaults_sha256=hashlib.sha256(dflt).hexdigest(),
@@ -785,11 +890,12 @@ def build(defaults, testfile, out):
 def make_xblock(out, sy, xtag):
     """Assemble the code block, link it at two bases, find the 32-bit fields that move (+delta absolute, -delta
     PC-relative to the firmware), check that relocating the first link gives the second, and pack the block."""
-    ext = dict(getter=0x60063380, facade=0x60b8696a, fopen=sy['fopen'], fread=sy['fread'], fclose=sy['fclose'], malloc=0x60024068, sd_crc=sy['sd_crc'], gd_mode=sy['gd_mode'], VDESC=0xa4cf688c, VSTOCK_P=0xa4cf6210, VSTOCK_S=1660, AXIS=684, EDK=687, fx_tail=sy['fx_tail'], fx_back=sy['fx_back'], lv_skip=sy['lv_skip'], c11_ret=0x60504edb,
+    ext = dict(getter=0x60063380, facade=0x60b8696a, fopen=sy['fopen'], fread=sy['fread'], fclose=sy['fclose'], malloc=0x60024068, sd_crc=sy['sd_crc'], gd_mode=sy['gd_mode'], VDESC=0xa4cf688c, VSTOCK_P=0xa4cf6210, VSTOCK_S=1660, AXIS=684, EDK=687, WL_BLK=sy['wl_blk'], fx_tail=sy['fx_tail'], fx_back=sy['fx_back'], lv_skip=sy['lv_skip'], c11_ret=0x60504edb,
                STATE=sy['STATE'], HMAX=sy['HMAX'], POOL=sy['POOL'], MAGIC=sy['MAGIC'], BUFIDX=0x604afdf9, SF_ENT=0x604be2aa, LOCK=0x60075f73, UNLOCK=0x60075fbc, WINMAP=0x60071018, FLUSH=0x60070e69, free=0x6002409a,
                SEL=0x6052cf39, fwrite=0x608d4da9, PF_CAPTO=sy['pf_capto'], PF_CAP=sy['pf_cap'], E_LK=sy['e_lk'], E_RET=sy['e_ret'], E_RST=sy['e_rst'], REFRESH=0x611b20ea, XT_TAB=sy['xt_tab'], EMARK=680, EMAGIC=0x45334d4f,
                FL_HAS=sy['fl_has'], FACADE=0x60b8696a, AGET=0x603f039d, TXGET=0x604cd921, TXATT=0x604bc0cf, TXPF=0x604b77fb, TWO=sy['TWO'], TW_LEN=sy['TW_LEN'], FV0=sy['FV0'],
-               WB_V=sy['wb_v'], wb_wtk=sy['wb_wtk'], wb_wem=sy['wb_wem'], HL_RUN=sy['hl_run'])
+               WB_V=sy['wb_v'], wb_wtk=sy['wb_wtk'], wb_wem=sy['wb_wem'], HL_RUN=sy['hl_run'], BD_RUN=sy['bd_run'], TYPEMAP=0x60555b58,
+               TG_OWN=sy['tg_own'], TG_BAD=sy['tg_bad'], GS_EFF=sy['gs_eff'])
     sys.path.insert(0, str(ROOT / 'firmware'))
     import mkicons                                # v0.25 WB grid row: the left cell's glyphs (xblock xb_wbc)
     inc = ''.join(f'.set {k}, {getattr(mkicons, k)}\n' for k in ('WBC_IX', 'WBC_IY', 'WBC_TY', 'WBC_GH'))

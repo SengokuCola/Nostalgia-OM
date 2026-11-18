@@ -1,4 +1,5 @@
 import { parseSplit, type Split } from './split';
+import { parseCurves, parseMix, type RgbCurves } from './curves';
 // Pack model (schema "caduceus-pack/1") and its structural parsing. The value vocabulary is the one of the repo's
 // library/bundle JSON (bundles/*.json, patches/bundles/build.py) so packs read naturally next to the Python tools.
 
@@ -80,6 +81,8 @@ export interface Look {
   tone_balance?: number;       // OM-3 v0.28: Tone Balance -5..5 (- the shadow tint reaches further, + the highlight tint; absent = 0)
   halation?: number;           // OM-3 v0.28: Halation 1..5 (absent = off)
   film_wb?: FilmWb;            // OM-3 v0.28: the WB the camera switches to with this film (absent = Auto)
+  rgb?: RgbCurves;             // OM-3 RGB curves (feature/rgb-curves): R / G / B, 5 points each, -7..7 (absent = flat); preview only, not in LOOKS.BIN yet
+  mix?: number[];              // OM-3 colour mix (feature/rgb-curves): hue, strength for R, G, B, -7..7 (absent = none); preview only, not in LOOKS.BIN yet
   origin?: string;     // app-only: the built-in library look this one came from (for Reset look); not exported
   lib?: string;        // app-only: fingerprint of the library values it was copied from (unmodified = still equal)
 }
@@ -183,6 +186,8 @@ export function parseLook(v: unknown, what = 'look'): Look {
     ...(Number.isInteger(v.tone_balance) && v.tone_balance !== 0 ? { tone_balance: Math.max(-5, Math.min(5, v.tone_balance as number)) } : {}),
     ...(Number.isInteger(v.halation) && (v.halation as number) > 0 ? { halation: Math.min(5, v.halation as number) } : {}),
     ...(parseFilmWb(v.film_wb) ? { film_wb: parseFilmWb(v.film_wb) } : {}),
+    ...(parseCurves(v.rgb) ? { rgb: parseCurves(v.rgb) } : {}),
+    ...(parseMix(v.mix) ? { mix: parseMix(v.mix) } : {}),
     ...(typeof v.origin === 'string' ? { origin: v.origin } : {}),
     ...(typeof v.lib === 'string' ? { lib: v.lib } : {}),
   };

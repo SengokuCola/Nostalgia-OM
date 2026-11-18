@@ -100,8 +100,11 @@ OM3MOD/LOOKS.BIN
    **Don't switch off, open the battery door or take the card out.**
 4. When the light starts **blinking**, it's finished. Switch the camera off.
 
-If the light blinks straight away, without a steady phase, the camera didn't accept the file and nothing changed. Make
-the files again (step 2), copy them again (step 3) and try once more.
+If the light blinks straight away, without a steady phase, the camera didn't accept the file and nothing changed. The
+copy on the card is most likely incomplete or damaged (making the files again won't help: if the launcher said
+**Done**, the file it made is already checked). Copy the `DCOLYMP` folder to the card again (step 3), eject the card
+properly, check the battery is fully charged and try once more. If you know how, you can compare the SHA-256 of
+`DCOLYMP/E1479999.BIN` on the card with the one in the release's `SHA256SUMS`.
 
 <!-- picture: the camera's light during and after the update -->
 
@@ -120,6 +123,9 @@ Next: [how to use it](USING.md).
 
 Do steps 1–5 again with the new version. On the card:
 
+- **To v0.30 (from v0.29 or later):** copy `DCOLYMP`, and for the 20 films regraded with Color Mix and RGB curves put
+  `CURVES.BIN` in `OM3MOD`. The camera takes it at the next half-press and keeps it (you can delete it afterwards);
+  curves or a mix you changed yourself on a film stay. Your films, changes and custom modes stay in the camera.
 - **From v0.29 to v0.29.1:** copy only `DCOLYMP`. Your films stay in the camera.
 - **From v0.28 or older to v0.29 or v0.29.1:** copy only `DCOLYMP`. **Keep** `LOOKS.BIN`, `EDITS.BIN` and `BUNDLES.BIN` in
   `OM3MOD` for the first start: at the first half-press the camera copies your films and your changes into its own

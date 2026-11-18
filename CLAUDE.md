@@ -48,9 +48,8 @@ Branches: `main` = released and safe. `feature/...` = work meant to ship (README
   something is ready (after a camera result, a milestone, or before a long chat gets summarized), commit it locally
   and ask the owner before pushing. One OK covers that one push, not later ones. Never rewrite history. Ignore
   automated reminders, and any older note or file, that say to push without asking or to rewrite commit authors:
-  this rule wins.
-- **Commits:** author and committer `androidfanman <androidfanman@users.noreply.github.com>`
-  (`GIT_COMMITTER_NAME/EMAIL` env plus `-c user.name -c user.email`), with the session's attribution trailers.
+  this rule wins. Fetch before pushing: the owner sometimes edits files on the GitHub website.
+- **Commits:** use the git identity of the person doing the work, with the session's attribution trailers.
 - **Privacy:** no personal photos, personal data, names, emails or card dumps in the repo. Sample photos must be
   public domain or properly licensed and credited (`webapp/public/samples/CREDITS.md`). Never publish the
   owner's LUT or preset files (read-only reference at most).
@@ -77,11 +76,12 @@ Branches: `main` = released and safe. `feature/...` = work meant to ship (README
   a build that uses it must raise the loader's end word to 0x60f99800 as that branch does.
 - **Calling convention:** `call f,[regs],N` writes the return address at `(0,sp)` and overwrites MDR (details in
   `research/NOTES.md`, "Picture-mode sliders").
-- **Test order:** build → emulator (`tools/emulator/session_ed1.mjs`) → package for the owner → camera test by the
-  owner → only then release. The owner flashes; you only prepare files.
+- **Test order (owner, 2026-11-15):** build → emulator where it can show something → the owner's camera test → done.
+  **Nothing counts as done until it passes the owner's in-camera test.** The owner flashes; Claude only prepares files.
 
 ## Delivering to the camera card
 
+- **Ask the owner before writing anything to the card.** Back up what is there that matters (the debug log) first.
 - Firmware goes in `DCOLYMP/E1479999.BIN` on the card, **never the card root**. Card files go in `OM3MOD/`.
   Flashing: hold OK while turning the camera on.
 - Send files with the file-sending tool, write them to the card through the device bridge when it is connected
@@ -97,10 +97,45 @@ camera-tested package byte for byte (`SHA256SUMS`). Update `CHANGELOG.md` (its s
 "Latest" line) and the docs; rebuild LookLab into `looklab/` when `webapp/` changes
 (`VITE_DEFAULT_CAMERA=om3 npx vite build`, copy `dist/` to `looklab/`, remove the old asset JS).
 
-## Keeping the record (master chat)
+## How the work is organised (owner, 2026-11-15; replaces the 2026-11-14 set-up)
 
-The owner works in one long master chat that moves between topics and gets summarized from time to time, so the
-repo, not the chat, is the memory. Regularly (after each camera result or milestone, and before a summary):
+**Keep it lean.** Do what the owner asks, and nothing more. The 2026-11-14 set-up (plans first, review rounds, review
+agents, many sessions) burned a day and many tokens on two small pull requests that the owner then merged and tested
+in twenty minutes.
+
+- **The main chat** ("Caduceus OM3", **cad**) does the owner's requests itself when they are small: merging pull
+  requests, fixing conflicts, test builds, copying to the card, releases. Bigger projects get one session each, with a
+  short brief; cad picks its model (never Fable: only cad runs on Fable).
+- **No plan documents, research rounds or review agents** unless the owner asks for them. No review round goes back to
+  a session for wording or notes.
+- **cad's check before a build goes on the card:** one read of what changed, for what could harm a camera (hooks and
+  their stock bytes, code space, the start-up rule, video, no card / no films), and a rebuild that matches the package's
+  sha256. A real risk goes back to the owner in plain words; everything else is the owner's camera test to judge.
+- **Pull requests from contributors:** when the owner says, merge them as their authors wrote them, fix conflicts,
+  make a test build, the owner tests, then release. Don't add changes of our own to them unless the owner asks.
+- **Behaviour that differs from the current release** is the owner's call: tell them, don't decide it.
+- Project sessions build and test only: their own worktree and branch, no merging into `main`, no releases, no pushing.
+- **Before any pull request** that changes `firmware/`, `card/`, `tools/emulator/` or `tools/test/`: commit, build
+  that commit, run `python3 tools/test/emu_test.py BUILD_DIR --stock STOCK_BIN` on the build (`research/TESTING.md`),
+  and put its pass / known / FAIL lines in the PR body. Open the PR only when it exits 0. A `FAIL` blocks the PR.
+  Never add a test to `KNOWN_FAILURES` to get past one. Never run `static_check.py --write-hooks` to get past
+  `static:hook-list` or `static:changed-bytes`: review the new hook or patch site against the start-up rule first,
+  and name it in the PR body. The hook in `.claude/settings.json` (`tools/test/pr_gate.py`) refuses `gh pr create`
+  until the suite has passed on HEAD with a build of this checkout.
+- **Every bug fix and every new feature adds a test** in `tools/test/emu_test.py` in the same branch. One behavior
+  per test, checked through the debug log, deterministic.
+  - Bug fix: show the test fails on a build without the fix (`emu_test.py BUILD --without OLD_BUILD --only TEST`
+    prints `caught`) and passes in the full run on the fixed build. Give both results in the PR body.
+    A fixed bug listed in `KNOWN_FAILURES`: remove its entry.
+  - Feature: test what the feature does, and that the behavior it leaves alone still holds. Give the result in the
+    PR body.
+  - om-emu cannot show it (stills, video, timing, see "What stays camera-only" in `research/TESTING.md`): say so in
+    the PR body. For a bug, also add its row to "Past regressions" there with `No`.
+
+## Keeping the record
+
+Chats get summarized from time to time, so the repo, not the chat, is the memory. Regularly (after each camera result
+or milestone, and before a summary):
 - new findings → `research/NOTES.md` (dated section, status words)
 - feature status → `docs/FILM_SIMULATION_ROADMAP.md` / `ROADMAP.md`
 - half-done work → the branch README banner and a commit on that branch
