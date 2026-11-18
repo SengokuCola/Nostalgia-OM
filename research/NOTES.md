@@ -7533,3 +7533,7 @@ camera's own info-display settings, with show / hide per item, several set-ups, 
   as far as the buffer goes); bd_run widens the painted area and B / Bp by it, so the photo keeps its widths and the
   preview's edge is border. emu_check 24 of 24 exact; test 4's build `caught`. Suite 71 of 71. Package
   `test-builds/2026-11-18-v0.41-dev-test5` `1e0d279e…6a9` (second build matches), on the owner's card.
+- **Test 5 camera-tested 2026-11-18** (owner: "it looks good!"): PB183465..485, black borders at every ratio, level
+  and upright (orientation 1 and 6): the photo and its 1600 px preview both bordered to every edge (no picture line);
+  the photos keep their widths (4:3 291, 16:9 218, 3:2 259, 1:1 291, 3:4 218, XPan 143, 21:9 166, Border -1 58). Log
+  clean (21 photos, Shading 0 throughout).
