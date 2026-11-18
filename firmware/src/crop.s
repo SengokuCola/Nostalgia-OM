@@ -363,7 +363,38 @@ cr_ic:                            /* d0 = the id, d1 = its exthu (ar_ic); a0 <- 
  mov cr_ent,a0
  add d1,a0
  retf [],0
-1:                                /* the current value's label, asked through cr_gvl as 1:1 / 16:9 / 3:2 (top bar
+1:                                /* round 9c: in playback (GUI state classes 5..7) the label of the photo shown
+                                   * (the info line's 10931 4:3 / 10930 16:9) -> ours while SimplePlayCommon found that
+                                   * photo to be a 5:4 / XPan / 21:9 shape (cr_pbk) */
+ mov (CR_GUI),a0
+ cmp 0,a0
+ beq 9f
+ movbu (a0),d1
+ cmp 5,d1
+ bcs 2f
+ cmp 8,d1
+ bcc 9f
+ movbu (cr_pbk),d1
+ cmp 0,d1
+ beq 9f
+ mov d1,a0                        /* 6 5:4, 7 XPan, 8 21:9 */
+ mov d0,d1
+ exthu d1
+ cmp 10931,d1
+ beq 3f
+ cmp 10930,d1
+ bne 9f
+ cmp 6,a0
+ beq 9f
+ mov a0,d1                        /* XPan 7 -> CR_IC0 + 4, 21:9 8 -> + 5 (the top bar's, drawn as 10930) */
+ add -3,d1
+ bra 8b
+3:
+ cmp 6,a0
+ bne 9f
+ mov 3,d1                         /* 5:4 -> CR_IC0 + 3 */
+ bra 8b
+2:                                /* the current value's label, asked through cr_gvl as 1:1 / 16:9 / 3:2 (top bar
                                    * 10934 / 10930 / 10932, SCP cell 5860 / 5859 / 5862) -> ours while 269 holds the
                                    * crop that borrows that slot (5 / 6 / 7); only on the shooting screens (GUI state
                                    * class below 5: playback shows a photo's own value through the same pictures) */
@@ -559,7 +590,7 @@ cr_dst:
 cr_daf:
  .long 0
 cr_t1:
- .asciz "\r\n\r\nCROP MODES (crop round 9b): tag at the first half-press "
+ .asciz "\r\n\r\nCROP MODES (crop round 9c): tag at the first half-press "
 cr_t2:
  .asciz ", Image Aspect then "
 cr_t3:
@@ -1012,17 +1043,16 @@ cr_bdc:
 /* ---- (Crop round 7's playback info diagnosis, cr_pbi at 0x6057fb1b, is removed: that hook sat in section 2 and jumped
  * into section 6's extension, and the camera boot-looped. research/NOTES.md "Crop round 7: the boot loop".) */
 
-/* ---- Crop round 9b: the playback ratio label (2026-11-17). Playback sorts a photo by its shape into the five stock
- * ratios (the GUI's 0x61101381: w x 10000 / h against 8750 / 11667 / 14166 / 16389 -> codes 3, 5, 1, 2, else 4),
- * so XPan / 21:9 are 16:9 and 5:4 is 4:3; the play component's record-mode lookup (0x60c7c18a) misses their sizes
- * (57: no quality label). Round 9 changed both outputs (codes 6..8 from the shared 0x61101381, a real record mode
- * from 0x60c7c18a) and the camera rebooted when a photo was shown; which reader of the new values broke is not known
- * (research/NOTES.md "Crop round 9: the reboot"). Round 9b leaves every stock value as it was: the single frame's
- * info build (CPlaySingleFrame::SimplePlayCommon, right after its 0x61101381 call at 0x61113417) notes the crop
- * shape in cr_pbk (6 5:4, 7 XPan, 8 21:9, else 0) from the photo's own w x h, and the two label updates (0x611509bc
- * item 34, 0x611525b9 item 61) show state cr_pbk - 1 instead of code - 1 when the stock code is the crop's base (4 /
- * 1). The label elements have 8 states (crop.py; ours the top bar's pictures). The quality label stays as stock (none
- * for a crop). All in section 7 (hooks) and .ext12 (section 6, loaded before it). */
+/* ---- Crop round 9c: the playback ratio label (2026-11-17). Playback sorts a photo by its shape into the five stock
+ * ratios (the GUI's 0x61101381: w x 10000 / h against 8750 / 11667 / 14166 / 16389 -> codes 3, 5, 1, 2, else 4), so
+ * XPan / 21:9 show 16:9's label (10930) and 5:4 4:3's (10931). Round 9 changed the camera's own values and 9b
+ * patched the label elements to 8 states; both rebooted the camera in image review, 9b also for a plain 3:4 photo
+ * (research/NOTES.md "Crop round 9b: the reboot"). Round 9c changes no stock value or layout: the single frame's info
+ * build (CPlaySingleFrame::SimplePlayCommon, right after its 0x61101381 call at 0x61113417) notes the crop shape from
+ * the photo's own w x h in cr_pbk (6 5:4, 7 XPan, 8 21:9, else 0), and cr_ic answers that label's picture request
+ * with ours (the top bar's, drawn as 10930 / 10931) in playback. The widget asks the picture getter (0x610f5611,
+ * our .hook_ic) at each draw and keeps no copy (0x610db0df: its 32 slots at +172 stay 0). The quality label stays
+ * as stock (none for a crop). The hook is in section 7, the code in .ext12 (section 6, loaded before it). */
 cr_pbk:
  .byte 0
  .balign 4
@@ -1093,49 +1123,3 @@ cr_pbk1:                          /* jmp from 0x6111341e (d0 = the stock code; a
  .byte 0xcb
 .section .ext12,"ax"
 
- .macro CR_PBL back
- mov d1,(cr_pbsv + 8)
- movbu (a3),d0                    /* the stock code */
- movbu (cr_pbk),d1
- cmp 0,d1
- beq 9f
- cmp 6,d1
- bne 1f
- cmp 1,d0                         /* 5:4: its stock code is 4:3's */
- bne 9f
- bra 2f
-1:
- cmp 4,d0                         /* XPan, 21:9: 16:9's */
- bne 9f
-2:
- mov d1,d0
-9:
- mov (cr_pbsv + 8),d1
- mov a2,a0                        /* the stock instructions (index code - 1) */
- add -1,d0
- extbu d0
- jmp \back
- .endm
-cr_pbla:                          /* jmp from 0x611509bc (item 34: a3 -> the code, a2 = the widget) */
- CR_PBL cr_pbla_back
-cr_pblb:                          /* jmp from 0x611525b9 (item 61) */
- CR_PBL cr_pblb_back
-.section .hook_crl,"ax"
- jmp cr_pbla                      /* stock 0x611509bc: movbu (a3),d0; mov a2,a0; add -1,d0; extbu d0 */
- .byte 0xcb
-.section .hook_crm,"ax"
- jmp cr_pblb                      /* stock 0x611525b9: the same */
- .byte 0xcb
-.section .ext12,"ax"
-
- .balign 4
-cr_pll:                           /* the label's 8 states {0xffff, 7, 7, picture} (stock 0x613f5afc, 5) */
- .long 0xffff, 7, 7, 10931
- .long 0xffff, 7, 7, 10932
- .long 0xffff, 7, 7, 10933
- .long 0xffff, 7, 7, 10930
- .long 0xffff, 7, 7, 10934
- .long 0xffff, 7, 7, CR_IC0 + 3
- .long 0xffff, 7, 7, CR_IC0 + 4
- .long 0xffff, 7, 7, CR_IC0 + 5
-cr_plle:

@@ -57,17 +57,22 @@ CROPHIST_CASES = {   # name: (Image Aspect, area x, y, w, h asked, area kept)
     '5-4': (5, (0, 0, 640, 480), (20, 0, 600, 480)),
     '16-9-as-it-is': (3, (0, 0, 640, 360), (0, 0, 640, 360)),
 }
-# crop round 9b: the playback ratio label, by direct calls (om-emu's playback gives its photos no crop size). The
-# camera's own shape sort (0x61101381) and record-mode lookup (0x60c7c18a) stay stock (round 9 changed them and the
-# camera rebooted in playback); SimplePlayCommon's hook (cr_pbk1) notes the crop shape, and the label updates
-# (cr_pbla / cr_pblb) show its state when the stock code is the crop's base. The three label elements: 8 states.
+# crop round 9c: the playback ratio label, by direct calls (om-emu's playback gives its photos no crop size). The
+# camera's own shape sort (0x61101381), record-mode lookup (0x60c7c18a), label updates and label elements stay stock
+# (rounds 9 / 9b changed them and the camera rebooted in image review); SimplePlayCommon's hook (cr_pbk1) notes the
+# crop shape, and the picture getter (0x610f5611 -> ar_ic -> cr_ic) answers the label's 10930 / 10931 with ours in
+# playback (GUI class 5..7) while that shape is noted.
 CROPPL = 'crop-playback-label-and-quality'
 CROPPL_STOCK = {(5184, 1920): 4, (5184, 2224): 4, (4864, 3888): 1, (5184, 2920): 4, (5184, 3888): 1}
 CROPPL_QUALITY = {(1, 1, 5184, 2920): 1, (1, 1, 5184, 1920): 57, (0, 1, 4864, 3888): 57, (0, 1, 5184, 3888): 1}
 CROPPL_KIND = {(5184, 1920): 7, (3200, 1184): 7, (5184, 2224): 8, (4864, 3888): 6, (3008, 2400): 6, (5184, 2920): 0,
                (5184, 3888): 0, (5184, 3456): 0, (3888, 3888): 0, (2912, 3888): 0, (5184, 0): 0}
-CROPPL_INDEX = {(7, 4): 6, (8, 4): 7, (6, 1): 5, (7, 2): 1, (0, 4): 3, (6, 4): 3, (8, 1): 0}   # (cr_pbk, code): index
-CROPPL_ELEMENTS = (0x613f8d08, 0x613fe9cc, 0x6147d568)
+CROPPL_PICTURE = {   # (GUI class, cr_pbk, picture id): our picture k (CR_IC0 + k), or None: the stock picture
+    (5, 7, 10930): 4, (5, 8, 10930): 5, (5, 6, 10931): 3, (5, 6, 10930): None, (5, 7, 10931): None, (5, 0, 10930): None,
+    (5, 8, 10933): None, (1, 7, 10930): None}
+CROPPL_STOCK_BYTES = {0x611509bc: 'f0439828ff14', 0x611525b9: 'f0439828ff14', 0x61101393: '8003faca2e22',
+                      0x60c7c18a: '839f394f00'}
+CROPPL_ELEMENTS = {0x613f8d08: 0x613f5afc, 0x613fe9cc: 0x613fb194, 0x6147d568: 0x6147bff8}
 GRAIN_GAINS = {1: (400, 175), 3: (1024, 448), 5: (1536, 672)}   # strength -> texture Y gain, Cb / Cr gain (xblock.s)
 REAR_DIAL = 0x9032                               # the rear dial's event (cv_ev); a1 its signed clicks
 # (name, a1): first no clicks (the value as it is), then a fast turn of 3, then one past the range.
@@ -831,15 +836,16 @@ def run_crophist(emu, build, out, card0):
 
 
 def run_croppl(emu, build, out, card0):
-    """The stock 0x61101381 / 0x60c7c18a unchanged; cr_pbk1 for CROPPL_KIND; cr_pbla / cr_pblb for CROPPL_INDEX;
-    the elements."""
+    """The stock 0x61101381 / 0x60c7c18a results, the label sites and elements stock; cr_pbk1 for CROPPL_KIND; the
+    picture getter for CROPPL_PICTURE."""
     d = out / CROPPL
     d.mkdir(parents=True, exist_ok=True)
     sym = elf_symbols(build / 'p.elf')
     word = lambda v: v.to_bytes(4, 'little').hex()
     half = lambda v: v.to_bytes(2, 'little').hex()
-    jmp = lambda name: [['B', 'dc'], ['B+1', f"={sym.get(name, 0):#x}-B"]]
-    spec = []
+    pbk = f"{sym.get('cr_pbk', 0):#x}"
+    spec = [{'name': 'gui class', 'pc': 'B', 'stop': ['B'], 'read': [['W(0x603713a4)', 2]] +
+             [[hex(a), len(h) // 2] for a, h in CROPPL_STOCK_BYTES.items()] + [[hex(e), 12] for e in CROPPL_ELEMENTS]}]
     for (w, h), _ in CROPPL_STOCK.items():
         spec.append({'name': f'stock label {w}x{h}', 'pc': 'B', 'stop': ['B+7'], 'max': 5000,
                      'mem': [['B', 'dd'], ['B+1', '=0x61101381-B'], ['B+5', '8004']], 'regs': {'d0': str(w), 'd1': str(h)}})
@@ -849,26 +855,29 @@ def run_croppl(emu, build, out, card0):
                      'regs': {'d0': '1', 'd1': str(c), 'a1': str(k)}})
     for (w, h), _ in CROPPL_KIND.items():
         spec.append({'name': f'kind {w}x{h}', 'pc': 'B', 'stop': ['0x61113424'], 'max': 2000,
-                     'mem': jmp('cr_pbk1') + [['B+0x300', half(w) + half(h)], ['SP+2844', '78563412']],
-                     'regs': {'d0': '4', 'd1': '0x11', 'a2': 'B+0x300', 'a3': 'B+0x302'},
-                     'read': [[f"{sym.get('cr_pbk', 0):#x}", 1]]})
-    for site, back in (('cr_pbla', '0x611509c2'), ('cr_pblb', '0x611525bf')):
-        for (k, c), _ in CROPPL_INDEX.items():
-            if site == 'cr_pblb' and (k, c) != (7, 4):
-                continue
-            spec.append({'name': f'{site} {k} {c}', 'pc': 'B', 'stop': [back], 'max': 2000,
-                         'mem': jmp(site) + [['B+0x310', f'{c:02x}'], [f"{sym.get('cr_pbk', 0):#x}", f'{k:02x}']],
-                         'regs': {'d1': '0x11', 'a2': '0x1234', 'a3': 'B+0x310'}})
-    pll = sym.get('cr_pll', 0)
-    spec.append({'name': 'elements', 'pc': 'B', 'stop': ['B'], 'read': [[hex(e), 12] for e in CROPPL_ELEMENTS] +
-                 [[f'{pll:#x}', 128], [f"{sym.get('cr_pbk', 0):#x}", 1]],
-                 'mem': [[f"{sym.get('cr_pbk', 0):#x}", '00']]})
+                     'mem': [['B', 'dc'], ['B+1', f"={sym.get('cr_pbk1', 0):#x}-B"], ['B+0x300', half(w) + half(h)],
+                             ['SP+2844', '78563412']],
+                     'regs': {'d0': '4', 'd1': '0x11', 'a2': 'B+0x300', 'a3': 'B+0x302'}, 'read': [[pbk, 1]]})
+    for (g, k, pic), _ in CROPPL_PICTURE.items():
+        spec.append({'name': f'picture {g} {k} {pic}', 'pc': 'B', 'stop': ['B+7'], 'max': 50000,
+                     'mem': [['B', 'dd'], ['B+1', '=0x610f5611-B'], ['B+5', '0000'], ['W(0x603713a4)', f'{g:02x}'],
+                             [pbk, f'{k:02x}']],
+                     'regs': {'d0': str(pic)}, 'restore': [['W(0x603713a4)', '01'], [pbk, '00']]})
     res = run_ncall(emu, build, d, card0, 's1 wait wait ncall', spec)
     if isinstance(res, str):
         return CROPPL, [res]
     errors = []
     ok = lambda r, n: r['steps'] < n
     reg = lambda r, k: int(r['regs'][k], 16)
+    mem = res['gui class']['mem']
+    if bytes.fromhex(mem[0])[0] != 1:
+        errors.append(f'the GUI state at the calls is {mem[0]}, not shooting (class 1): the restore would be wrong')
+    for (a, want), got in zip(CROPPL_STOCK_BYTES.items(), mem[1:1 + len(CROPPL_STOCK_BYTES)]):
+        if got != want:
+            errors.append(f'{a:#x} is {got}, not the stock {want}')
+    for (e, lst), got in zip(CROPPL_ELEMENTS.items(), mem[1 + len(CROPPL_STOCK_BYTES):]):
+        if bytes.fromhex(got) != bytes([2, 5, 0, 0]) + lst.to_bytes(4, 'little') + (lst + 80).to_bytes(4, 'little'):
+            errors.append(f'element {e:#x} is {got}, not stock')
     for (w, h), want in CROPPL_STOCK.items():
         r = res[f'stock label {w}x{h}']
         got = reg(r, 'd0') if ok(r, 5000) else 'no return'
@@ -888,23 +897,17 @@ def run_croppl(emu, build, out, card0):
         regs = (reg(r, 'd0'), reg(r, 'd1'), reg(r, 'd2'), reg(r, 'a0'))
         if got != want or regs != (4, 0x11, 0x12345678, 78):
             errors.append(f'cr_pbk1 {w} x {h}: kind {got} (not {want}), d0 d1 d2 a0 {[hex(x) for x in regs]}')
-    for site in ('cr_pbla', 'cr_pblb'):
-        for (k, c), want in CROPPL_INDEX.items():
-            n = f'{site} {k} {c}'
-            if n not in res:
-                continue
-            r = res[n]
-            regs = (reg(r, 'd0'), reg(r, 'd1'), reg(r, 'a0')) if ok(r, 2000) else None
-            if regs != (want, 0x11, 0x1234):
-                errors.append(f'{site}: kind {k}, code {c}: index / d1 / a0 {regs}, not ({want}, 0x11, 0x1234)')
-    mem = res['elements']['mem']
-    for e, got in zip(CROPPL_ELEMENTS, mem[:3]):
-        b = bytes.fromhex(got)
-        if b[:4] != bytes([2, 8, 0, 0]) or b[4:12] != pll.to_bytes(4, 'little') + (pll + 128).to_bytes(4, 'little'):
-            errors.append(f'element {e:#x}: {got}')
-    pics = [int.from_bytes(bytes.fromhex(mem[3])[16 * k + 12:16 * k + 16], 'little') for k in range(8)] if pll else None
-    if pics != [10931, 10932, 10933, 10930, 10934, 0x7fc7, 0x7fc8, 0x7fc9]:
-        errors.append(f'the label states: pictures {pics}')
+    ent = sym.get('cr_ent', 0)
+    for (g, k, pic), want in CROPPL_PICTURE.items():
+        r = res[f'picture {g} {k} {pic}']
+        if not ok(r, 50000):
+            errors.append(f'picture {pic} (GUI class {g}, kind {k}): the getter did not return')
+            continue
+        a0 = reg(r, 'a0')
+        ours = (a0 - ent) // 4 if ent <= a0 < ent + 36 and (a0 - ent) % 4 == 0 else None
+        if ours != want:
+            errors.append(f'picture {pic} (GUI class {g}, kind {k}): {f"ours {ours}" if ours is not None else f"{a0:#x}"}, '
+                          f'not {f"ours {want}" if want is not None else "the stock one"}')
     return CROPPL, errors
 
 
