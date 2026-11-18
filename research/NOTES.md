@@ -8052,3 +8052,10 @@ Test driver tools/emulator/focus_stacking.mjs runs this routine with controlled 
   camera kept it between passes, its own tone changes would rebuild forever, so most likely per pass); whether live view
   uses more than 4 outputs (then a change could miss one until the next half-press: no harm); how smooth it looks while
   turning; Color Mix and WB Compensation (expected at once already: analysis). Test build: live look 1.
+
+## v0.41-dev test 8: crop83-2 + live look 1 (2026-11-18; emulator only)
+- Owner: "lets also combine them into one test build" (after crop83-1 held XPan one power cycle only). Merged
+  fix/83-crop-at-start (crop83-2, 13a615a) at ab867bf and feature/live-look-refresh (live look 1, cb1c865) at e08828d;
+  text conflicts only (VERSION, NOTES, emu_test.py: DIRECT takes CROPEL and LIVE). Build `af37586c…5f4c` (a second build
+  matches); static checks all pass, no new hook; suite **93 of 93**. Package `test-builds/2026-11-18-v0.41-dev-test8`,
+  go-back v0.40b. Camera test pending.
