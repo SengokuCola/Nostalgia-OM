@@ -164,6 +164,10 @@
    "addr": "0x611d1041",
    "len": 11
   },
+  "hook_rr": {
+   "addr": "0x611356e6",
+   "len": 6
+  },
   "hook_rsi": {
    "addr": "0x611c296f",
    "len": 5
