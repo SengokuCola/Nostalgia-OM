@@ -7096,3 +7096,20 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
 - **Camera (crombach, 2026-11-17, build 9b8a861a...): passed.** A tap and every key, `up` included, give Picture
   Mode 30 s. Other touch menus and a screen opened from Picture Mode close after 8 s. The white balance screen closes
   8 s after `down`. Photo, video, sleep and start-up work as before.
+
+## v0.40 alpha test 1: crop modes + section gates + PR #76 (2026-11-17; emulator + analysis, camera test pending; branch try/v0.40-alpha)
+
+- **What.** `feature/crop-modes` 1a3e6e2 (crop round 10, camera-tested) + `try/section-gates-blv` a5936e2 (gates
+  G1..G3, main 78a809e) + PR #76 de8f59a (crombach: Picture Mode waits 30 s, #75). The owner names it v0.40 alpha.
+- **Code space.** Both branches' gates in `.ext1` came to 1816 / 1744. `pf_cnt` / `pf_vbi` moved to `.ext11` next to
+  `sl_cnt` / `sl_vbi`, their only callers (the facade words point at `sl_*`): `.ext1` 1704 / 1744.
+- **Section order.** The gates branch's `static:section-order` (floor past a crossing) found `hook_shutter` ->
+  `lg_pr` / `nm_ex` -> `cr_hp` -> `cr_rst` calling `ar_getv` / `ar_setv` (section 7) unchecked; the crop branch's own
+  check did not follow a path on past section 6. Each of the three calls now checks SEC_READY bit 0x40; not ready:
+  `cr_on` back to 0, the tag kept, the next shutter event tries again. Camera-tested rounds 7b..10 started normally
+  with the unchecked calls (a half-press comes long after section 7 is in), so this is a guard, not a fix of a seen
+  fault.
+- **Suite** on 760fe6b: 61 pass, 2 known fails (`static:hook-list`: the seven crop hooks; `static:changed-bytes`:
+  crop's patch sites, both a subset of crop round 10's, waiting for the owner's OK). Package
+  `test-builds/2026-11-17-v0.40-alpha-test1` (private folder): E1479999.BIN `5f092548…d635`, rebuilt byte for byte from
+  760fe6b; go-back crop round 10 `5f910b23…23c4`.
