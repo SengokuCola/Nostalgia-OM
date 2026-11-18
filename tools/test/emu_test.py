@@ -1776,8 +1776,90 @@ def run_cropel(emu, build, out, card0):
     return CROPEL, errors
 
 
+
+# Live look (2026-11-18): the camera's development function 0x605196b4, run whole on a fake live-view job (request
+# R+14 0x0030, the RGB stage's curve cache at R+1524 as a live job has it), one pass a case on the same output O. The
+# camera rebuilds O's tone tables only when C+60 asks; lv_ref (from hook_mx, the function's first stage) sets bit 3
+# (8) on the pass after a change of a tone input of ours (split toning, Tone Balance, Blacks / Whites, the curves).
+LIVE = 'live-view-tone-tables-follow-a-change'
+DEV_FN = 0x605196b4
+LIVE_TONE = 8
+LIVE_SPLIT_A, LIVE_SPLIT_B = bytes([8, 5, 1, 5]), bytes([3, 2, 1, 5])   # COLOR 1's slot +55..+58
+# name: (pokes before the pass, C+60 before, C+60 after, the tables: 'same' as the last pass, 'new', or None)
+LIVE_CASES = [
+    ('first', [['P+87', LIVE_SPLIT_A.hex()]], 0, 0, 'new'),
+    ('unchanged', [], 0, 0, 'same'),
+    ('hue-only', [['P+32', '02']], 0, 0, 'same'),
+    ('split-toning', [['P+87', LIVE_SPLIT_B.hex()]], 0, LIVE_TONE, 'new'),
+    ('unchanged-again', [], 0, 0, 'same'),
+    ('curves', [['LIVE0', '000002040200']], 0, LIVE_TONE, 'new'),
+    ('tone-balance', [['P+65', '02']], 0, LIVE_TONE, 'new'),
+    ('blacks', [['P+79', '03']], 0, LIVE_TONE, 'same'),
+    ('other-bits-kept', [['P+88', '04']], 0x40, 0x40 | LIVE_TONE, 'new'),
+    ('still', [['P+88', '03'], ['B+0x40e', '0010']], 0, 0, None),
+    ('live-after-still', [['B+0x40e', '3000']], 0, LIVE_TONE, None),
+    ('video', [['P+88', '01'], ['B+0x300+24', f'{VIDEO_MODE:02x}']], 0, 0, 'same'),
+]
+LIVE_LAST_PHOTO = [['P+88', '03']]       # the look 'live-after-still' built (video's change is not one of ours)
+
+
+def run_livelook(emu, build, out, card0):
+    """LIVE_CASES in order, each a pass of the development function on the same fake live-view job: C+60 after the
+    pass as the case says (our bit only after a change of a tone input, in a photo mode, not on a still; the camera's
+    own bits kept), the tables as the case says. Blacks: the luminance LUT remapped (tone: O+3828 = O+3832). Then a
+    fresh job with the last photo look: its tables must equal those the last bit-set pass built."""
+    d = out / LIVE
+    d.mkdir(parents=True, exist_ok=True)
+    sym = elf_symbols(build / 'p.elf')
+    live0 = f'{sym["cv_ram"] + CV_LIVE:#x}'
+    job = [['B', 'dd'], ['B+1', f'={DEV_FN:#x}-B'], ['B+5', 'f030'],
+           ['B+0x200', '00' * 0x100], ['B+0x400', '00' * 0x800], ['B+0x1000', '00' * 0x1000],
+           ['B+0x204', '=B+0x400'], ['B+0x20c', '=B+0x1000'], ['B+0x230', '=11'],
+           ['B+0x408', '00000b00'], ['B+0x40e', '3000'], ['B+0x400+1660', '40143018' * 2],
+           ['B+0x400+1524', '=B+0x3000'], ['B+0x3000', '00' * 0x1800],
+           [f'{sym["rc_in"]:#x}', '=B+0x300'], ['B+0x300', '00' * 32], ['B+0x300+24', f'{PHOTO_MODE:02x}']]
+    clean = [['P+32', '00'], ['P+65', '00'], ['P+79', '00'], ['P+87', '00000000'], [live0, bytes(CV_SLOTS).hex()]]
+    read = [['B+0x1000+1252', 3 * TABLE_BYTES], ['B+0x23c', 4], ['B+0x1000+3828', 4]]
+    def case(name, mem, c60):
+        mem = [[live0 if a == 'LIVE0' else a, v] for a, v in mem] + [['B+0x23c', c60.to_bytes(4, 'little').hex()]]
+        return {'name': name, 'pc': 'B', 'regs': {'a0': 'B+0x200'}, 'max': 5000000, 'mem': mem, 'stop': ['B+7'],
+                'read': read}
+    first = LIVE_CASES[0]
+    spec = [case(first[0], job + clean + first[1], first[2])]
+    spec += [case(n, mem, c0) for n, mem, c0, _, _ in LIVE_CASES[1:]]
+    spec.append(case('fresh-job', job + LIVE_LAST_PHOTO, 0))
+    spec.append({'name': 'reset', 'pc': 'B', 'stop': ['B'], 'max': 1, 'mem': clean})
+    res = run_ncall(emu, build, d, card0, 's1 ncall', spec)
+    if isinstance(res, str):
+        return LIVE, [res]
+    base = int(json.loads((d / 'out.json').read_text())['B'], 16)
+    word = lambda h: int.from_bytes(bytes.fromhex(h), 'little')
+    errors, last, built = [], None, None
+    for name, _, _, want_c60, want_t in LIVE_CASES + [('fresh-job', None, 0, None, None)]:
+        r = res[name]
+        if r['steps'] >= 5000000:
+            errors.append(f'{name}: the development function did not return (out.json)')
+            continue
+        t, c60 = u16s(r['mem'][0]), word(r['mem'][1])
+        if want_c60 is not None and c60 != want_c60:
+            errors.append(f'{name}: C+60 after the pass is {c60:#x}, want {want_c60:#x} (out.json)')
+        if want_t == 'same' and t != last:
+            errors.append(f'{name}: the tables changed on a pass that should keep them (out.json)')
+        if want_t == 'new' and t == last:
+            errors.append(f'{name}: the tables were not rebuilt with the new look (out.json)')
+        if name == 'blacks' and word(r['mem'][2]) != base + 0x1000 + 3832:
+            errors.append(f'blacks: O+3828 is {word(r["mem"][2]):#x}, not O+3832: the LUT was not remapped (out.json)')
+        if name == 'fresh-job' and t != built:
+            errors.append('fresh-job: a full build of the last look differs from the tables the bit-set pass built '
+                          '(out.json)')
+        if want_c60 and want_c60 & LIVE_TONE:
+            built = t
+        last = t
+    return LIVE, errors
+
+
 # Tests that call our code directly through run_ncall: name -> runner(emu, build, out, card0).
-DIRECT = {WB: run_wb, HL: run_hl, CROPEL: run_cropel}
+DIRECT = {WB: run_wb, HL: run_hl, CROPEL: run_cropel, LIVE: run_livelook}
 
 
 def newest_looks():
