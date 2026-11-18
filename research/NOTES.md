@@ -3141,6 +3141,7 @@ Fork: github.com/fernandezk26/camera-stuff (Apache-2.0), branches `sdload/v0.26.
   The owner has used the "Halo" row icon and the "FILM 1*" lettering from h3 / h5 without objection.
 
 ### Our version on the camera's Firmware Version screen: first look, parked (2026-11-12; emulator / disassembly only)
+- **Picked up 2026-11-18:** built as fwver 1, see "Our version on the Firmware Version screen: fwver 1" at the end.
 - Owner: wanted for v0.28; after hearing it is more work than expected: "we can just scrap it. it can be a future
   update." Parked; nothing built. What was found, so the next try starts here:
 - **The screen:** MENU -> wrench tab page 6 "Reset/Clock/Language/Others" -> "Firmware Version" (row value "1.1" on
@@ -8063,3 +8064,53 @@ Test driver tools/emulator/focus_stacking.mjs runs this routine with controlled 
   not kept even one power cycle (owner: "xpan doesnt even last through one power cycle"); log: "tag 00000000 at
   start-up ... kept after start-up: checks 0 ... save patches 2": the tag in M was gone by the power-off, so nothing
   to restore -> crop83-3 (the #83 session).
+
+## Our version on the Firmware Version screen: fwver 1 (2026-11-18; emulator only, camera test pending; branch feature/firmware-version-screen)
+- Owner (2026-11-18): "getting our firmware version listed where you can see the other firmware version in the menu".
+  Picked up from the 2026-11-12 first look (above). Result: the page shows "Caduceus : v0.41-dev" (firmware/VERSION's
+  first word) under "Body : 1.1"; emulator only.
+- **How the "0.0" was found:** dumps of RAM before / after OK, searched for UTF-16 "0.0"; write probes on the new copies
+  (om-emu `Debugger.probes` mem ranges) caught the wide sprintf 0x610fc42c writing it, with the format "%X.%X" at
+  0x61595ada next to debug strings "Menu_Version_Viewer::part_guide", "inside /* Body if */", "VerInfo = %d". The
+  2026-11-12 note that 0x610fc42c is not used for this page was wrong (that trace watched the draw, not the build).
+- **The build:** Menu_Version_Viewer's method 0x6120af34 (a0 the viewer; frame 84: (20,sp) the block = viewer + 2460,
+  (24,sp) block + 608, (28,sp) the viewer, (32,sp) a line index, (36,sp) the label table 0x61595a28). The block:
+  +0 the line count; +4 + 124 k line k's record (0x611c782f(a0 viewer, d0 record, a1 label) copies a label
+  {u16 type, u16 id, ptr}: type 4 = a string id, kept at record +4; types 1/2/5/6 carry an ASCII text, made wide at
+  record +12); +516 + k / +560 + k the ":" / value widgets' look (5 at the start, 0 for a line with an update);
+  +520 + 10 k the value text ("%X.%X", 10 bytes a line, to +560); +564 + k / +568 + 10 k a second value ("1.1 -> 1.2",
+  the update view); +608 + 2 k two style bytes. Labels 0x615959d8.. = {4, 0x6c3 "Body"}, {4, 0x6c4 "Lens"},
+  {4, 0x6c5 "Flash"}, {4, 0x6c6 "Acc"}. Body: "if" branch (0x6120b110, a new version readable: the update view, the
+  line highlighted with an arrow and a second value) or "else if" (0x6120b1c4: label and value only); om-emu takes
+  "else if" ("Body : 0.0"). Then Lens (0x6120b217, vtable +16 with 7), Flash (12), Acc (9), each added at index a3.
+  **Every path ends at 0x6120b698** (mov (20,sp),a0; mov a3,d0; movbu d0,(a0); ret [d2,d3,a2,a3],84).
+- **The page:** the GUI copies the block's first 616 bytes (a DMA / native copy: CPU write probes see nothing) and its
+  binder 0x6115e98d switches on the count (1 -> 0x6115e9af, 2 -> 0x6115ebb4, 3 -> 0x6115ee43, 4 -> 0x6115f057): one
+  layout per count, rows at y 269 / 237, 301 / 205, 269, 333 / 173, 237, 301, 365 (om-emu's 900 x 600 screen). Per line:
+  label widget (0x6128b0fd from the record; type 4 -> the string getter 0x610f56a6, so st_get answers our ids), ":"
+  (0x614213e0), value (0x610e2165: compares, then copies the text up to its 0 into a heap string: any length).
+  Geometry table 0x61420000..0x614201b8, (x, y, w, h) shorts, two places per item (the item records 0x6142095c + 0x60 n
+  point at the first): label 213 / 263 (w 160, right-aligned), ":" 393 / 443, value 427 / 477 (**w 80**), second value
+  537 / 587. The second places (263 / 443 / 477) are the plain lines; the first the update view's (shifted 50 px left
+  for the arrow and second value).
+- **fwver 1 (firmware/src/fwver.s):** hook_fv at 0x6120b698 -> fv_add (ext13): with 1..3 camera lines, line k = the
+  count gets our label {4, ST_FWV 0x7f64} through 0x611c782f and the name copied to +520 + 10 k, running on into the
+  free slots after it (14 letters with 1 camera line, 9 with 2, 4 with 3); a name that does not fit is left out whole.
+  The looks bytes are left as the build's start set them, as the camera's own "else if" lines: plain, never the update
+  view's highlight (a first try copied line 0's looks: in the update view our line came out highlighted with the
+  Body line, so that was dropped). st_get's end (st_stk) jumps to fv_chk (ext13; same 5-byte jmp, nothing in ext11
+  moves) for "Caduceus", then crop.s cr_str as before. build.py DATA widens the 7 plain value boxes 80 -> 300 px (x 477
+  + 300 = 777 of 900): at 80 px "v0.41-dev" showed as "v0.4" (clipped). The camera's "1.1" stays at the box's left;
+  the update view's boxes (x 427) are left alone.
+- **Emulator (forcing branches with pokes on the build's code: 0x6120b10b c8 -> ca the Body "if" branch, 0x6120b22b
+  -> the Lens line, 0x6120b3ac -> the Flash line):** Body + ours; update view: Body highlighted with "0.0 -> 0.0", ours
+  plain below; Body, Lens, ours; Body, Lens, Flash: no line of ours (4 letters of room); update view + Lens + ours.
+  OK goes back to the same menu screen. **Not known:** the camera's look (font, colours) and which Body branch the
+  camera takes with no update file (expected: "else if", the plain line).
+- **Tests (tools/test/emu_test.py):** firmware-version-page-shows-our-line, -long-name-shows-whole (14 letters poked
+  into fv_ver, which build.py pads to 16; ink right of the old 80-px edge: a build without the wider boxes fails it,
+  "no ink"), -our-line-after-a-lens, -name-too-long-left-out, -line-not-at-start-up (fv_add never reached by a boot
+  with no menu). Driver tokens: `atmem:PC:REG+OFF*+OFF=HEX` (memory checked when the code reaches PC; several add up:
+  om-emu has one exec trace) / `expect:atmem`, `expect:ink:` / `expect:noink:` (a screen box with / without drawing).
+- Start-up rule: hook_fv runs only inside the page's build (a menu key); the hook is in section 7, our code in ext13
+  (section 6), section-order passes. hooks.json: hook_fv and the 7 width runs 0x614200ec..0x6142014c:2, reviewed.
