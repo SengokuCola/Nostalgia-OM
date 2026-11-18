@@ -55,7 +55,7 @@ WB per film, the Blacks / Whites grid) the colour profiles are complete for now;
 
 | Feature | What it means | Status |
 |---|---|---|
-| **Focus stacking with any lens** | The camera's focus stacking (and focus bracketing) with any autofocus lens, not only OM's listed ones. | Planned |
+| **Focus stacking with any lens** | This fork removes the stacking-capability rejection for otherwise eligible autofocus lenses. Focus bracketing is unchanged. [Scope and camera test](docs/FOCUS_STACKING.md). | Experimental fs1; not camera-tested |
 | **Panasonic lenses work properly** | The aperture ring on Panasonic lenses that have one sets the aperture ([#29](https://github.com/androidfanman/caduceus-om3/issues/29)). Waiting for focus before the picture with lenses like the Panasonic 20mm f/1.7 ([#13](https://github.com/androidfanman/caduceus-om3/issues/13)) is not planned (owner, 2026-11-13). | Planned |
 
 ## Buttons and controls

@@ -7867,3 +7867,11 @@ camera's own info-display settings, with show / hide per item, several set-ups, 
   when the camera builds a live-view development job. Hue and Light go through the camera's own colour tables.
   The 2026-11-15 notes ("RGB curves: live view refresh") found no refresh path for st_run under the old sector-id
   write either, and the owner chose to keep the half-press for curves. Owner: not new, no fix now.
+
+## 2026-11-18 — Focus stacking lens unlock fs1 (Bensonson fork)
+
+Status: analysis and emulator only; no camera result. Target: M.Zuiko 17mm f/1.8 II and other otherwise eligible AF lenses. Upstream main e32363a lists this as Planned; no matching implementation found in its archive, history or current branch names. A related E-M1 II implementation is credited in docs/FOCUS_STACKING.md.
+
+Official OM-3 1.1 package SHA-256 8c133084414533159f587bf46bfb4152714c4074312a47c8d8503e33d605696d; decoded main SHA-256 5e8d376e9111a44ac0352f26030d7c1b17026d42c45f3600cfa02a0e8c5b7d59. The diagnostic string at 0x60a3c8cc identifies fcs_check_focus_stacking_enable at 0x60901988. First query 0x602f3671 → nonzero rejects at 0x60901992 (unchanged). Second query 0x602fdc68 → lens-record stacking flag at +119091; not 1 rejects at 0x6090199e. The sole behavior edit is the latter two-byte branch to NOPs. The routine still returns through its original diagnostic and register/stack epilogue. No added startup work or code space. Reviewed patch site 0x6090199e:2 added explicitly to hooks.json; no baseline regeneration.
+
+Test driver tools/emulator/focus_stacking.mjs runs this routine with controlled query results, checks four decision cases and preservation of d2/d3/a2/a3/sp. Real lens commands, focus travel and composite generation remain camera-only. Build identity fs1 makes this distinguishable from the camera-tested upstream release. See docs/FOCUS_STACKING.md for the pending camera checks.

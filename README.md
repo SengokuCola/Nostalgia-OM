@@ -6,6 +6,8 @@
 
 <h1 align="center">Caduceus for OM-3</h1>
 
+> **Experimental fork: focus stacking lens unlock (fs1).** OM-3 firmware 1.1 only. Removes the stacking-capability rejection for otherwise eligible autofocus lenses. Not camera-tested, including the M.Zuiko 17mm f/1.8 II. The upstream downloads below do **not** include this change. See [build and camera test instructions](docs/FOCUS_STACKING.md).
+
 
 <p align="center"><strong>Film looks and a colour editor, built into the OM SYSTEM OM-3.</strong></p>
 
