@@ -8470,6 +8470,33 @@ s_sel2:                           /* the selector's frame; a0 = context */
 9:
  jmp SEL
 
+/* #75: a touch re-arms the open screen's idle timer through shared code (0x612a8db3), with id 500 at 8000 ms for
+ * every touch screen. In Picture Mode (GUI state 0x0418) it gets 30000 ms, as Picture Mode's own arms. */
+.section .hook_tch,"ax"
+ call s_tch,[d2,d3],12            /* stock 0x612a8db3: call 0x612970e8,[d2,d3],12 (d0 timer id, d1 ms) */
+
+.section .ext11,"ax"
+s_tch:                            /* the timer start's frame; d2 / d3 are saved by it */
+ cmp 500,d0
+ bne 9f
+ cmp 8000,d1
+ bne 9f
+ mov a0,d2
+ mov (0x603713a4),a0              /* the GUI state's two bytes {parent, child}, as fl_pm */
+ cmp 0,a0
+ beq 8f
+ movbu (a0),d3
+ cmp 4,d3
+ bne 8f
+ movbu (1,a0),d3
+ cmp 0x18,d3
+ bne 8f
+ mov 30000,d1
+8:
+ mov d2,a0
+9:
+ jmp TMR_ARM
+
 /* ft4: the end of the combiner set-up tail 0x605053ec (combiner 1's case and one other): `mov d0,(152,a2)` then
  * code block +128 (xb_c1e: COLOR's chroma back when flagged), then the stock `ret [d2,d3,a2,a3],28`. */
 .section .hook_c1e,"ax"

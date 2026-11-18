@@ -80,6 +80,7 @@ HOOKS = {'.hook_color': (0x60518615, bytes.fromhex('cd6cfdf060')),
          '.hook_rsp': (0x611c3cb5, bytes.fromhex('5c14f8bc20f87058')),
          '.hook_su': (0x604b7730, bytes.fromhex('cdab20f088')),
          '.hook_sel2': (0x60504b5d, bytes.fromhex('dddc830200a00c')),
+         '.hook_tch': (0x612a8db3, bytes.fromhex('dd35e3feffc00c')),   # #75: the shared touch re-arm (call 0x612970e8,[d2,d3],12)
          '.hook_c1e': (0x605053cc, bytes.fromhex('fa129800dff01c')),
          '.hook_wl': (0x604b8d91, bytes.fromhex('f1ecf000fa08e814')),
          '.hook_trs': (0x604cf156, bytes.fromhex('ddf083d0ffe010')),   # better grain g1: the grain tile's size (texture builder)
@@ -102,11 +103,16 @@ WORDS = {0x60e57480: (0x60b86de7, 'cv_get'), 0x60e57490: (0x60b86e09, 'sl_cnt'),
          **{a + 24: (0x61224c1c, 'ed_r') for a in (0x615adcc4, 0x615adcfc, 0x615add34, 0x615add6c)},   # all colours stay
          # v0.22: the Picture Mode column for COLOR1-4 (modes 54/55/56/64 + 1 in the builder's switch table) -> pm_color
          **{a: (0x611bd8fd, 'pm_color') for a in (0x615335e4, 0x615335ec, 0x61533614, 0x61533574)}}
+PM_IDLE_SITES = (0x611c2243, 0x611c22ae, 0x611c232d, 0x611c2481, 0x611c25dc, 0x611c274b, 0x611c28ac, 0x611c29ef,
+                 0x611c3b20)
 # bytes, stock -> new (v0.22 used one for the column list; v0.23 builds the list in pm_list instead).
 # v0.23 sliders: the left-column readout of the Sharpness row (item 7) looks its value up in 5-entry tables (-2..+2):
 # both lookups (sign 0x611d1697, digit 0x611d1708) now take the 11-entry -5..+5 tables of Shading (item 5399).
 DATA = {0x611d16c2: (bytes.fromhex('fcdc48c65461ca10'), bytes.fromhex('fcdca0ca5461ca24')),   # mov 0x6154caa0,a0; bra -> mov 11,d3
-        0x611d1733: (bytes.fromhex('fcdc70c65461ca10'), bytes.fromhex('fcdcf8ca5461ca24'))}   # mov 0x6154caf8,a0; bra -> mov 11,d3
+        0x611d1733: (bytes.fromhex('fcdc70c65461ca10'), bytes.fromhex('fcdcf8ca5461ca24')),   # mov 0x6154caf8,a0; bra -> mov 11,d3
+        # Picture Mode's idle timer (id 500): mov 8000,d1 -> mov 30000,d1 at every id-500 arm in 0x611c20ad..0x611c3cc2.
+        # The white balance screen just after it keeps 8000, as do the others. Signed 16-bit: 32767 ms max.
+        **{a: (bytes.fromhex('2d401f'), bytes.fromhex('2d3075')) for a in PM_IDLE_SITES}}
 EXT2 = (0x607187a8, 0x60718800)            # section-2 tail (FF from 0x607187a4, end 0x60718800; v0.20)
 EXT7 = (0x6164afd0, 0x6164b000)            # section-7 tail (FF from 0x6164afcc, end 0x6164b000; v0.20)
 EXT9 = (0x619a9670, 0x619a97f0)            # section-9 tail (FF from 0x619a966c, end 0x619a9800)

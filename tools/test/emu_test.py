@@ -250,6 +250,29 @@ WHEEL_DIAL_SKIPS_ALL = (f'{OPEN_WHEEL} sub+1 wait expect:val:{CURSOR}=255 sub-1 
 VIVID_SIZE = 1660                 # the camera's own dial label picture
 WHEEL_RESET_LABEL = (f'{OPEN_WHEEL} info wait info wait {LABEL_IS("Hue")} menu wait menu wait s1 wait wait '
                      f'expect:mem:{VDESC + 12:x}={U32(VIVID_SIZE)} {OPEN_WHEEL} {LABEL_IS("Sat")} poweroff')
+# Picture Mode closes after 30 s idle (#75, stock 8 s), counted again from each key or dial turn. The super control
+# panel and the white balance screen keep 8 s. A dial turn every 12 s keeps the wheel open for 48 s.
+WAITS = lambda n: 'wait ' * n     # a wait, a dial or an expect token runs 1.2 s, a key 1.35 s
+PICTURE_MODE, SHOOTING = 'expect:gui:ID_ST_DIRECT_PICTUREMODE_ART', 'expect:gui:ID_ST_CA_REQ_DISP'
+PANEL, WHITE_BALANCE = 'expect:gui:ID_ST_MENU_DTL_SCP', 'expect:gui:ID_ST_DIRECT_WB'
+OPEN_PICTURE_MODE, OPEN_WHITE_BALANCE = 's1 wait wait ok wait ok wait', 's1 wait wait ok wait right wait ok wait'
+PICTURE_MODE_IDLE_30S = (f'{OPEN_PICTURE_MODE} {WAITS(12)}{PICTURE_MODE} down {WAITS(14)}{PICTURE_MODE} '
+                         f'{WAITS(11)}{SHOOTING} poweroff')
+PANEL_IDLE_8S = f's1 wait wait ok {PANEL} {WAITS(8)}{SHOOTING} poweroff'
+WHEEL_DIAL_KEEPS_OPEN = lambda dial: f'{OPEN_WHEEL} ' + f'{dial}+1 {WAITS(9)}' * 4 + f'{PICTURE_MODE} poweroff'
+PICTURE_MODE_KEEPS_OPEN = lambda token: f'{OPEN_PICTURE_MODE} {token} {WAITS(9)}{PICTURE_MODE} poweroff'
+WHITE_BALANCE_IDLE_8S = f'{OPEN_WHITE_BALANCE} {WHITE_BALANCE} down {WAITS(9)}{SHOOTING} poweroff'
+# A touch re-arms the screen's idle time through shared code (0x612a8db3, our s_tch). In Picture Mode a tap on the
+# COLOR 2 tab gives 30 s. A tap on the super control panel goes through the same code and keeps its 8 s.
+COLOR2_TAB, PANEL_TAP = 'tap:393:550', 'tap:360:300'
+TOUCH_ARM_KEPT = 'keep:{s_tch}:{TMR_ARM}:d1'   # the hook ran and left the time as it was
+PICTURE_MODE_TOUCH_30S = (f'{OPEN_PICTURE_MODE} {COLOR2_TAB} {WAITS(16)}{PICTURE_MODE} {WAITS(9)}{SHOOTING} poweroff')
+PANEL_TOUCH_8S = f's1 wait wait ok {PANEL} {TOUCH_ARM_KEPT} {PANEL_TAP} {WAITS(7)}expect:kept {SHOOTING} poweroff'
+# Of the camera's 35 touch layouts only Picture Mode's re-arms id 500. A tap on the function screen (the panel, up,
+# ok) reaches s_tch with its own timer, id 512 at 8000 ms, and the screen still closes after 8 s.
+FUNCTION = 'expect:gui:ID_ST_MENU_FUNC_DIRECT'
+FUNCTION_TOUCH_8S = (f's1 wait wait ok wait up wait ok {FUNCTION} hit:{{s_tch}}:d0=512,d1=8000 tap:150:100 '
+                     f'{WAITS(4)}{FUNCTION} {WAITS(2)}expect:hit {SHOOTING} poweroff')
 
 @dataclass
 class Boot:
@@ -510,6 +533,33 @@ TESTS = {
     ],
     'color-wheel-saturation-guide-names-the-page': [
         Boot(WHEEL_SAT_GUIDES),
+    ],
+    'picture-mode-closes-after-30-s-idle': [
+        Boot(PICTURE_MODE_IDLE_30S),
+    ],
+    'super-control-panel-closes-after-8-s-idle': [
+        Boot(PANEL_IDLE_8S),
+    ],
+    'picture-mode-rear-dial-restarts-the-idle-time': [
+        Boot(WHEEL_DIAL_KEEPS_OPEN('main')),
+    ],
+    'picture-mode-front-dial-restarts-the-idle-time': [
+        Boot(WHEEL_DIAL_KEEPS_OPEN('sub')),
+    ],
+    'picture-mode-up-key-restarts-the-idle-time': [
+        Boot(PICTURE_MODE_KEEPS_OPEN('up')),
+    ],
+    'picture-mode-touch-restarts-the-idle-time': [
+        Boot(PICTURE_MODE_TOUCH_30S),
+    ],
+    'super-control-panel-touch-keeps-8-s': [
+        Boot(PANEL_TOUCH_8S),
+    ],
+    'function-screen-touch-keeps-8-s': [
+        Boot(FUNCTION_TOUCH_8S),
+    ],
+    'white-balance-closes-after-8-s-idle': [
+        Boot(WHITE_BALANCE_IDLE_8S),
     ],
     'video-boot-after-photo-boot': [
         Boot('s1 wait wait poweroff'),

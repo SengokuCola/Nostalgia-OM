@@ -15,6 +15,7 @@ SECTIONS {
   .hook_rsp     0x611c3cb5 : { *(.hook_rsp) }
   .hook_su      0x604b7730 : { *(.hook_su) }
   .hook_sel2    0x60504b5d : { *(.hook_sel2) }
+  .hook_tch     0x612a8db3 : { *(.hook_tch) }     /* #75: a touch's idle re-arm, 30 s in Picture Mode */
   .hook_c1e     0x605053cc : { *(.hook_c1e) }
   .hook_wl      0x604b8d91 : { *(.hook_wl) }
   .hook_trs     0x604cf156 : { *(.hook_trs) }
@@ -223,6 +224,7 @@ lv_skip       = 0x6046b94f;
 wt_back       = 0x605048c7;
 XTAG          = 0x58000000;
 SEL           = 0x6052cf39;
+TMR_ARM       = 0x612970e8;   /* #75: start a timer (d0 id, d1 ms) */
 sdl_hls_loop     = 0x60af0fff;
 sdl_classifier   = 0x60af10da;
 sdl_resume       = 0x60af1021;

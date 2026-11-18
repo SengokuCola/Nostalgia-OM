@@ -7045,3 +7045,54 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   Picture Mode, the Border row, the RGB page) byte for byte as border preview 1's (db1fedfa…). Package
   `test-builds/2026-11-17-section-gates-1` (private folder), go-back border preview 1 db1fedfa…a732 + its GUIDES.BIN
   852cb6f2…. Camera test pending: start-up first (on / off several times, EVF, playback), then everyday use.
+
+## #75: Picture Mode closes after 30 s idle, not 8 s (2026-11-17; experiment/film-page-timeout; fix camera-tested)
+
+- **Timer:** the camera's software timers sit in a table at `0x6036f984`, 10 entries of 28 B: +0 active, +4 start
+  time, +20 event id, +24 duration in ms. `call 0x612970e8` starts one, with d0 = event id and d1 = ms. Menus share
+  id 500 at 8000 ms, armed from 89 sites. The super control panel uses id 510, also 8000 ms.
+- **Patch:** `PM_IDLE_SITES` in `firmware/build.py` changes `mov 8000,d1` (`2d 40 1f`) to `mov 30000,d1`
+  (`2d 30 75`). The sites are all 9 id-500 arms in Picture Mode's code, `0x611c20ad..0x611c3cc2`. The immediate is
+  signed 16-bit, so a byte patch gives 32767 ms at most. No hook, nothing at start-up.
+- **Which code is which screen (emulator):** a factory table at `0x615025d8` pairs screen classes with screen ids.
+  `0x611c20ad` (id 0x3d) builds Picture Mode. The next one, `0x611c3cc2` (id 0x3c, vtable `0x6153734c`), builds the
+  white balance screen `ID_ST_DIRECT_WB`, opened from the super control panel with `right` then `ok`.
+- **Picture Mode's 9 sites (emulator):** open `0x611c2243`, up `0x611c22ae`, down `0x611c232d`, left `0x611c2481`,
+  right `0x611c25dc`, rear dial `0x611c274b`, front dial `0x611c28ac`, INFO `0x611c29ef`, and a touch `0x611c3b20`. A
+  touch arrives as message 0x9755: `0x611c2a0b` looks it up in `0x61536e2c` and calls `0x611c33bd`, which re-arms
+  the timer at `0x611c3b20`. A tap on a COLOR tab reaches it.
+- **Touch gave 8 s (emulator; fixed by `.hook_tch` below):** after `0x611c3b20` arms 30 s, the shared touch code re-arms id 500 at
+  8000 ms from `0x612a8db3`. It takes the id and time from a record at `0x62cf5e14`, which `0x612ae7a1` fills with
+  500 and 8000. That function is the third entry of a vtable at `0x61639130` that all touch screens share, so
+  patching it would change every screen's time after a touch. A Picture Mode-only fix would need a hook. Not done:
+  the owner's call. The `0x611c3b20` patch stays, so a future fix only has to deal with the shared re-arm.
+- **Camera (crombach, build f05229b, `E1479999.BIN` 18fe2e4e...):** passed. Picture Mode and its rows stay open about
+  30 s after the last input, and each key or dial turn starts the 30 s again. The super control panel still closes
+  after 8 s. Sleep, start-up, a photo with a film, and a short video work as before. Other menus were not checked.
+- **Review of f05229b (2026-11-17, emulator):** that build patched 12 sites. It missed `up` and touch in Picture Mode,
+  so Picture Mode still closed 8 s after either. Its other 5 sites, `0x611c3e79`, `0x611c3f2b`, `0x611c4001`,
+  `0x611c40dd` and `0x611c41fb`, are the white balance screen's down, left, right and dial handlers, so that screen
+  stayed open 30 s after them but 8 s after it opened or after `up`. The fix patches `0x611c22ae` and `0x611c3b20`
+  and gives the white balance screen back all 7 of its stock 8000 ms arms. `up` now gives 30 s. A touch still gives
+  8 s, as above. The camera test of f05229b did not try `up`, a touch, or the white balance screen. The fixed build
+  is not camera-tested.
+- **Camera (crombach, 2026-11-17, build f05229b): the white balance bug is confirmed.** With no key pressed, the white
+  balance screen closed after 8 s. After `down`, it stayed open about 30 s.
+- **Camera (crombach, 2026-11-17, build ed2523c5..., the fix without a touch hook): a touch gives 8 s.** A tap on a
+  COLOR tab in Picture Mode closed it after 8 s, as the emulator showed. Wanted: 30 s.
+- **Touch hook `.hook_tch` (2026-11-17; camera-tested, see below):** the hook replaces
+  `call 0x612970e8,[d2,d3],12` at `0x612a8db3` (stock bytes `dd35e3feffc00c`). It calls `s_tch` in `.ext11`, 47 B, in
+  the same frame. When d0 is 500, d1 is 8000 and the GUI state is 0x0418, d1 becomes 30000. The GUI state is the two
+  bytes at the pointer `0x603713a4`, read as `fl_pm` does. Then it jumps to `0x612970e8`. Every other screen keeps
+  the stock time, and nothing runs at start-up.
+- **Touch hook in the emulator:** a tap on the COLOR 2 tab keeps Picture Mode open about 20 s, and it closes by about
+  32 s. A tap on the super control panel goes through the hook with its time unchanged, since it is not id 500 at
+  8000. The panel closes after 8 s. Taps on the white balance screen and on several panel sub-screens never reached
+  the shared re-arm, so no other id-500 touch screen was tried.
+- **Which touch screens re-arm id 500 (analysis, then emulator):** of the 35 touch layouts in the table at
+  `0x6161e164`, only layout 28 (vtable `0x61639130`, so not shared by all touch screens as guessed above) re-arms
+  id 500, through `0x612ae7a1`. Only Picture Mode opened it. A tap on the function screen (panel, `up`, `ok`)
+  reaches `s_tch` with id 512 at 8000 ms, left as it is: test `function-screen-touch-keeps-8-s`.
+- **Camera (crombach, 2026-11-17, build 9b8a861a...): passed.** A tap and every key, `up` included, give Picture
+  Mode 30 s. Other touch menus and a screen opened from Picture Mode close after 8 s. The white balance screen closes
+  8 s after `down`. Photo, video, sleep and start-up work as before.

@@ -78,6 +78,7 @@ if (process.env.MMIO) Debugger.attach(lab.sim, { lab }).traceMmio((r) => fs.appe
 // (at_PC_N.png, no scene tick first), the state the camera's display can show mid-update.
 let shotArm = false, shotN = 0; let kept = 0;   // keep: checks passed
 const counts = new Map();   // count: / expect:count: (PC -> { any, d0, n })
+let hits_n = 0;                                 // hit: matches
 if (process.env.SHOTAT) Debugger.attach(lab.sim, { lab }).traceExec((r) => { if (shotArm) shot('at_' + r.pc.toString(16) + '_' + shotN++ + '.png', false); },
   { pcs: process.env.SHOTAT.split(',').map((x) => parseInt(x, 16) >>> 0) });
 // getv(id): the camera's setting id through the getter 0x603f0111, run on a stub below the stack ('X' if it never returns).
@@ -150,6 +151,11 @@ for (const t of SCRIPT.split(/\s+/).filter(Boolean)) {
     const at = (X, Y) => Buffer.from(px.slice((Y * w + X) * bpp, (Y * w + X) * bpp + 3)).toString('hex');
     if ((at(x, y) === at(x2, y2)) !== same) { console.error(`${t}: ${at(x, y)} / ${at(x2, y2)}`); process.exit(1); }
   }
+  else if (t.startsWith('expect:gui:')) {
+    // expect:gui:NAME ends the run with exit 1 unless the GUI state's name ends with NAME.
+    const got = String(lab.state_names.get(lab.state()) ?? lab.state());
+    if (!got.endsWith(t.slice(11))) { console.error(`expect:gui: ${got}, not ${t.slice(11)}`); process.exit(1); }
+  }
   else if (t.startsWith('keep:')) {
     // keep:ENTRY:EXIT:REG ends the run with exit 1 if REG at EXIT differs from REG at the last ENTRY (hex PCs): a
     // callee-saved register the function must give back. expect:kept checks that EXIT was reached at least once.
@@ -168,6 +174,15 @@ for (const t of SCRIPT.split(/\s+/).filter(Boolean)) {
     const got = Buffer.from(rd(at, hex.length / 2)).toString('hex');
     if (got !== hex.toLowerCase()) { console.error(`expect:p ${o}: ${got}, not ${hex}`); process.exit(1); }
   }
+  else if (t.startsWith('hit:')) {
+    // hit:PC:REG=V,... counts each time the code reaches PC (hex) with each REG = V (decimal). expect:hit fails if
+    // none did.
+    const [pc, cond] = t.slice(4).split(':'), P = parseInt(pc, 16) >>> 0;
+    const want = cond.split(',').map((kv) => { const [reg, v] = kv.split('='); return [reg, parseInt(v, 10) >>> 0]; });
+    const dh = Debugger.attach(lab.sim, { lab });
+    dh.traceExec(() => { const g = dh.regs(); if (want.every(([reg, v]) => (g[reg] >>> 0) === v)) hits_n++; }, { pcs: [P] });
+  }
+  else if (t === 'expect:hit') { if (!hits_n) { console.error('expect:hit: no hit: match'); process.exit(1); } }
   else if (t.startsWith('expect:isdef:')) {
     // expect:isdef:FN:ID=V ends the run with exit 1 unless FN (hex, an "is at default" entered as the stock one,
     // `call FN,[d2,d3,a2],24`, d0 id -> d0 1 default) answers V (0 or 1) for ID (hex): a row's '*' is V = 0.
@@ -325,6 +340,9 @@ for (const t of SCRIPT.split(/\s+/).filter(Boolean)) {
   }
   else if (t === 'poweroff') {           // the power lever off and the firmware's own power-off (om-emu H-POWER, S-SHUTDOWN); ends the run
     s.switch_input('power', 1 - s.bit_of('power')); const off = s.power_down(); log.push({ step: t, power_off: off ? true : null }); break;
+  }
+  else if (t.startsWith('tap:')) {        // tap:X:Y touches the rear screen at X,Y (pixels) for 150 ms
+    const [x, y] = t.slice(4).split(':').map(Number); s.touch('down', x, y); s.idle_slice(lab.lab_time() + 150e6); s.touch('up', x, y);
   }
   else if (t.startsWith('hold:')) { const k = t.slice(5); s.key(k, 'down'); s.camapp.pump(); s.idle_slice(lab.lab_time() + 2000e6); s.key(k, 'up'); s.camapp.pump(); }
   else if (t !== 'wait') { s.key(t, 'down'); s.camapp.pump(); s.idle_slice(lab.lab_time() + 150e6); s.key(t, 'up'); s.camapp.pump(); }
