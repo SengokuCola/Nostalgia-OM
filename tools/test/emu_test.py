@@ -27,6 +27,7 @@ DRIVER = REPO / 'tools/emulator/session_ed1.mjs'
 DEBUG_TXT = REPO / 'debug-log/DEBUG.TXT'
 MODEL = 'E147'
 AUDIT = 'patch-audit'
+STACKING = 'focus-stacking-allows-unlisted-lenses-keeps-exclusions'
 # h7 (faster halation, 2026-11-16): the halation pass called directly on test frames must give every byte of
 # research/halation/model.py (research/halation/emu_check.py). Small frames, about 10 s.
 HALATION = 'halation-matches-the-model'
@@ -602,6 +603,18 @@ def run_audit(emu, build, out):
     return AUDIT, [f'{k}: {json.dumps(audit[k])}' for k in ('unloaded', 'tasks') if audit[k]]
 
 
+def run_stacking(emu, build, out, card):
+    """Actual eligibility routine with controlled lens-query results; capture stays camera-only."""
+    d = out / STACKING
+    d.mkdir(parents=True, exist_ok=True)
+    r = node(REPO / 'tools/emulator/focus_stacking.mjs', emu, build / 'main.bin', card, d / 'cases.json',
+             env={**os.environ, 'OM_EMU_MODEL': MODEL})
+    (d / 'session.log').write_text(r.stdout + r.stderr)
+    if r.returncode:
+        return STACKING, [f'eligibility test exit {r.returncode}: {r.stdout[-2000:]} {r.stderr[-1000:]}']
+    return STACKING, []
+
+
 def run_halation(emu, build, out, card):
     """hl_run on HALATION_CASES in om-emu: bit-exact with the model, registers and sp back, nothing past the frame."""
     d = out / HALATION
@@ -770,7 +783,7 @@ def newest_looks():
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('build', type=pathlib.Path)
-    ap.add_argument('--only', nargs='+', choices=sorted([*TESTS, AUDIT, HALATION, ENGINE, DIAL, VIDEO, *STATIC]))
+    ap.add_argument('--only', nargs='+', choices=sorted([*TESTS, AUDIT, STACKING, HALATION, ENGINE, DIAL, VIDEO, *STATIC]))
     ap.add_argument('--jobs', type=lambda v: max(1, int(v)), default=DEFAULT_JOBS)
     ap.add_argument('--out', type=pathlib.Path)
     ap.add_argument('--looks', type=pathlib.Path)
@@ -793,7 +806,7 @@ def main():
     looks = (a.looks or newest_looks()).resolve()
     make_card(emu, build, looks, card0)
     fixtures = make_fixtures(out, looks)
-    names = a.only or sorted([*TESTS, AUDIT, HALATION, ENGINE, DIAL, VIDEO, *STATIC])
+    names = a.only or sorted([*TESTS, AUDIT, STACKING, HALATION, ENGINE, DIAL, VIDEO, *STATIC])
     stock = static_check.find_stock(a.stock) if any(n in STATIC for n in names) else None
     runs = [(n, k) for n in names for k in range(1, a.repeat + 1)]
     print(f'{len(names)} tests{f" x {a.repeat}" if a.repeat > 1 else ""} on {build}, results in {out}')
@@ -814,6 +827,8 @@ def main():
                 return n, static_check.CHECKS[n[len(STATIC_PREFIX):]](build, stock)
             if n == AUDIT:
                 return run_audit(emu, build, d)
+            if n == STACKING:
+                return run_stacking(emu, build, d, card0)
             if n == HALATION:
                 return run_halation(emu, build, d, card0)
             if n == ENGINE:

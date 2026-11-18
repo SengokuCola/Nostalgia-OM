@@ -95,6 +95,10 @@ PM_IDLE_SITES = (0x611c2243, 0x611c22ae, 0x611c232d, 0x611c2481, 0x611c25dc, 0x6
 # v0.23 sliders: the left-column readout of the Sharpness row (item 7) looks its value up in 5-entry tables (-2..+2):
 # both lookups (sign 0x611d1697, digit 0x611d1708) now take the 11-entry -5..+5 tables of Shading (item 5399).
 DATA = {0x611d16c2: (bytes.fromhex('fcdc48c65461ca10'), bytes.fromhex('fcdca0ca5461ca24')),   # mov 0x6154caa0,a0; bra -> mov 11,d3
+        # OM-3 1.1 fcs_check_focus_stacking_enable: keep the first exclusion check at
+        # 0x60901992; bypass only the stacking-capability rejection after 0x602fdc68.
+        # bne 0x609019a2 -> nop; nop, so an otherwise eligible lens reaches mov 1,d2.
+        0x6090199e: (bytes.fromhex('c904'), bytes.fromhex('cbcb')),
         0x611d1733: (bytes.fromhex('fcdc70c65461ca10'), bytes.fromhex('fcdcf8ca5461ca24')),   # mov 0x6154caf8,a0; bra -> mov 11,d3
         # Picture Mode's idle timer (id 500): mov 8000,d1 -> mov 30000,d1 at every id-500 arm in 0x611c20ad..0x611c3cc2.
         # The white balance screen just after it keeps 8000, as do the others. Signed 16-bit: 32767 ms max.
