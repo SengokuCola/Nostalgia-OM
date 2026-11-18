@@ -6931,3 +6931,9 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   (static:hook-list: crs, crb, crg, crh, crk, crq, crr; static:changed-bytes). Sections 1..5 byte-identical to 7b;
   against 9c (camera: normal) the changes outside .ext11..13 are the two hooks and the build's version bytes.
   Package `test-builds/2026-11-17-crop-round-10`.
+- **Camera, round 10 (owner, 2026-11-17, 5f910b23…23c4): "They look great!!!!"** (the quality and ratio labels in
+  review and playback). Card (card-backups/2026-11-17-crop-round-10-tested, main chat): build "crop round 10", log
+  written at event 62, 8 photos this power-on, playback visited, **no reboot**, "nothing unusual". Photos, all normal:
+  4:3 5184 x 3888, 16:9 5184 x 2920, 3:2 5184 x 3456, 1:1 3888 x 3888, 3:4 2912 x 3888, 5:4 4864 x 3888, XPan
+  5184 x 1920, 21:9 5184 x 2224. **Camera-tested:** the ratio label (XPan / 21:9 / 5:4) and the quality label for
+  crop photos in image review and playback; the stock ratios' labels unchanged; no reboot.
