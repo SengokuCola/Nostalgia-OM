@@ -3285,6 +3285,57 @@ Fork: github.com/fernandezk26/camera-stuff (Apache-2.0), branches `sdload/v0.26.
   anyone who picks it up: the next lead would be the mask's source (the radial `ausEffectiveShadingCoefficient` table
   or another unit configured from request +1752 / +1590).
 
+## Gentler Shading s1: our own vignette on stills (2026-11-18; emulator + analysis, camera test pending; branch feature/gentler-shading)
+- **Owner (2026-11-18, #22 reopened): "the +2 and -2 options are fine, but they should be at the max end. aka, it gets
+  too strong, too quick."** Route 1 (find the camera's mask strength) looked at briefly, out of reach; route 2 (our own
+  CPU vignette on stills) described with its costs (no preview on the shooting screen or in Image Review, slower
+  saves): **owner chose route 2** ("A: our own vignette", via cad).
+- **Route 1 (analysis):** combiner 33's COLOR set-up 0x605052b2 writes only +4 0x1002, +8 0xeee, +92 0, +96 0x04000400,
+  +100 1024, +128 / +132 (the targets, s1), +144 0x151500, +148 0x04000400, +152 1024, +196 3; the dispatcher 0x60504b2b
+  first sets +76 / +80 / +104 / +128 / +132 / +156 = 0, +188 = 1, +192 = 1024, +196 = 0, and an unknown combiner id
+  falls to combiner 0 (0x605056ef). Pin Hole's combiner 9 (0x60504e65) also sets +4 0x1002 and +196 3 (a mask mode,
+  guess). +92, +96 / +100 and +196 were never probed; no field carries the level, so the strength is set elsewhere.
+- **Where a still's Shading comes from (analysis; om-emu for the getter):** the capture snapshot (0x603e7f65) reads
+  getter key **0xf7c9** (AGET id 1016, the current picture mode's Shading; COLOR k's own setting is key 0x9389 |
+  (k - 1) << 16, AGET 912 + k) into **capture +37722**; the request builder (0x60553e36, picture mode 11) copies it to
+  its block's +266 = the development's **+1752**, the byte combiner 33 reads (MONO: +37720 / +37721 / +37722 -> +264..266);
+  0x6055fd6a / 0x60558550 copy it to capture +6098 (the maker note). The builder runs after the Art Effect converter
+  (our xb_cap). Capture +37690 / +37691 (keys 0x9651 / 0x9661, values 0..4) set the job flag 0x800000 = the MONO set-up,
+  not Shading (correcting the 2026-11-08 guess that Shading reaches xb_cap as Art Effect ids 8 / 9: those are the Art
+  Filter Shade effects SHADE_V / SHADE_H, converter table 0x606e5f88). Capture +38252..: 44-byte records of the COLOR /
+  MONO profiles (0x60560e9c, +43 = Shading), built only when getter 0xd191 is 1 (likely for the maker note).
+- **s1 (commits 68b440d + merge 0741d9d with try/v0.41-dev test 2):**
+  - xblock `xb_sh` (from xb_cap after the Border check, our COLOR looks only, as Halation / Border): the getter 0xf7c9
+    (the one xb_slot already calls there) at -5..-1 / 1..5 -> capture +37722 cleared (the camera develops the still as
+    with Shading 0), VG_LVL = the level, counters VG_NT (taken over) / VG_ND (the capture's byte was not the setting's);
+    the still takes the Soft Focus passes (w 1024) as the Border alone does. xb_gs (frame 24 -> 28) runs `VG_RUN` after
+    halation and grain, before the Border. No new hook or patch site.
+  - `shading.s` `vg_run` (.ext13; budget raised 0x60fbc000 -> 0x60fc0000, inside the GX4-proven reserve; 70,160 B used):
+    our vignette on buffer 0x1000, the exact model in `firmware/shading.py`: m = |level| / 5 x M5(r), r = distance /
+    half-diagonal (a circle, in the part the camera keeps: crop.s cr_bdc, so every ratio and the crop modes); darker
+    Y' = Y (1 - m), lighter Y' = Y + m (255 - Y), Cb / Cr toward 128 by the same m (the camera's own blend, s1 / s2).
+    M5 = a monotone cubic through (r, m) (0, 0), (0.30, 0.02), (0.525, 0.28), (0.75, 0.75), (1, 0.94): the camera's -2
+    from the s2 photos (-1 / -3 averaged; corner m 0.94, s1's +5 corner on a wall 0.90). Corner Y factor at -1..-5:
+    0.81, 0.62, 0.43, 0.25, 0.06. Per photo two tables (vg_gk {g, KC2} by idx = 512 r^2, vg_nx the S where g next
+    changes); rows walked from the centre outwards, mirror pairs sharing g, both Y and both chroma bytes of a pair in two
+    32-bit multiplies (16-bit lanes). Rows through hl_open as bd_run.
+  - Debug log: "Shading (gentler s1): photos N, taken over N, capture byte differed N, last level L, last time (ms) T".
+  - VERSION "v0.41-dev (test 2 + gentler shading s1)".
+- **om-emu:** `research/shading/emu_check.py`: **23 of 23 test frames bit-exact** (darker and lighter at every level,
+  4:3 / 3:4 / 16:9 / square, 64 x 64, 1028 x 131, 8192 x 64, the crops 3:2, 16:9, 1:1, 3:4, 5:4, XPan, 21:9; levels 0, 6,
+  -6 untouched) and the 20 MP cases: **-5 195 M instructions, +3 207 M, 16:9 -5 148 M; 1944 locks, at most 108 K under
+  one** (halation h8 104..124 M). Estimate (analysis, g3's ~170 M a second and ~0.15 ms a FLUSH): about 1.2..1.5 s
+  more per 20 MP photo with Shading on, nothing with Shading 0. The first try (a lookup per couple) was 226..246 M.
+  Suite test `shading-taken-over-at-a-still`: Shading -3 set on COLOR 1's own row in Picture Mode -> xb_sh on a fake
+  capture reads -3 through 0xf7c9, clears +37722, VG_LVL 0xfd, counts; a capture byte 0 (a burst's later frame, if the
+  snapshot is shared) is counted as differing and still taken over; with Shading 0 nothing changes.
+- **Camera-only:** that clearing +37722 really stops the camera's own Shading (no effect 0x0c00 development; if the
+  corners come out with both, the camera reads the level elsewhere); the look; the time (the log's "last time"); bursts;
+  RAW+JPEG. **Known differences from v0.41-dev test 2 (the owner's call):** the shooting screen still shows the camera's
+  own (strong) Shading, from the unchanged setting, while the photo gets ours (live view's own request path was not
+  traced: a follow-up could hide it there); Image Review shows no Shading; the RAW file's maker note says Shading 0.
+  LookLab's preview (f = 1 + 0.07 s r^1.5) is not this curve yet.
+
 ## Film WB: a film sets the camera's WB (2026-11-12; emulator, probe w1)
 - Owner: films carry a Kelvin; set on the camera (a new WB row) and later in the Control Panel; values as the
   camera's own Custom WB (2000..14000 K, 100 K steps); a film or COLOR without one sets **Auto WB**.
