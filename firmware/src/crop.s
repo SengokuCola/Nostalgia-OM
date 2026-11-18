@@ -8,10 +8,11 @@
  *
  * Start-up (owner, 2026-11-13: nothing of ours while the camera starts): the camera's saved settings never hold 5 / 6 / 7
  * (cr_sin / cr_sbuf save the ratio the crop sits inside, and our tag), so the camera always starts on a stock ratio;
- * cr_rst puts the crop back at the first shutter event and sets cr_on (cr_hp: from the half-press load nm_ex, or from
- * lg_pr at a later shutter event; never from v0.30's early load at the GUI's first state change, el_nc). Until then
- * every hook here that runs while the camera draws (labels, the shooting screen's reads of 269) is the stock path plus
- * one byte read. Left out of c5's
+ * cr_rst puts the crop back and sets cr_on. #83 (2026-11-18): first at the GUI's first state change, the point where
+ * v0.30's early load puts the films in (cr_el from gx_map, GUI task, photo modes only); the first shutter event stays
+ * the fallback (cr_hp: from the half-press load nm_ex, or from lg_pr at a later shutter event). Until then every hook
+ * here that runs while the camera draws (labels, the shooting screen's reads of 269) is the stock path plus one byte
+ * read. Left out of c5's
  * build: the c4 / c5 run counters and the 0x6043900f counter hook, the playback label diagnosis, the SetValue hook
  * (cr_set: cr_rst's own check covers it), and c6's AF target lists (c6 was the only build with black screens). */
 
@@ -54,7 +55,9 @@ cr_stra:                          /* SCP strip lists A / B (stock 0x6155ea2c / 0
  .space 8 * 12
 cr_strb:
  .space 8 * 12
-cr_on:                            /* 1 from the first half-press of a power-on (cr_rst) */
+cr_on:                            /* 1 once cr_rst has run this power-on (at start-up, or the first half-press) */
+ .byte 0
+cr_dwh:                           /* #83: where cr_rst ran (the log): 1 at start-up (cr_el), 2 at a shutter event */
  .byte 0
  .balign 2
 
@@ -281,8 +284,9 @@ cr_sbuf:                          /* jmp from 0x6006120e (0x60061183's frame; a3
  jmp cr_sb_back
 
 /* cr_hp: `call cr_hp,[d2,d3,a2,a3],20` from nm_ex (sd_load's last call) and from lg_pr (every later shutter event),
- * both in the HLS_EVENT task: once per power-on, at the first shutter event, cr_rst. sd_load also runs in the early
- * load (el_go, GUI task, during start-up, el_nc 1): nothing then. */
+ * both in the HLS_EVENT task: once per power-on, at the first shutter event, cr_rst, unless cr_el already ran it at
+ * start-up. sd_load also runs in the early load (el_go, GUI task, during start-up, el_nc 1): nothing then (cr_el
+ * follows el_go in gx_map). */
 cr_hp:
  movbu (el_nc),d0
  cmp 0,d0
@@ -290,17 +294,64 @@ cr_hp:
  movbu (cr_on),d0
  cmp 0,d0
  bne 9f
- call cr_rst,[d2,d3,a2,a3],20
+ mov 2,d0
+ call cr_rst,[d2,d3,a2,a3],24     /* d0 = 2: at a shutter event */
 9:
  ret [d2,d3,a2,a3],20
 
-/* cr_rst: `call cr_rst,[d2,d3,a2,a3],20` from cr_hp (the first shutter event of a power-on, the HLS_EVENT task, where
- * ar_getv / ar_setv are used as the dial handler uses them). Sets cr_on. Our tag in M (loaded with
- * the camera's settings) says the crop the camera was saved in; if the setting still holds that crop's base, set the
- * crop again. The tag is cleared either way (the next save seals it). */
+/* cr_el (#83, 2026-11-18): `call cr_el,[d2,d3,a2,a3],20` from gx_map (the GUI task) at a GUI state change while cr_on
+ * is 0. The camera's first one comes at the end of its start-up, where v0.30's early load puts the films in (el_go,
+ * just before this in gx_map; camera-tested since v0.30): the crop goes back there too, so the shooting screen comes
+ * up in it with no half-press. As el_go: not before all ten sections are copied (the next state change tries again).
+ * Photo modes only: the camera's settings written while video live view starts freeze its image (#53, rc_go's rule);
+ * in video, a later state change in a photo mode or the first half-press (cr_hp) puts it back. The mode as el_ok
+ * reads it (ss_photo once the manager's handle is seen, else the photo / movie / S&Q switch). */
+cr_el:
+ movbu (cr_on),d0
+ cmp 0,d0
+ bne 9f
+ mov (SECBITS),d0
+ and 0x3ff,d0
+ cmp 0x3ff,d0
+ bne 9f
+ mov (rc_in),a0
+ cmp 0,a0
+ beq 1f
+ call ss_photo,[],0
+ bra 2f
+1:
+ movbu (UI_PSW),d1
+ clr d0
+ cmp 2,d1
+ bne 2f
+ mov 1,d0
+2:
+ cmp 0,d0
+ beq 9f
+ mov 1,d0
+ call cr_rst,[d2,d3,a2,a3],24     /* d0 = 1: at start-up */
+9:
+ ret [d2,d3,a2,a3],20
+
+/* cr_rst: `call cr_rst,[d2,d3,a2,a3],24`, d0 = where (1 start-up, 2 a shutter event), from cr_el (GUI task, where the
+ * dial handler makes the same ar_setv call) or cr_hp (HLS_EVENT task). Once per power-on: cr_on is claimed under LOCK
+ * (the two tasks may get here at once). Our tag in M (loaded with the camera's settings) says the crop the camera was
+ * saved in; if the setting still holds that crop's base, set the crop again. The tag is cleared either way (the next
+ * save seals it). Local (4) the crop (#83: frame 24; it was 20, where (4) is a saved register's slot). */
 cr_rst:
+ mov d0,a2
+ clr d0
+ call LOCK,[d2],8
+ mov d0,d3
+ movbu (cr_on),d0
+ cmp 0,d0
+ bne 6f
  mov 1,d0
  movbu d0,(cr_on)
+ mov a2,d0
+ movbu d0,(cr_dwh)
+ mov d3,d0
+ call UNLOCK,[d2],8
  mov (CR_TG),d0
  mov d0,(cr_dtg)
  mov d0,d1
@@ -347,11 +398,16 @@ cr_rst:
  mov d0,(CR_TG)
  mov d0,(CR_TG + CR_UNC)
 9:
- ret [d2,d3,a2,a3],20
-7:                                /* section 7 not in yet: as if this shutter event had not come */
+ ret [d2,d3,a2,a3],24
+6:                                /* already claimed: nothing */
+ mov d3,d0
+ call UNLOCK,[d2],8
+ ret [d2,d3,a2,a3],24
+7:                                /* section 7 not in yet: as if this call had not come (the next one tries again) */
  clr d0
  movbu d0,(cr_on)
- ret [d2,d3,a2,a3],20
+ movbu d0,(cr_dwh)
+ ret [d2,d3,a2,a3],24
 
 .section .hook_crs,"ax"
  jmp cr_g1                        /* stock 0x60061183: mov a1,(12,sp); mov a0,a3; call 0x60060eff,[],0 */
@@ -594,8 +650,8 @@ cr_oa7:
  mov 9,d0
  jmp cr_oa_j
 
-/* The debug log's CROP MODES line (cr_txt from lg_write): the tag at the first half-press, Image Aspect then, the value
- * set, Image Aspect after, and now. */
+/* The debug log's CROP MODES line (cr_txt from lg_write): the tag cr_rst read and where it ran (#83: at start-up, or at
+ * the first half-press), Image Aspect then, the value set, Image Aspect after, and now. */
  .balign 4
 cr_dtg:
  .long 0
@@ -606,7 +662,13 @@ cr_dst:
 cr_daf:
  .long 0
 cr_t1:
- .asciz "\r\n\r\nCROP MODES (crop round 10): tag at the first half-press "
+ .asciz "\r\n\r\nCROP MODES (crop round 11): tag "
+cr_w0:
+ .asciz " (not read yet)"
+cr_w1:
+ .asciz " at start-up"
+cr_w2:
+ .asciz " at the first half-press"
 cr_t2:
  .asciz ", Image Aspect then "
 cr_t3:
@@ -632,6 +694,17 @@ cr_txt:                           /* `call cr_txt,[d2,d3,a2,a3],24` */
  LGS cr_t1
  mov (cr_dtg),d0
  call lg_h,[],0
+ movbu (cr_dwh),d0
+ mov cr_w0,a0
+ cmp 1,d0
+ bne 1f
+ mov cr_w1,a0
+1:
+ cmp 2,d0
+ bne 2f
+ mov cr_w2,a0
+2:
+ call lg_s,[],0
  LGS cr_t2
  mov (cr_das),d0
  LGD
