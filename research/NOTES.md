@@ -6900,3 +6900,34 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   5184 x 1920, both normal. **Camera-tested:** the XPan label in playback / image review (cr_pbk1 + cr_ic's picture
   swap), playback and review of a stock (3:4) and an XPan photo without a reboot. **Not seen yet:** the 21:9 and 5:4
   labels (no such photos on the card). **Still open:** the quality label for crop photos (none, as stock).
+
+## Crop round 10: the playback quality label (2026-11-17; analysis + direct calls, camera test pending)
+- **How the quality label is made (analysis):** SimplePlayCommon (0x611133cd) asks the GUI's 0x6110130d with d0 =
+  pStillInfo's file type ((1012,sp): 255 / 1 / 8 / 9 / 16 JPEG, 5 JPEG + RAW, 4 RAW) and d1 = its record mode
+  ((1016,sp)); a 21-entry table at 0x6135f844 {record mode, JPEG picture, JPEG + RAW picture} gives the quality
+  picture code (record modes 1 + 4 s + q: L SF 1 -> 1, or 16 with RAW = "LSF+RAW"), stored at item 197 + 260; no entry
+  -> 0, no label. The record mode comes from the play component's 0x60c7c18a by shape class and exact size; a crop
+  size is in no table -> 57 -> no label.
+- **Round 10, no stock result changed:** `.hook_crq` 0x60c7c18a (section 6) -> cr_pqo **only reads** the lookup's
+  inputs and notes in cr_pqm / cr_pqw / cr_pqh the code of the crop's base size (16:9 class: the entry of the same k
+  and width when w > 2.0625 h; 4:3 class: the entry of the same k and height when w <= 1.28 h; else 0), then runs the
+  stock function from its first instructions with d0 / d1 / a1 / the stack as they were (no mul / div / call: its
+  retf uses mdr). `.hook_crr` 0x611133cd (SimplePlayCommon, section 7) -> cr_pqg: when the record mode asked is 57 and
+  the photo's pictureSize ((872,sp) / (874,sp), as cr_pbk1 reads it) is the noted one, it asks 0x6110130d with the
+  noted code instead. Item 197 then holds the quality code a stock photo of the base size has (L 16:9 + RAW: 16).
+- **What is different from round 9 (which rebooted):** round 9's cr_pq rewrote 0x60c7c18a's size arguments, so the
+  play component's own record mode for the photo became a real one; round 10's 0x60c7c18a result, the play
+  component's data and all its later steps are stock (the test checks the results: 57 for the crops, 1 for L 16:9 /
+  4:3). The only changed value is one argument of one GUI lookup in the single frame's info build, and its result is a
+  value stock photos already have (no new codes, no layout changes). Round 9's reboot is most likely its label element
+  patch (round 9b rebooted with a plain 3:4 photo; 9c without it did not).
+- om-emu: the play component's lookup does not run in its playback; cr_pqg runs at Play and at each INFO (record mode
+  0 there: the stock path) and returns to 0x611133d5.
+- Test `crop-playback-quality-label`: 0x60c7c18a's results stock and the notes for XPan / 21:9 / 5:4 at L (two
+  compressions) and M, cleared for L 16:9 / 4:3 and a miss; cr_pqg's record mode for a matching note, another
+  compression's note, a size mismatch, no note, and a record mode other than 57; 0x6110130d (stock): JPEG + RAW with
+  record mode 1 -> 16, JPEG 1 -> 1, 57 -> 0.
+- **Suite** (out-cr10, E1479999.BIN 5f910b23…23c4, commit 4994514): **51 pass**, **2 FAIL** as before
+  (static:hook-list: crs, crb, crg, crh, crk, crq, crr; static:changed-bytes). Sections 1..5 byte-identical to 7b;
+  against 9c (camera: normal) the changes outside .ext11..13 are the two hooks and the build's version bytes.
+  Package `test-builds/2026-11-17-crop-round-10`.
