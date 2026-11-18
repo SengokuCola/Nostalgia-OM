@@ -7504,3 +7504,17 @@ camera's own info-display settings, with show / hide per item, several set-ups, 
   2026-11-18 --write-hooks had narrowed them by a byte (and 0x613317c0); hooks.json takes back their full words
   (0x60e9b0d4:3, 0x613317c0:5, 0x6152f8e4:4, as before b0aaaa2); static_check then passes on tests 1, 2 and 3.
   Package `test-builds/2026-11-18-v0.41-dev-test3`: `fa455b99…32aa`, a second build matches.
+
+## v0.41-dev test 3 on the camera; test 4 = black borders fixed + gentler Shading s1 (2026-11-18; emulator)
+- **Test 3 camera (owner): "the black borders are not showing up".** PB183441 / 442 (black Border): no border;
+  PB183443 / 444 (+2 / +5): white 116 / 291 px. Log clean. Cause: xb_cap's route check sent a still through the Soft
+  Focus passes (where xb_gs draws the border) only for Border > 0 (`bgt`): fixed to `bne` (5a8d73f). om-emu takes no
+  photos: TESTING.md past regressions row (No).
+- Merged `feature/gentler-shading` (s1, the Shading session's 212cc5a) for test 4 (owner: "yes combine them"); cad at
+  the merge (b370452): xb_sh now runs before the Glow / Halation / Border checks (s1 called it after them, so a still
+  with any of them kept the camera's strong Shading and got no vignette) and xb_cap routes on VG_LVL; xb_sh clears the
+  capture's +37722 only when it holds the setting or 0 (a burst's later frame), else the still stays stock (VG_ND).
+- Suite on b370452: the new "capture byte 7" case failed: the comment on `cmp 0,d1` swallowed the next line's
+  `bne 8f`. Scan of firmware/src: four such (xb_sh's bne; the Border write's `blt 7f`, 8906f3d; the A-B / G-M write's
+  `blt 7f`, older; a `mov d1,(4,sp)` in the disabled XB_SHG block). Put back (2671e69); new `static:comment-swallow`.
+- Test 4 `test-builds/2026-11-18-v0.41-dev-test4`: `f3e4929e…7c56` (2671e69), a second build matches; suite 71 of 71.
