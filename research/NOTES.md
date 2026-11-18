@@ -7193,3 +7193,10 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   v0.40-alpha build their low byte equalled the stock byte by chance; now it differs, so the runs grew by one byte:
   hooks.json 0x60e574bd:2 -> 0x60e574bc:3, 0x610830d5:3 -> 0x610830d4:4, 0x61083150:3 -> 0x6108314f:4, 0x610831c7:3
   -> 0x610831c6:4 (by hand, not --write-hooks; no new site; v0.40-alpha's build still passes).
+- Suite on 4f9f0cb (its own build): **64 of 64 pass** (incl. `grain-tile-matches-the-model`). Package
+  `test-builds/2026-11-17-grain-g3-v0.40` (private folder): E1479999.BIN `a240921c…0ad1` (VERSION "v0.40-alpha + grain
+  g3 (faster grain tile)"), go-backs v0.40-alpha as released `fbef591d…72a2` and screen info s2 `0bb89498…b467` (on
+  the camera before). The v0.30.3-based package became `WITHDRAWN-2026-11-17-grain-g3` (never flashed).
+- **On the owner's card 2026-11-17** (owner: "Yes, copy to card"): `DCOLYMP/E1479999.BIN` = `a240921c…0ad1`, checked by
+  sha256 on the card; it replaced screen info s2 (already flashed: its log, "Build: v0.41-dev (screen info s2)", saved
+  first in `card-backups/2026-11-17-screen-info-s2-log-before-grain-g3`). Nothing else on the card changed.
