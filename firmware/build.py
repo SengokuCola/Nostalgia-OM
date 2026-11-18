@@ -63,6 +63,7 @@ HOOKS = {'.hook_color': (0x60518615, bytes.fromhex('cd6cfdf060')),
          '.hook_bar': (0x611d1035, bytes.fromhex('a03b' 'c820' 'fac81715' 'c837' 'ca53')),      # v0.23: Blacks / Whites bar ends
          '.hook_rda': (0x611d16b4, bytes.fromhex('fac8f303' 'c82e' 'fac81515' 'c828' 'ca2e')),  # v0.23: their readouts
          '.hook_rdb': (0x611d1725, bytes.fromhex('fac8f303' 'c82e' 'fac81515' 'c828' 'ca2e')),
+         '.hook_si': (0x6123043d, bytes.fromhex('fcdc54ebce62')),   # screen info: the shooting screen's updater before its change check (mov 0x62ceeb54,a0)
          '.hook_pg': (0x611d07a4, bytes.fromhex('aa05c316f8bc68a005c00a5a5480052afbca08008a05ca03')),  # v0.23: 3+ pages of rows
          '.hook_pg2': (0x611c3709, bytes.fromhex('af04c3052bfb8c')),
          '.hook_arw': (0x611d0be0, bytes.fromhex('5c148001fa507503')),
@@ -94,7 +95,7 @@ XB_SRC = HERE / 'src' / 'xblock.s'
 XB_L1, XB_L2 = 0x10000000, 0x12345670          # the code block is linked at both; fields that move = relocations
 ROOT = HERE.parent                               # card files: card/mkguides.py (pictures), card/mklabels.py
 # data words (flash image, patched at build time): stock target -> our symbol
-WORDS = {0x60e57480: (0x60b86de7, 'cv_get'), 0x60e57490: (0x60b86e09, 'sl_cnt'), 0x60e57494: (0x60b87031, 'sl_vbi'), 0x60e57510: (0x60b86e44, 'cv_dflt'), 0x60e574bc: (0x60b8764c, 'cm_asg'), 0x60e574c4: (0x60b871f3, 'cm_rcl'), 0x60e574c0: (0x60b86aaf, 'cm_rst'),
+WORDS = {0x60e57480: (0x60b86de7, 'cv_get'), 0x60e57490: (0x60b86e09, 'sl_cnt'), 0x60e57494: (0x60b87031, 'sl_vbi'), 0x60e57510: (0x60b86e44, 'si_dfl'), 0x60e57478: (0x60b8781f, 'si_sv'), 0x60e574bc: (0x60b8764c, 'cm_asg'), 0x60e574c4: (0x60b871f3, 'cm_rcl'), 0x60e574c0: (0x60b86aaf, 'cm_rst'),
          0x60e5749c: (0x60b86a01, 'sl_sel'),   # v0.23 sliders: the facade answers go through sl_* first (-> ed_get / pf_cnt / pf_vbi / stock)
          **{a + 4: (0x6122393a, 'ed_init') for a in (0x615adcc4, 0x615adcfc, 0x615add34, 0x615add6c)},
          **{a + 44: (0x6122661b, 'ed_info') for a in (0x615adcc4, 0x615adcfc, 0x615add34, 0x615add6c)},
@@ -781,6 +782,31 @@ def build(defaults, testfile, out):
                 struct.pack_into('<I', x, 20, ((diagrams.DG0 + DGK[k]) << 16) | 3)
         put(*bufs[2], b''.join(recs_))
         struct.pack_into('<II', m, o(hdr) + 4, sy[bufs[2][0]], ni + 1)
+    # Screen info (screeninfo.s, research/NOTES.md "Screen info"): the photo Information 1 / 2 / 3 pages of Camera Info
+    #   Settings (rear screen) get 14 tick rows after the stock four, setting ids SIB + 16 * page + k. Each page = an
+    #   item list (28 B records {u32 sid, u16 4, u16 label, u32 0x6156b26c, 16 B 0}; menu table entry {id, rows, n})
+    #   and a row list (u16 sids; row table entry {mode, rows, n}); both move to copies with our rows added.
+    SIB, SIK = sy['SIB'], sy['SI_K']
+    SI_LABELS = (4546, 4549, 2806, 4196, 2070, 968, 203, 147, 51, 4404, 4413, 3016, 3382, 3490)   # the camera's texts:
+    #   Shooting Mode, Shutter Speed, Aperture Value, Exposure Comp., ISO, WB, Picture Mode, Image Stabilizer, AF Mode,
+    #   Drive Mode, Metering, Record Mode, Remaining Files, Touch screen (WB / Picture Mode / IS / AF Mode as the movie pages)
+    assert len(SI_LABELS) == SIK
+    TICK = 0x6156b26c
+    for pg, (ent, eid, rows, mrec, mode, order) in enumerate((
+            (0x6156d0a0, 0x10, 0x6156c60c, 0x6152a060, 0x15f, (806, 807, 805, 2089)),
+            (0x6156d0b8, 0x11, 0x6156c67c, 0x6152a06c, 0x160, (812, 813, 811, 2091)),
+            (0x6156d0d0, 0x12, 0x6156c6ec, 0x6152a078, 0x161, (2092, 2093, 2094, 2096)))):
+        assert u32(ent, 3) == (eid, rows, 4), hex(ent)
+        recs_ = bytes(m[o(rows):o(rows) + 28 * 4])
+        assert all(struct.unpack_from('<IHHI', recs_, 28 * k)[1:4:2] == (4, TICK) for k in range(4))
+        new = recs_ + b''.join(struct.pack('<IHHI16x', SIB + 16 * pg + k, 4, SI_LABELS[k], TICK) for k in range(SIK))
+        put('si_rows%d' % pg, 'si_rows%d' % (pg + 1) if pg < 2 else 'si_ord0', new)
+        struct.pack_into('<2I', m, o(ent) + 4, sy['si_rows%d' % pg], 4 + SIK)
+        rp, nr = u32(mrec + 4, 2)
+        assert u32(mrec)[0] == mode and nr == 4 and struct.unpack_from('<4H', m, o(rp)) == order, hex(mrec)
+        put('si_ord%d' % pg, 'si_ord%d' % (pg + 1) if pg < 2 else 'si_end',
+            struct.pack('<4H', *order) + struct.pack('<%dH' % SIK, *(SIB + 16 * pg + k for k in range(SIK))))
+        struct.pack_into('<2I', m, o(mrec) + 4, sy['si_ord%d' % pg], 4 + SIK)
     a = 0x6139e26c + 16 * 1                                         # picker title icon 1
     assert u32(a, 4) == (0xffff, 7, 7, 1), hex(a)
     struct.pack_into('<I', m, o(a) + 12, DEL_IC)

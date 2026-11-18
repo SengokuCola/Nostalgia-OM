@@ -33,6 +33,7 @@
  * The COLOR hook reads the published block only; STATE 0 / 0xFFFF -> stock output.
  * No store into the loaded image; stores: STATE (2x), the heap block, stack frames.
  */
+ .include "screeninfo.inc"        /* screen info: ids, SICHK */
 .section .hook_color,"ax"
  jmp hl_pp
 .section .hook_shutter,"ax"
@@ -3522,6 +3523,7 @@ sl_slot:
 sl_get:
  cmp 0,a1
  beq 9f
+ SICHK si_get                     /* screen info (screeninfo.s): our tick rows */
  cmp DL_SID,d0
  beq 5f
  cmp DL_MSID,d0
@@ -3700,6 +3702,7 @@ sl_gb:
 
 /* sl_cnt <- facade +28 word 0x60e57490 (d0 id, a0 -> d0 count); else pf_cnt. Sharp 8, Grain 4, NR 4, VigFix 2. */
 sl_cnt:
+ SICHK si_cnt                     /* screen info (screeninfo.s) */
  movm [d2,d3,a2,a3],(sp)
  mov mdr,d2                       /* v0.25 grid: the WB grid's ids -> our A-B / G-M bars (gr_id; MDR kept) */
  mov d2,a3
@@ -3807,6 +3810,7 @@ sl_cnt:
 
 /* sl_vbi <- facade +32 word 0x60e57494 (d0 id, d1 index, a0, a1 out or 0 -> d0 value, -1 none); else pf_vbi. */
 sl_vbi:
+ SICHK si_vbi                     /* screen info (screeninfo.s) */
  movm [d2,d3,a2,a3],(sp)
  mov mdr,d2                       /* v0.25 grid: the WB grid's ids -> our A-B / G-M bars (gr_id; MDR kept) */
  mov d2,a3
@@ -3900,6 +3904,7 @@ pf_vbi:
 
 /* sl_sel <- facade +40 word 0x60e5749c (selectable: d0 id, d1 value, a0 -> d0 1 / 0); else stock 0x60b86a01. */
 sl_sel:
+ SICHK si_sel                     /* screen info (screeninfo.s) */
  cmp 901,d0                       /* v0.24: the COLOR picture mode, our film values FV0 + j */
  bne sl_sel0
  cmp FV0,d1
@@ -21354,3 +21359,5 @@ bl_v:                             /* the value */
  jmp bl_tail                      /* stock 0x611c7922: inc d3; add 68,a1; cmp d1,d3; lcs */
 
  .include "crop.s"                /* custom crop modes (feature/crop-modes) */
+
+ .include "screeninfo.s"          /* screen info: hook, handlers, tables (ext12) */

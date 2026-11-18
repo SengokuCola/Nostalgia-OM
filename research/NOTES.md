@@ -7200,3 +7200,208 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
 - **On the owner's card 2026-11-17** (owner: "Yes, copy to card"): `DCOLYMP/E1479999.BIN` = `a240921c…0ad1`, checked by
   sha256 on the card; it replaced screen info s2 (already flashed: its log, "Build: v0.41-dev (screen info s2)", saved
   first in `card-backups/2026-11-17-screen-info-s2-log-before-grain-g3`). Nothing else on the card changed.
+
+## Shooting-screen info: how it is drawn, and hiding single items (2026-11-14; emulator + analysis, nothing on the camera)
+Owner's wish: choose which pieces of information the shooting screens show (rear screen and viewfinder), item by item,
+instead of the camera's whole display styles. Stock 1.1 only offers per-display choices: Image Only, Information 1 / 2 /
+3 in the INFO cycle, and per Information display Histogram, Highlight&Shadow, Level Gauge and the silent icon. No
+camera build made; everything below is om-emu on the **stock** main block (plus emulator-only probes) or static reading.
+Tools: `research/screeninfo/` (probes, runner), new `session_ed1.mjs` tokens (`dbdump`, `rdump`, `w8`, `strdump`,
+`panels`, `warm`, `DEVICE=evf`).
+
+### How the camera draws it (om-emu + analysis)
+- **Screen:** GUI state 0x0108 SS_COMMON/ID_ST_CA_REQ_DISP, **panel 10** (as on the OM-1, om-emu menu spec §15;
+  ShowPanelEx = run-time 0x61296e8e, `panels` token). INFO does not change the panel: every display style is panel 10.
+- **Data path:** the camera side builds the items into **GUI variables** (the Genifa variable store, object at
+  (0x6036f6e4), 288 variables, table 0x603701a4 of 16-B {get, set, ptr, size}; set = 0x610cd5c4 (= om-emu's VAR_SET,
+  d0 id, d1 size, a0 source), get = 0x610cd5ac). Sub-panels (C++ `GCSubPanel_*` classes, "OnUpdateDB") read the variables
+  and draw. The shooting screen's **updater 0x6122fb93** (`this` = its a0, om-emu heap 0x62474a70) runs about 6 times a
+  lab second while idle: at its start it copies every buffer to a "previous" copy (memcpy calls 0x6122ffe0..0x612301b2),
+  calls the item builders, then from **0x6123043d** compares each buffer with its previous copy (memcmp 0x6004b542) and
+  sets only the changed variables (or all when forced). Buffer pointers sit in its frame: (4,sp) var 38, (72,sp) 31,
+  (8,sp) 34, (76,sp) 60, (80,sp) 32, (88,sp) 33, (104,sp) 35 grid, (112,sp) 41 AF frame, (24,sp) 129, (20,sp) 20,
+  (44,sp) 39, (60,sp) 40, (68,sp) 104, (52,sp) 105 (list of all 28 in the 0x61230448..0x6123096f chain).
+- **Items come from code, one builder per item**, not from a layout table: each builder clears its field, then fills
+  it from settings through value -> picture lookups (0x611c7738 / 0x611c7751 / 0x611c776b, {key, value} lists); e.g.
+  the picture-mode label 0x612349b4 (clears var 38 +60 at 0x612349cf), mode icon 0x61235e79 / 0x61243802, AF mode
+  0x6123344b, shutter 0x61236184 / 0x61244811, aperture 0x61236801 / 0x61244e0e, shots left 0x612301e5 / 0x61243531.
+  **Image Only is the same mechanism:** the builders leave their fields cleared (dbdump in each INFO mode).
+- **Display mode word:** `this`+6992 = 19 Information 1, 20 Information 2, 23 Information 3, 3 Image Only (om-emu
+  default cycle: Information 1 = histogram, Information 2 = level, Image Only; 2087 Information 3 off). `this`+6916 =
+  output (1 rear screen; 5 = viewfinder by the code at 0x6123d35e, not seen).
+- **A stock per-item visibility table exists:** 0x6123d135 fills `this`+6920 (18 words) with 0x01 (memset 0x50002a15),
+  then per display mode reads On/Off settings into it: [0] histogram, [4] level, [8] stabiliser, [12] picture mode,
+  [16] WB, [20] AF mode, [24..32] 797 / 795 / 798 (no menu), [36] time code, [44] 1241, [48] grid, [52] H&S, [56]
+  silent, [60] subject detection, [64] sound level meter, [68] headphone volume. **Movie** reads all of them (menu
+  lists: 0x6156c91c 787 / 786 / 794 / 799 / 796 / 790 / 2158 / 2107 / 2108 / 788 / 792 / 1242 for movie Information 1,
+  0x6156ca6c 1244.. for Information 2: the camera's movie "Info Settings" check lists). **Stills** read only histogram,
+  level, H&S, silent (rear 806 / 805 / 2088 / 2089, 812 / 811 / 2090 / 2091, 2092 / 2094 / 2095 / 2096; viewfinder
+  809 / 808 / 2098, 815 / 814 / 2099, 2100 / 2102 / 2103). Probe: the memset value 1 -> 0 (`POKE=6123d13d=8000`) hides
+  **only the picture-mode label** in stills (om-emu); stabiliser, WB, AF mode stay. So the stills builders mostly ignore
+  the table: it is not enough on its own.
+- **Viewfinder:** the same variables feed it. `DEVICE=evf` (1024 x 768): same layout in om-emu's default EVF style,
+  and every field cleared below hides the same item there (tested: aperture, picture mode, shots left, EV value, bottom
+  row). EVF styles 1 / 2 have their own sub-panels (`*_FinderStyle1and2`, `GCSubPanel_Evf_Om_*`): not checked.
+- The Super Control Panel uses its own variables (278..280) and was unchanged with the masks below; menus too.
+
+### Item map (om-emu, rear screen and viewfinder; "var N +off" = byte offset in GUI variable N)
+Found by clearing one field at a time (probe `hk_set.s` at the variable set) and diffing screenshots, then confirmed
+with the updater prototype. All of these are fields that **Image Only clears** (so "cleared" is a state the camera
+already draws as "not shown"):
+- Top row: shots left var 34 +8 (u16 803) / +12 (shown flag); movie time left var 34 +16 (shown; +1 / +2 = min / s);
+  aspect var 38 +48; still quality var 38 +49; movie quality var 38 +50. Bluetooth / Wi-Fi: var 0 +41 / +43 (var 0 is
+  set from several places, **not** by the updater).
+- Right column: AF mode var 38 +36; face / eye detection +3; drive +40; metering +35; stabiliser +38; picture mode (and
+  our "FILM N" label) +60 (u16 picture id 15706..); WB icon +39, WB block +401, Kelvin +404 (u16).
+- Bottom row: shooting-mode icon var 38 +0 (u16); shutter var 33 +0 / +4 / +7; aperture var 33 +24 / +28; exposure bar
+  var 32 +84 / +88; EV value var 32 +5 (+80 its marker); ISO var 38 +2 (+409 label, +412 value).
+- Left: touch-shutter icon var 31 +75; histogram var 129; level gauge var 60 +0 (both already stock per-display settings).
+- Not to hide: AF frame var 41, grid var 35. Group switches var 0 +74 top row, +82 left column, +84 right column, +85
+  bottom row also hide whole groups in om-emu, but Image Only never clears them: not proven safe, not recommended.
+- Not seen in om-emu (needs the camera or more settings): battery, card, flash, Live ND / GND, temperature and other
+  warnings, peaking, focus indicators. Warnings should never be hideable.
+
+### Prototype: one hook in the updater (om-emu only; `research/screeninfo/hk_upd.s`, `mkimg.py upd`)
+- At **0x6123043d** (`mov 0x62ceeb54,a0`, 6 B) `jmp` to code that walks a table {u8 frame slot, u8 length, u16 offset}
+  and clears those bytes in the updater's own buffers, then does the replaced instruction and returns to 0x61230443.
+  Uses d0 / d1 / a0 / a1 only (the stock code reloads them). 52 B of code + 4 B per field.
+- **om-emu, saved settings with more icons shown (NV_FILE):** hiding shots left, movie time, aspect, picture mode, WB
+  and the touch icon in both Information displays: those items are gone, everything else unchanged. Variable sets
+  during idle: 10 per 3.6 s with and without the hook (only var 129, the histogram): the change check still works, no
+  extra redraws. Clearing the table at run time (`w8`) brings the items back within one update (< 1.2 s), restoring
+  it hides them again: no INFO press needed.
+- Because the masked buffer becomes next cycle's "previous" copy, the compare stays quiet; and because every builder
+  clears and refills its field each cycle (as for Image Only), un-hiding needs nothing special (seen for the tested
+  items; an item whose builder skips unchanged values could lag until INFO: watch in the camera test).
+
+### What a real version would be (analysis)
+- **Firmware:** the hook above, plus a choice of table by the display mode word (`this`+6992: 19 / 20 / 23, stills
+  only; movie keeps the camera's own lists), reading the hide lists from our block P. Until P is published at the
+  first half-press the hook does nothing, so start-up stays stock (as frame lines do with `fg_on`). Code ~150-300 B in
+  an ext tail; the lists ~12 B (a 32-bit item mask per Information display, rear and viewfinder alike).
+  Bluetooth / Wi-Fi (var 0) would need a second, copy-based hook at the variable set (0x610cd5c4); leave out at first.
+- **Where the choices live:** LookLab "Screen items" with check boxes per Information display and presets (Everything,
+  Clean, Exposure only), saved with the Extras (BUNDLES) and taken into camera memory like the films. The INFO button
+  then switches between the owner's own layouts. An on-camera check-list page (a copy of the movie "Info Settings"
+  pages, our own setting ids through the facade hooks as for the films) is possible later: more menu work and rounds.
+- **Risks:** live view speed: none measurable (a few byte writes per update, the updater itself reads ~200 settings);
+  start-up: untouched (no work before the first half-press); code space: small. Unknowns for the camera test: items
+  om-emu never drew (battery, warnings), EVF styles 1 / 2, HDMI, whether a hidden touch icon still allows touch.
+- **Rough effort:** firmware hook + LookLab panel: 1 build, 1-2 camera rounds. On-camera menu page: +2-4 rounds.
+- Waiting for the owner's choice; no test firmware built.
+
+## Film Mode, step 2 of the research: frames left on the screen, and the open design points (2026-11-14; emulator + analysis)
+Follows "Film Mode (a "roll" that locks the film): feasibility" (2026-11-12, tabled) and uses "Shooting-screen info"
+above. Research lab (`experiment/screen-info`); nothing built for the camera.
+- **Frames left can use the camera's own shots-left number** (om-emu, stock main block + the `set` probe):
+  `research/screeninfo/run.sh set fm_36 '34:8:1:24,34:9:1:00' 'wait wait shot:a.png'` with `NV_SRC=` saved settings
+  (`~/om3-work/wheel/nv3.json`) puts 36 in var 34 +8 as it is set: the top row shows **36** where stock shows 803, same
+  font and place, nothing else changes. So the number is drawn from the GUI field, not from setting 803 itself.
+  **Emulator only.** A real build would write the roll's frames left into the updater's buffer (slot (8,sp), +8 u16,
+  +12 the shown flag) in the same hook as the hide lists (0x6123043d), only while a roll runs and only in stills; movie
+  time (+16) is left alone. Setting 803 and the camera's card-full logic are never touched (analysis): the camera still
+  stops at a full card, and the card's own count comes back when no roll runs.
+- **Where the roll lives (analysis, on camera-tested pieces):** a few bytes in store M's tail next to the user block
+  (on, length, shots taken, the locked selection: COLOR k / FILM j and its 897 / 901 values); M survives power-off,
+  battery pulls and card swaps (mp1, f2: camera-tested). Count in RAM in `ex_hook` (once per photo, in the capture: no
+  settings calls there); copy to M and set the changed byte 0xa32bfb32 at the next gated shutter event (`ub_try`'s
+  moment, never during capture or start-up). The camera writes M on the return from a menu and at power-off, so a
+  battery pull can lose the frames since the last save (a count a few frames short; never a corrupt block: the CRC
+  covers it). Nothing at start-up: the lock and the counter start working at the first half-press, as films do.
+- **Locked (analysis):** in `sx_set` (facade SetValue for 897 / 901) a running roll replaces any new value with the
+  locked one: the Creative Dial, the Picture Mode list, our film strip and the FILM rows all land back on the roll's film
+  (the v0.27 dial mapping did this rewrite, camera-tested). Paths not through the facade (custom-mode C1-C4 recall, menu
+  reset, power-on's direct 897 set): re-check at each half-press and set the locked film back. Not traced: whether C1-C4
+  recall goes through the facade. Film *edits* (sliders) for the locked film: open (owner choice; lock them or not).
+- **Counting (analysis; camera to confirm):** one frame per shutter release that makes a photo: RAW+JPEG = 1, each
+  burst frame = 1, deleting does not give frames back (like film). Open: does `ex_hook` run for RAW-only shots (the ORF
+  has EXIF; not checked), and for Pro Capture / High Res / Live ND / focus bracketing composites (one frame each?).
+  Fallback: the camera's file number (not traced). Video: not counted, film not changeable in video either (to decide).
+- **End of the roll (proposal):** at 0 the number shows 0 (and the FILM cell could say "END"); frames shot in a burst
+  past 0 are kept as normal photos; at the next half-press the roll is closed, the lock lifts and the card count
+  returns. Owner to choose: Film Mode stays on and the next roll starts when a film is picked, or it turns off.
+- **Setting it:** a Picture Mode choice row "Film Mode" (Off / 24 / 36 / 72) as for Film Grain, or in LookLab with the
+  Extras. Starting a roll while one runs, or turning it off early, needs a "rewind" choice (owner to decide).
+- Effort (guess): after the screen-info hook exists, 1 build and 2-3 camera rounds; alone, the counter on the screen
+  is the larger half. Status: analysis + one emulator check (the number field); nothing on the camera.
+
+## Screen info build s2 on v0.40-alpha (2026-11-17; camera-tested: works)
+Resumed (owner via cad, 2026-11-17: "Carry on"). `try/v0.40-alpha` (492c890) merged into `feature/screen-info`.
+- **Merge changes:** GetValue now goes through `cv_get` (falls through to `sl_get`, whose id check stays); GetDefault
+  `0x60e57510` -> `si_dfl` -> `cv_dflt` (was ed_default); SetValue `0x60e57478` -> `si_sv` as before.
+- **Start-up gate:** v0.30's early load sets STATE before the first half-press, so `si_upd` also waits for `el_hold`
+  to clear (the first shutter event), as border preview's `bl_gv` does. Before that: no record read (`si_ok` 0), stock
+  screen (om-emu, test `screen-info-waits-for-the-first-half-press`).
+- **Bug found and fixed in the emulator:** after the merge `si_tab` landed on an odd address and the walk's halfword
+  read faulted (om-emu trap 3 at the first screen update after a menu). `.balign 4` before it. On a camera this would
+  have frozen it: s1 only worked because its layout happened to be even.
+- **om-emu comparisons with v0.40-alpha** (rebuilt from 492c890: E1479999.BIN fbef591d…, the release's bytes), same
+  saved settings (Information 1 hides mode, shutter, EV, picture mode, shots left; 2 all 14; 3 aperture and ISO, and
+  Information 3 ticked): identical before the first half-press, in video and S&Q, in the viewfinder (style 3, 1024 x
+  768), in the menus (other pages and the viewfinder / movie Info Settings pages), in playback, with no card, and in
+  Image Only. Information 1 / 2 / 3 differ only where items were hidden, in P, A, S, M, B and C1.
+- **No card:** v0.40 loads no films without a card (STATE stays 0), so screen info stays off and the screen is stock.
+- Masks round-trip over a power-off (M + 0x3C000: 0x104b / 0x3fff / 0x14).
+- **Tests added** (`tools/test/emu_test.py`): `screen-info-hides-a-ticked-off-item`, `screen-info-waits-for-the-first-
+  half-press`, `screen-info-not-in-video`; the first two are `caught` with `--without` the v0.40-alpha build.
+- **Static checks:** `static:hook-list` (new hook `hook_si` at 0x6123043d, 6 B) and `static:changed-bytes` (SetValue
+  word 0x60e57478, the three menu item-list entries 0x6156d0a4 / bc / d4 and row-list entries 0x6152a064 / 70 / 7c)
+  fail until `tools/test/hooks.json` is updated; left for cad and the owner, as the rules say.
+- **Test build s2:** "v0.41-dev (screen info s2)", E1479999.BIN 0bb89498…b467 (GUIDES / LABELS / TONES built in);
+  suite 64 pass, 0 known, the two static FAILs above.
+- **Camera (owner, 2026-11-17): "It works amazing!!!"** Debug log (cad's backup `2026-11-17-screen-info-s2-tested`):
+  build "v0.41-dev (screen info s2)", nothing unusual, card files match, films from camera memory, 12 shutter events.
+  Rear screen only; the viewfinder pages are the possible next step (owner's choice). The no-card limit and the items
+  om-emu never drew were not reported on.
+- Not shown by om-emu: the camera's own redraw timing, the viewfinder styles 1 / 2 (s2 does not touch the viewfinder),
+  HDMI, battery / flash / Live ND icons, whether the touch shutter still works with its icon hidden.
+
+## Screen info build s1: paused by the owner (2026-11-14), resumed as s2 above
+**Where it stopped:** build s1 (rear screen, photo Information 1 / 2 / 3) is written and builds; no test package made.
+Code: `firmware/src/screeninfo.s` + `screeninfo.inc` (ids SIB 0x7d00 + 16 * page + k, the hide hook, the M record),
+small id checks in `editor.s` (sl_get, sl_cnt, sl_vbi, sl_sel; two `.include` lines), `.hook_si` at 0x6123043d in
+`editor.ld`, and in `build.py` the hook's stock bytes, `-I src`, the vtable words 0x60e57478 (SetValue -> si_sv) and
+0x60e57510 (GetDefault -> si_dfl, ext1 is full) and the copies of the three pages' item and row lists.
+**Seen in om-emu (s1 build):** the three pages show 14 more tick rows with the camera's own names, scrolling; OK ticks
+and unticks them (a tick's OK is facade SetValue mode 3, which the stock code refuses for unknown ids and which never
+reaches `.hook_set`: hence si_sv); the masks are written to M + 0x3C000 ('OM3I') and survive a power-off / on
+(Information 1 0x104b, 2 0x3fff, 3 0x14 read back); nothing of ours is read before the first half-press (si_ram
+empty until then); after it, Information 1 hid exactly the chosen items (mode icon, shutter, picture mode, shots
+left / time left), others unchanged.
+**Not tested yet (the next step):** the planned comparison runs against v0.29.3 (start-up screens before the first
+half-press, INFO cycling through every display including Information 3 and Image Only, video / S&Q, mode dial P / M /
+S and a custom mode, the viewfinder (must be unchanged in s1), other menu pages, playback, no card), pixel diffs where
+nothing should change; a held-back write (si_pend) while the camera saves M; then cad's review and a package.
+**Item map correction:** the research map was taken with other saved settings; with om-emu defaults the right column
+(stabiliser, WB, metering, drive) is drawn only after a setting changed in the menu, and the Image Only diff shows the
+fields in `si_tab` (screeninfo.s). Shutter / aperture text also lives in var 104, but clearing var 33's fields alone
+hides them (om-emu); var 39 / 40 / 104 / 105 / 20 changed nothing on the rear Information 1 screen.
+
+## Screen info, design step: the stock Info Settings menu and the INFO cycle (2026-11-14; emulator + analysis, nothing built)
+Branch `feature/screen-info` (from `experiment/screen-info` 3347e53). Owner's design (2026-11-14): a menu page like the
+camera's own info-display settings, with show / hide per item, several set-ups, INFO cycles through them.
+- **Menu (om-emu, v0.29.3 build):** Custom menu, page "4. Information" (`menu left left` from Card/Folder/File): EVF
+  Style, Camera Info Settings, Info by half-pressing, EVF Camera Info Settings, EVF Level Gauge, Movie Info Settings.
+  Each Info Settings page is a tick list: Image Only, Information 1 (always on, greyed), Information 2, Information 3,
+  each Information row with a ">" sub-page of tick rows. Stills rear and EVF sub-pages: histogram, Highlight&Shadow, Level
+  Gauge (+ Silent Operation on the rear). The movie sub-pages already have 12 per-item rows (histogram, level,
+  stabiliser, picture mode, WB, AF mode, subject detection, sound meter, headphone volume, time code, silent, grid)
+  and scroll: the stills pages can take a longer list the same way.
+- **Row records (static reading):** 28 B each, from 0x6156c5d0: `{u16 0, u16 sid, u16 4, u16 label, u32 0x6156b26c,
+  12 B 0}` (0x6156b26c = the tick-box row handler). Stills rear Info 1 `{805, 806, 807, 2089}` at 0x6156c608, Info 2
+  `{811..813, 2091}` 0x6156c678, Info 3 `{2094, 2092, 2093, 2096}` 0x6156c6e8; EVF Info 1 `{808..810}` 0x6156c7c8, Info 2
+  `{814..816}` 0x6156c81c, Info 3 `{2102, 2100, 2101}` 0x6156c870; movie Info 1 12 rows 0x6156c918, Info 2 0x6156ca68.
+  Top lists: rear `{802, 2087, ...}` 0x6156c5d0.., EVF `{803, 804, 2097}` 0x6156c774. Menu descriptors 24 B from
+  ~0x6156d088: `{u32 id, u32 rows, u32 count, u32 ?, u32 0x6156b328, u32 ?}` (e.g. rows 0x6156c60c count 4 at
+  0x6156d0a4, movie Info 1 count 12 at 0x6156d164). So a longer stills sub-page = a copy of the rows in an ext tail plus
+  new rows with our own setting ids (answered by sl_get / sl_set as the films' FLB ids are), and the descriptor's
+  rows / count pointed at the copy (as the Delete row's `dl_oks`). To check in the build: the descriptor's first word
+  (0x6156d0a0 region alignment above is read, not tested) and that the tick handler takes any sid through the facade.
+- **Row names:** the camera's text table already has Shooting Mode, Shutter Speed, Aperture Value, Exposure Comp., ISO,
+  WB, Picture Mode, Image Stabilizer, AF Mode, Subject Detection, Drive Mode, Metering, Record Mode, Image Aspect,
+  Remaining Files, Touch screen, Focal Length (strdump indices; the label ids the rows use still to be matched).
+- **INFO cycle (om-emu):** with Information 3 ticked, INFO steps Information 1 -> 2 -> 3 -> Image Only -> 1, i.e. the
+  ticked entries of the top list, as in the stock camera. Information 3's stock layout draws fewer items. So the
+  owner's "set-ups" map onto Information 1 / 2 / 3 per screen (rear and EVF separately) with the stock ticks deciding
+  the cycle; more than three would mean new display modes (not planned).
+- Plan sent to the owner; waiting for the OK before any firmware.

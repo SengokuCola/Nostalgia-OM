@@ -309,6 +309,15 @@ BORDER_LINE_ON = 'expect:pxdiff:75,300,100,300 expect:pxdiff:200,25,200,40'
 BORDER_LINE_OFF = 'expect:pxsame:75,300,100,300 expect:pxsame:200,25,200,40'
 BORDER_LINE_OFF_VIDEO = 'expect:pxsame:22,250,40,250 expect:pxsame:75,300,100,300'
 BORDER_TO_3 = f'{OPEN_BORDER}' + ' right wait' * 3 + ' expect:p:82=03 menu wait wait s1 wait wait'
+# screen info (feature/screen-info s2): Custom menu > 4. Information > Camera Info Settings > Information 1, its fifth row
+# (the first of ours, Shooting Mode) unticked, out to shooting. The rear screen's mode icon (900 x 600): (48, 575) is
+# on its white camera body, (300, 450) live view; in video (62, 574) is on the movie mode icon. The record in M +
+# 0x3C000 holds Information 1's hide mask at +12 (bit 0 = Shooting Mode).
+SI_HIDE_MODE = ('menu wait left wait left wait down wait ok wait down wait right wait' + ' down wait' * 4 +
+                ' ok wait menu wait menu wait menu wait')
+SI_MASK1 = 'expect:mem:6295c70c=01000000'
+SI_MODE_ON, SI_MODE_OFF = 'expect:pxdiff:48,575,300,450', 'expect:pxsame:48,575,300,450'
+SI_MODE_ON_VIDEO = 'expect:pxdiff:62,574,300,450'
 BORDER_TO_0 = f'{OPEN_BORDER}' + ' left wait' * 3 + ' expect:p:82=00 menu wait wait s1 wait wait'
 # better grain g2: the Film Grain strength row, the 16th (Grain Size under it); COLOR 1's level byte +53 is P + 85
 OPEN_GRAIN = 'ok wait ok wait' + ' down wait' * 15
@@ -427,6 +436,21 @@ TESTS = {
     'border-preview-not-in-video': [
         Boot(f's1 wait wait {BORDER_TO_3} {BORDER_LINE_ON} s1 wait wait poweroff'),
         Boot(f'wait wait s1 wait wait {BORDER_LINE_OFF_VIDEO} poweroff', photo_switch=PHOTO_SWITCH_VIDEO),
+    ],
+    # screen info: unticking Shooting Mode on Information 1 saves the mask in M and the mode icon goes after the half-press.
+    'screen-info-hides-a-ticked-off-item': [
+        Boot(f's1 wait wait {SI_MODE_ON} {SI_HIDE_MODE} {SI_MASK1} s1 wait wait {SI_MODE_OFF} poweroff'),
+    ],
+    # screen info: after a power-off the choice is kept, and nothing of ours runs before the first half-press (the
+    # start-up rule): the record is not even read (si_ok 0) and the icon is there until the half-press.
+    'screen-info-waits-for-the-first-half-press': [
+        Boot(f's1 wait wait {SI_HIDE_MODE} {SI_MASK1} s1 wait wait poweroff'),
+        Boot(f'wait wait {SI_MASK1} expect:mem:{{si_ok}}=00 {SI_MODE_ON} s1 wait wait {SI_MODE_OFF} poweroff'),
+    ],
+    # screen info: video keeps its screen as it is (the movie mode icon stays with Shooting Mode unticked).
+    'screen-info-not-in-video': [
+        Boot(f's1 wait wait {SI_HIDE_MODE} {SI_MASK1} s1 wait wait poweroff'),
+        Boot(f'wait wait s1 wait wait {SI_MODE_ON_VIDEO} poweroff', photo_switch=PHOTO_SWITCH_VIDEO),
     ],
     # crop modes: XPan (Image Aspect 6) is saved as 16:9 with our tag, so the camera starts on 16:9; the first half-press
     # puts XPan back (the start-up rule: nothing of ours before it, not even with v0.30's early load of the films).

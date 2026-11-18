@@ -55,6 +55,7 @@ SECTIONS {
   .hook_bar     0x611d1035 : { *(.hook_bar) }
   .hook_rda     0x611d16b4 : { *(.hook_rda) }
   .hook_rdb     0x611d1725 : { *(.hook_rdb) }
+  .hook_si      0x6123043d : { *(.hook_si) }
   .hook_bga     0x6123825e : { *(.hook_bga) }   /* border preview: the grid builders' grid read -> bl_gv */
   .hook_bgb     0x611cb433 : { *(.hook_bgb) }
   .hook_bgc     0x611e44d7 : { *(.hook_bgc) }
@@ -73,6 +74,9 @@ SECTIONS {
   .ext13        0x60fac000 : { *(.ext13) }   /* v0.30 test 10: the debug log, after the RGB work area */
 }
 color_builder = 0x60518381;
+si_get44      = 0x610fd8ef;   /* screen info: the shooting-screen updater's settings getter (d0 id, a0 out) */
+si_sv0        = 0x60b8781f;   /* screen info: the facade's stock SetValue (vtable +4) */
+si_back       = 0x61230443;   /* screen info: after the hook's replaced mov 0x62ceeb54,a0 */
 pm_back       = 0x611bd90f;
 stock_sel     = 0x60b86a01;
 rng_back      = 0x611d1090;

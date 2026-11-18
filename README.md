@@ -1,3 +1,9 @@
+> [!WARNING]
+> **Feature branch `feature/screen-info`, not released** (local, not pushed). Choose which items show on the shooting
+> screen: 14 show / hide rows on Custom menu > 4. Information > Camera Info Settings > Information 1 / 2 / 3, INFO
+> cycles them. Test build s2 on v0.40-alpha (E1479999.BIN 0bb89498…) **camera-tested 2026-11-17: works** (rear screen
+> only; the viewfinder is not done). Details: `research/NOTES.md`, "Screen info build s2".
+
 <h1 align="center">Caduceus for OM-3</h1>
 
 
