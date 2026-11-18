@@ -6829,3 +6829,40 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   among them), **2 FAIL** as before: static:hook-list (crs, crb, crg, crh, crk, crq for the owner's OK) and
   static:changed-bytes. Package `test-builds/2026-11-17-crop-round-9`. om-emu cannot show the labels on screen
   (its playback gives photos no size): the owner's camera test.
+
+## Crop round 9: the reboot; round 9b (2026-11-17; camera, analysis, emulator)
+- **Camera, round 9 (owner, 2026-11-17, 772cc5dc…): "going into image review reboots the camera".** PB173212 (XPan
+  5184 x 1920) was saved; CADLOG was last written at event 8, before the review (nothing of the crash). Its CROP
+  MODES line: "now 6; display 9, 450 x 600 ..." (the display set-up's last id was 9, 3:4: Image Aspect went past
+  3:4 on its way to XPan; not round 9's).
+- **What round 9 changed that the camera runs when a photo is shown:** (1) cr_pbc in the shared shape sort
+  0x61101381: codes 6..8 for crop shapes, going to both playback info builders (CPlaySingleFrame::SimplePlayCommon
+  0x61113417 -> item 194 + 78 -> item 197 + 258 -> the label updates; the KomaSelect builder 0x612c90da -> item 6
+  + 8, read by the single display function 0x61115e09); (2) cr_pq at the play component's record-mode lookup
+  0x60c7c18a (Cmp_PlayComponentBase, which also handles the file: "complete_proprietary_play", "HdrInfo"): a real
+  record mode (1 for an L crop) where stock gave 57; (3) the label elements' 8 states.
+- **Ruled out (evidence):** the label widget handles 8 states: its constructor 0x610da490 clears 32 picture-cache
+  slots (+172), 0x6128abe0 / 0x610dae1e take an index below its count (+131, from the element); in om-emu playback
+  the real item 34 widget had count 8 and list cr_pll, and setting it to state 6 returned normally. Widget creation
+  from the patched element runs in om-emu playback without a fault. cr_pbc and cr_pq keep every register, flag,
+  stack slot and mdr as stock needs them (read and direct calls); the callers do not read back the stack arguments
+  cr_pq rewrites. cr_pbc forced to XPan in om-emu playback: no fault, but om-emu's playback does not carry the
+  builder's code to its screen, so the readers of items 194 / 197 / 6 are not exercised there.
+- **Cause (not proven; analysis):** a reader of a value round 9 changed: the play component handling a crop photo
+  with a real record mode, or a reader of codes 6..8 in items 194 / 197 / 6 that expects 1..5. om-emu cannot run
+  either path with a crop photo (its playback photo is 1620 x 1080).
+- **Round 9b: no stock value changes.** 0x61101381 and 0x60c7c18a are stock again (byte-identical). `.hook_crk`
+  0x6111341e (SimplePlayCommon, right after its 0x61101381 call; section 7) notes the crop shape from the photo's
+  own w x h in cr_pbk (6 5:4: 1.1719 h < w <= 1.2891 h; 7 XPan: w > 2.5156 h; 8 21:9: 2.0625 h < w <= 2.5156 h; shifts
+  only) and gives d0 / d1 back as they were; `.hook_crl` 0x611509bc (item 34) and `.hook_crm` 0x611525b9 (item 61)
+  show state cr_pbk - 1 instead of code - 1 when the stock code is the crop's base (4 for XPan / 21:9, 1 for 5:4).
+  The elements keep 8 states. The quality label stays stock (none for a crop): a later, GUI-side try.
+- om-emu playback (round 9b): cr_pbk1 runs at Play and at each INFO and returns to 0x61113424; the label updates are
+  not reached there (as in round 8). Sections 1..5 byte-identical to round 7b; outside .ext12 the changes against
+  7b are the three 6-B hooks and the three elements (section 7).
+- Test `crop-playback-label-and-quality` (rewritten): 0x61101381 and 0x60c7c18a give the stock codes for crop sizes;
+  cr_pbk1's kind for the three crops (L and M), the five stock ratios and h 0, with d0 / d1 / d2 / a0 as stock
+  leaves them; cr_pbla / cr_pblb's index for crop and mismatched codes, d1 and a0 kept; the elements and the states.
+- **Suite** (out-cr9b, E1479999.BIN 2bb52ef9…bba3, commit 755a1f7): **50 pass** (crop-playback-label-and-quality
+  among them), **2 FAIL** as before: static:hook-list (crs, crb, crg, crh, crk, crl, crm for the owner's OK) and
+  static:changed-bytes. Package `test-builds/2026-11-17-crop-round-9b`.
