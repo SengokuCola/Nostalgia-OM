@@ -160,7 +160,7 @@ xb_cap:
  movbu (50,a1),d0                 /* borders: the Border row alone -> the Soft Focus passes too (w 1024: xb_gs draws it) */
  extb d0
  cmp 0,d0
- bgt 2f
+ bne 2f                           /* white 1..5 and black -1..-5 (test 3 had bgt: black never got the passes) */
  .endif
  .if XB_FX
  ARTB d0

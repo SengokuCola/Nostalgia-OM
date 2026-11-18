@@ -359,6 +359,7 @@ emulator test as proposed here would have failed. "Maybe" means it depends on a 
 | crop round 7 (2026-11-17) | Boot loop at every start: a section-2 hook (0x6057fb1b) jumped into section 6's extension before section 6 was copied | No in om-emu (it maps every section at once); yes statically | `static:section-order` |
 | fix/section-gates (2026-11-17) | Live view's first picture set-up at power-on could jump into section 6 (hook_mx, hook_tone via st_run, hook_lv) before the camera marks it ready: never seen on a camera | No (om-emu maps every section at once and runs no live-view set-up); yes statically | `static:section-order`; `live-view-gates-wait-for-section-6` calls the sites directly |
 | v0.28–v0.30.1, #65 (#27) | With Image Review on, a Glow or Halation photo gives a black review picture, then the Creative Dial to a standard picture mode freezes live view | No | None, om-emu develops no photos (the review picture is one of the shot's small extra developments) |
+| v0.41-dev test 3 (2026-11-18) | A black Border (-1..-5) left the photo without a border: the capture's route check (xb_cap) sent only a Border above 0 through the Soft Focus passes where xb_gs draws it | No | None, om-emu takes no photos (xb_cap runs at a capture); `border-matches-the-model` covers the drawing itself |
 | v0.30, menu-flicker | Leaving Blacks / Whites or WB compensation flashes the old row's bottom bar for a frame | No | None, om-emu draws only after the screen update. `grid-row-gives-the-bottom-bar-back` checks the bar comes back |
 | v0.30–v0.30.3, #72 | Switching films fast in the Picture Mode list (holding the arrow, or FILM 1 <-> FILM 2) reboots the camera | Yes | om-emu does not reboot; the cause (the group's record kept at every step, camera probe J) is counted: `film-list-keeps-the-record-once-as-it-closes`, `control-panel-dial-keeps-the-record-once-as-it-closes` |
 | 331691c | Custom mode showed the previous mode's films until a half-press | Yes | Custom modes |
@@ -377,7 +378,7 @@ emulator test as proposed here would have failed. "Maybe" means it depends on a 
 | lk6, lk7 | Reboot at every half-press, 1 s hang on COLOR switch | No | None, cache |
 | #11, #12 | Video with a new film crashed, grain with glow crashed | No | None, video and stills |
 
-Of these 18, 7 are catchable, 4 maybe, and 7 not. The owner's camera or a user found every one of them first.
+Of these 19, 7 are catchable, 4 maybe, and 8 not. The owner's camera or a user found every one of them first.
 
 Two classes recur. Start-up and first half-press work accounts for six of the 18. The
 calling convention accounts for three. Settings kept per mode and across boots is the most testable class.
