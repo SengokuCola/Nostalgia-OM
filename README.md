@@ -1,8 +1,8 @@
 > [!WARNING]
-> **Research branch `experiment/screen-info`, not for use** (the project's research lab since 2026-11-14). Ideas being
-> researched, not built: shooting-screen items (hide single items) and Film Mode (a roll of film). Emulator probes and
-> analysis only, no camera build; details in `research/NOTES.md`, "Shooting-screen info" and "Film Mode, step 2", and
-> `research/screeninfo/`.
+> **Feature branch `feature/screen-info`, not released** (local, not pushed). Choose which items show on the shooting
+> screen: 14 show / hide rows on Custom menu > 4. Information > Camera Info Settings > Information 1 / 2 / 3, INFO
+> cycles them. Test build s2 on v0.40-alpha (E1479999.BIN 0bb89498…) **camera-tested 2026-11-17: works** (rear screen
+> only; the viewfinder is not done). Details: `research/NOTES.md`, "Screen info build s2".
 
 <h1 align="center">Caduceus for OM-3</h1>
 

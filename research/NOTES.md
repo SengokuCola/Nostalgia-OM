@@ -7260,7 +7260,7 @@ above. Research lab (`experiment/screen-info`); nothing built for the camera.
 - Effort (guess): after the screen-info hook exists, 1 build and 2-3 camera rounds; alone, the counter on the screen
   is the larger half. Status: analysis + one emulator check (the number field); nothing on the camera.
 
-## Screen info build s2 on v0.40-alpha (2026-11-17; emulator only, camera test pending)
+## Screen info build s2 on v0.40-alpha (2026-11-17; camera-tested: works)
 Resumed (owner via cad, 2026-11-17: "Carry on"). `try/v0.40-alpha` (492c890) merged into `feature/screen-info`.
 - **Merge changes:** GetValue now goes through `cv_get` (falls through to `sl_get`, whose id check stays); GetDefault
   `0x60e57510` -> `si_dfl` -> `cv_dflt` (was ed_default); SetValue `0x60e57478` -> `si_sv` as before.
@@ -7283,7 +7283,11 @@ Resumed (owner via cad, 2026-11-17: "Carry on"). `try/v0.40-alpha` (492c890) mer
   word 0x60e57478, the three menu item-list entries 0x6156d0a4 / bc / d4 and row-list entries 0x6152a064 / 70 / 7c)
   fail until `tools/test/hooks.json` is updated; left for cad and the owner, as the rules say.
 - **Test build s2:** "v0.41-dev (screen info s2)", E1479999.BIN 0bb89498…b467 (GUIDES / LABELS / TONES built in);
-  suite 64 pass, 0 known, the two static FAILs above. Waiting for cad's check, then the owner's camera test.
+  suite 64 pass, 0 known, the two static FAILs above.
+- **Camera (owner, 2026-11-17): "It works amazing!!!"** Debug log (cad's backup `2026-11-17-screen-info-s2-tested`):
+  build "v0.41-dev (screen info s2)", nothing unusual, card files match, films from camera memory, 12 shutter events.
+  Rear screen only; the viewfinder pages are the possible next step (owner's choice). The no-card limit and the items
+  om-emu never drew were not reported on.
 - Not shown by om-emu: the camera's own redraw timing, the viewfinder styles 1 / 2 (s2 does not touch the viewfinder),
   HDMI, battery / flash / Live ND icons, whether the touch shutter still works with its icon hidden.
 
