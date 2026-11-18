@@ -7890,3 +7890,7 @@ Test driver tools/emulator/focus_stacking.mjs runs this routine with controlled 
   quick as normal (the +2, -2)"); log clean; s1 at -5 took 2737 ms. **Test 7** (eaf07c7): XB_SH 0, the camera's own
   Shading at every level (as p1 / p3 ran on the camera); build `94fbd976…2fab` (a second build matches), suite 88 of
   88; package `test-builds/2026-11-18-v0.41-dev-test7`.
+- **Test 7 camera-tested 2026-11-18** (owner: "whatever I just flashed on my card is perfect"): log clean (5 photos,
+  the Shading pass never ran). On the way the owner asked for the Shading row "back to ... -2 to +2"; om-emu showed the
+  row runs -5..+5 on v0.40-alpha as released (rebuilt byte for byte, `fbef591d…`) and on test 7 alike, the camera's own
+  range, never changed by Caduceus; the owner then: "sorry I was wrong". Test 7 stays as it is.
