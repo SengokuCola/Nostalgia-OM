@@ -1,6 +1,6 @@
-> **Branch `feature/better-grain`: camera test (2026-11-16).** Our own colour grain picture (g1, camera-tested) with
-> the Film Grain slider and Grain Size row (g2, emulator only), on top of the Border row; see `research/NOTES.md`,
-> "Better grain g1" and "g2". The released firmware is on `main`.
+> **Branch `feature/better-grain`: camera test (2026-11-17).** Our own colour grain picture with the Film Grain slider
+> and Grain Size row (g2c, camera-tested), on top of the Border row; g3 makes the grain picture about 3x faster (the
+> same look; emulator only). See `research/NOTES.md`, "Better grain g1" to "g3". The released firmware is on `main`.
 
 <h1 align="center">Caduceus for OM-3</h1>
 

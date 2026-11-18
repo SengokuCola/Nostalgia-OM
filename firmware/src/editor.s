@@ -8382,7 +8382,7 @@ tr_ld2:                           /* 0x604ce6c9's frame: the builder's (4,sp) / 
  mov (32,sp),d1
  cmp 0,d1
  bne 2f
- call tg_fill,[d2,d3,a2,a3],104
+ call tg_fill,[d2,d3,a2,a3],120
  bra 3f
 2:
  mov 1,d0
@@ -8392,16 +8392,19 @@ tr_ld2:                           /* 0x604ce6c9's frame: the builder's (4,sp) / 
  mov (32,sp),d1
  ret [d2,d3,a2,a3],24
 
-/* tg_fill: `call tg_fill,[d2,d3,a2,a3],104`, d0 = the tile buffer's 32-bit bus address. Our tile: Y = 48 + noise
+/* tg_fill: `call tg_fill,[d2,d3,a2,a3],120`, d0 = the tile buffer's 32-bit bus address. Our tile: Y = 48 + noise
  * (sigma 16), Cb / Cr = 128 + noise (sigma 16), each a w x w box of uniform random bytes (w = tg_own for Y, (w + 1) / 2
  * for Cb / Cr, which are half width and here also half height), seamless: rows repeat every 768 (row y + 768 = row
  * y), columns every 1536. The box sums: column sums C (one per pixel, kept from row to row: + the row entering,
  * - the row leaving, both made again from their own seed, tg_seed) and a running sum along the row (tg_row). Rows go
  * to the buffer through the bus window (hl_open; tg_put). tg_bad = 1 when anything fails (the code block then gives
  * the texture no weight: no grain rather than a wrong one). Time (1/1024 s units, about ms) -> tg_ms, count tg_n.
+ * g3 (2026-11-17, faster): when the whole tile fits one bus window (tg_op), only a band of TG_BAND = 128 rows is made
+ * this way (period 128: row 128 = row 0), each row in one lock to rows y and y + 768 (tg_rc); tg_mix makes the rest
+ * from strips of the band. Otherwise (the tile across a window edge) all 768 rows as in g2c.
  * Locals: (0) call slot, (4) bus, (8) work (malloc), (12) R row (cached), (16) CY, (20) CB, (24) CR (cached),
  * (28) y, (32) w, (36) wc, (40) start, (44) failed; (48) Y params, (64) chroma params (tg_row: N, w, K, add),
- * (80) counter, (84) a seed. */
+ * (80) counter, (84) a seed; (88) U, the rows made (128 band / 768), (92) 1 = band + strips, (96) lock token. */
  .set TG_ROWB, 3072
  .set TG_WORK, 3072 + 2 * (1536 + 8) + 4 * (768 + 8)
  .set TG_CYB, 2 * (1536 + 8)
@@ -8410,6 +8413,9 @@ tr_ld2:                           /* 0x604ce6c9's frame: the builder's (4,sp) / 
  .set TG_HALF, 768 * TG_ROWB
  .set TG_YADD, (TG_YM << 16) + 32768
  .set TG_CADD, (128 << 16) + 32768
+ .set TG_BAND, 128
+ .set TG_YRND, (48 << 8) + 128   /* tg_bl: mid << 8 + the rounding */
+ .set TG_CRND, (128 << 8) + 128
 tg_fill:
  mov d0,(4,sp)
  clr d0
@@ -8438,7 +8444,21 @@ tg_fill:
  inc d0
  lsr 1,d0
  mov d0,(36,sp)
- mov sp,a2                        /* Y params: N 1536, w, K = 14189 / w (sigma 16 from w^2 bytes of sigma 73.9),
+ mov (4,sp),d0                    /* g3: band + strips when the whole tile is in one 128 MB window segment */
+ mov 768,d1
+ clr d2
+ cmp 0x08000000,d0
+ bcs 2f
+ and 0x07ffffff,d0
+ add TG_BYTES,d0
+ cmp 0x08000001,d0
+ bcc 2f
+ mov TG_BAND,d1
+ mov 1,d2
+2:
+ mov d1,(88,sp)
+ mov d2,(92,sp)
+ mov sp,a2                       /* Y params: N 1536, w, K = 14189 / w (sigma 16 from w^2 bytes of sigma 73.9),
                                      add = (48 << 16) + 32768 - 127.5 w^2 K */
  add 48,a2
  mov (32,sp),d0
@@ -8547,14 +8567,16 @@ tg_fill:
  call tg_row,[d2,d3,a2,a3],16
  mov 1,d0
  mov d0,(80,sp)
-11:                               /* Cb (1), Cr (2): + chroma row (y / 2 + wc) mod 384, - chroma row y / 2 */
+11:                               /* Cb (1), Cr (2): + chroma row (y / 2 + wc) mod U / 2, - chroma row y / 2 */
  mov (28,sp),d0
  lsr 1,d0
  mov (36,sp),d1
  add d1,d0
- cmp 384,d0
+ mov (88,sp),d1
+ lsr 1,d1
+ cmp d1,d0
  bcs 12f
- add -384,d0
+ sub d1,d0
 12:
  mov (80,sp),d1
  call tg_seed,[],0
@@ -8584,12 +8606,13 @@ tg_fill:
  mov sp,a2
  add 48,a2
  call tg_row,[d2,d3,a2,a3],16
- mov (28,sp),d0                   /* + row (y + w) mod 768, - row y */
+ mov (28,sp),d0                   /* + row (y + w) mod U, - row y */
  mov (32,sp),d1
  add d1,d0
- cmp 768,d0
+ mov (88,sp),d1
+ cmp d1,d0
  bcs 21f
- add -768,d0
+ sub d1,d0
 21:
  clr d1
  call tg_seed,[],0
@@ -8602,6 +8625,25 @@ tg_fill:
  mov (16,sp),a0
  mov 1536,d1
  call tg_col,[d2,d3,a2,a3],16
+ mov (92,sp),d0
+ cmp 0,d0
+ beq 22f
+ mov (4,sp),d0                    /* g3: the row to tile rows y and y + 768 in one lock, through the cached view */
+ call tg_op,[d2,d3,a2,a3],20
+ mov d0,(96,sp)
+ cmp 0,a0
+ beq 78f
+ mov (28,sp),d0
+ mov TG_ROWB,d1
+ mul d1,d0
+ add d0,a0
+ mov (12,sp),a1
+ clr d0
+ call tg_rc,[d2,d3,a2,a3],16
+ mov (96,sp),d0
+ call tg_cl,[d2,d3,a2,a3],20
+ bra 23f
+22:
  mov (28,sp),d0                   /* the row to tile rows y and y + 768 */
  mov TG_ROWB,d1
  mul d1,d0
@@ -8620,12 +8662,28 @@ tg_fill:
  call tg_put,[d2,d3,a2,a3],40
  cmp 0,d0
  bne 80f
+23:
  mov (28,sp),d0
  inc d0
  mov d0,(28,sp)
- cmp 768,d0
+ mov (88,sp),d1
+ cmp d1,d0
  bcs 10b
+ mov (92,sp),d0                   /* g3: rows 128..767 from strips of the band */
+ cmp 0,d0
+ beq 85f
+ mov (4,sp),d0
+ mov (32,sp),d1
+ call tg_mix,[d2,d3,a2,a3],72
+ cmp 0,d0
+ bne 80f
+ mov (tg_nf),d0
+ inc d0
+ mov d0,(tg_nf)
  bra 85f
+78:
+ mov (96,sp),d0
+ call UNLOCK,[d2],8
 80:
  mov 1,d0
  mov d0,(44,sp)
@@ -8648,14 +8706,14 @@ tg_fill:
  mov (tg_n),d0
  inc d0
  mov d0,(tg_n)
- ret [d2,d3,a2,a3],104
+ ret [d2,d3,a2,a3],120
 90:
  mov 1,d0
  movbu d0,(tg_bad)
  mov (tg_nb),d0
  inc d0
  mov d0,(tg_nb)
- ret [d2,d3,a2,a3],104
+ ret [d2,d3,a2,a3],120
 
 /* tg_par: `call tg_par,[d2,d3],12`, d0 = box width w (1..5), a2 = params -> +4 w, +8 K = 14189 / w,
  * +12 = -(127.5 w^2 K) (the caller adds its base and the rounding). */
@@ -8935,9 +8993,337 @@ tg_put:
  clr d0
  ret [d2,d3,a2,a3],40
 
+/* ---- grain g3 (2026-11-17, owner: "try the faster grain tile method"): the AV1 film-grain idea (a template copied at
+ * random offsets, the joins crossfaded), with the template a band of the tile itself (128 x 1536, made by tg_fill's
+ * box filter) so nothing repeats near itself. Per tile ~3x fewer instructions and ~5x fewer locks / FLUSHes than g2c
+ * (FLUSH is the costly part on the camera: NOTES, xb_grain gr4). research/NOTES.md "Better grain g3". */
+
+/* tg_op: `call tg_op,[d2,d3,a2,a3],20`, d0 = the tile's bus address -> a0 = the whole tile's cached view (the window's
+ * 0x78.. view, or DRAM's 0x6.. alias), 0 = not mapped; d0 = the lock token for tg_cl (also when a0 = 0). */
+tg_op:
+ mov TG_BYTES,d1
+ call hl_open,[d2,d3,a2,a3],28
+ cmp 0,a0
+ beq 1f
+ mov a0,d1
+ add -0x40000000,d1
+ mov d1,a0
+1:
+ ret [d2,d3,a2,a3],20
+
+/* tg_cl: `call tg_cl,[d2,d3,a2,a3],20`, d0 = tg_op's token: FLUSH (the cached view's lines out to memory), UNLOCK. */
+tg_cl:
+ mov d0,d2
+ call FLUSH,[d2,d3],16
+ mov d2,d0
+ call UNLOCK,[d2],8
+ ret [d2,d3,a2,a3],20
+
+/* tg_rc: `call tg_rc,[d2,d3,a2,a3],16`, a0 = a tile row (cached view), a1 = the source row, d0 = a shift (bytes, a
+ * multiple of 4, 0..3068): row[j] = source[(j + shift) mod 3072], written at a0 and a0 + TG_HALF (768 rows down).
+ * About 5.4 K instructions. */
+tg_rc:
+ mov TG_ROWB,d2
+ sub d0,d2
+ lsr 2,d2                         /* words before the source's end (1..768) */
+ mov a1,a2                        /* the source row's start */
+ add d0,a1
+ lsr 2,d0
+ mov d0,d3                        /* words after it (0..767) */
+1:
+ mov (a1),d0
+ inc4 a1
+ mov d0,(a0)
+ mov d0,(TG_HALF,a0)
+ inc4 a0
+ add -1,d2
+ bne 1b
+ cmp 0,d3
+ beq 3f
+ mov a2,a1
+2:
+ mov (a1),d0
+ inc4 a1
+ mov d0,(a0)
+ mov d0,(TG_HALF,a0)
+ inc4 a0
+ add -1,d3
+ bne 2b
+3:
+ ret [d2,d3,a2,a3],16
+
+/* tg_bl: `call tg_bl,[d2,d3,a2,a3],32`, a0 = a tile row (cached view) holding the new strip's row n, a1 = the row the
+ * strip before goes on with (p, before its shift), d0 = p's shift (bytes, a multiple of 4), d1 = weights c | s << 16:
+ * out = clamp(mid + ((c (p - mid) + s (n - mid) + 128) >> 8)), mid 48 for Y (even bytes), 128 for Cb / Cr (odd);
+ * written at a0 and a0 + TG_HALF. About 58 K instructions. Locals: (4) p's row start, (8) the shift, (12) the piece. */
+tg_bl:
+ mov a1,(4,sp)
+ mov d0,(8,sp)
+ mov d1,d3
+ exthu d3                         /* c */
+ mov d1,d2
+ lsr 16,d2                        /* s */
+ add d0,a1                        /* piece 0: p from the shift to its row's end */
+ mov TG_ROWB,d1
+ sub d0,d1
+ mov a0,a2
+ add d1,a2
+ clr d0
+ mov d0,(12,sp)
+5:
+ cmp a2,a0
+ bcc 8f
+6:
+ movbu (a1),d0                    /* Y */
+ add -48,d0
+ mul d3,d0
+ movbu (a0),d1
+ add -48,d1
+ mul d2,d1
+ add d1,d0
+ add TG_YRND,d0
+ asr 8,d0
+ cmp 0,d0
+ bge 1f
+ clr d0
+1:
+ cmp 255,d0
+ ble 2f
+ mov 255,d0
+2:
+ movbu d0,(a0)
+ movbu d0,(TG_HALF,a0)
+ movbu (1,a1),d0                  /* Cb or Cr */
+ add -128,d0
+ mul d3,d0
+ movbu (1,a0),d1
+ add -128,d1
+ mul d2,d1
+ add d1,d0
+ add TG_CRND,d0
+ asr 8,d0
+ cmp 0,d0
+ bge 3f
+ clr d0
+3:
+ cmp 255,d0
+ ble 4f
+ mov 255,d0
+4:
+ movbu d0,(1,a0)
+ movbu d0,(TG_HALF + 1,a0)
+ add 2,a0
+ add 2,a1
+ cmp a2,a0
+ bcs 6b
+8:
+ mov (12,sp),d0
+ cmp 0,d0
+ bne 9f
+ mov 1,d0
+ mov d0,(12,sp)
+ mov (4,sp),a1                    /* piece 1: p from its row's start, for the shift's bytes */
+ mov (8,sp),d0
+ mov a0,a2
+ add d0,a2
+ bra 5b
+9:
+ ret [d2,d3,a2,a3],32
+
+/* tg_mix: `call tg_mix,[d2,d3,a2,a3],72`, d0 = the tile's bus address, d1 = w (1..5); tile rows 0..127 hold the band
+ * (period 128: its row 128 would be row 0), rows 768..895 the same. Rows 128..767 (and 896..1535): 20 strips of 32
+ * rows; strip k = the band's rows sy..sy + 31 turned round by sx (row[j] = band[(j + sx) mod 3072]), sy and sx from
+ * tg_seed(k, 3) = h: sy = 2 ((h & 0xffff) 44 >> 16) (0..86, so the strip and the 10 rows after it stay in the band),
+ * sx = 4 ((h >> 16) 768 >> 16) bytes. Its first B = 2w rows are crossfaded (tg_bl, weights tg_wt: cos / sin of
+ * (i + 1) 90 / (B + 1) degrees, so the grain keeps its strength) from the strip before it going on (strip 0: the band
+ * going on, rows 0..B - 1); at the end the last strip going on is crossfaded into rows 0..B - 1 (the tile's wrap).
+ * A lock for each crossfaded row, up to 16 other rows a lock (at most ~90 K instructions under one).
+ * -> d0 = 0 done, 1 the window not mapped. Locals: (4) bus, (8) B, (12) weights, (16) k, (20) r0 (the strip's first
+ * row), (24) sy, (28) sx, (32) the row the strip before goes on with, (36) its sx, (40) i, (44) token, (48) the
+ * tile's cached view, (52) rows left this lock. */
+tg_mix:
+ mov d0,(4,sp)
+ mov d1,d0
+ add d0,d0
+ mov d0,(8,sp)
+ mov d1,d0
+ add -1,d0
+ mul d1,d0
+ asl2 d0
+ mov tg_wt,a0
+ add d0,a0
+ mov a0,(12,sp)
+ clr d0
+ mov d0,(16,sp)
+ mov d0,(32,sp)
+ mov d0,(36,sp)
+10:                               /* strip k */
+ mov (16,sp),d0
+ asl 5,d0
+ add TG_BAND,d0
+ mov d0,(20,sp)
+ mov (16,sp),d0
+ mov 3,d1
+ call tg_seed,[],0
+ mov d0,d2
+ exthu d0
+ mov 44,d1
+ mul d1,d0
+ lsr 16,d0
+ add d0,d0
+ mov d0,(24,sp)
+ mov d2,d0
+ lsr 16,d0
+ mov 768,d1
+ mul d1,d0
+ lsr 16,d0
+ asl2 d0
+ mov d0,(28,sp)
+ clr d0
+ mov d0,(40,sp)
+11:                               /* its first B rows: the strip's row, crossfaded from the strip before */
+ mov (4,sp),d0
+ call tg_op,[d2,d3,a2,a3],20
+ mov d0,(44,sp)
+ cmp 0,a0
+ beq 80f
+ mov a0,(48,sp)
+ mov (20,sp),d0
+ call tg_ra,[],0
+ mov d0,a2                        /* the row */
+ mov (24,sp),d0
+ call tg_ra,[],0
+ mov d0,a1
+ mov a2,a0
+ mov (28,sp),d0
+ call tg_rc,[d2,d3,a2,a3],16
+ mov (32,sp),d0
+ call tg_ra,[],0
+ mov d0,a1
+ mov a2,a0
+ call tg_wi,[],0
+ mov (36,sp),d0
+ call tg_bl,[d2,d3,a2,a3],32
+ mov (44,sp),d0
+ call tg_cl,[d2,d3,a2,a3],20
+ mov (40,sp),d0
+ inc d0
+ mov d0,(40,sp)
+ mov (8,sp),d1
+ cmp d1,d0
+ bcs 11b
+12:                               /* the rest of the strip, up to 16 rows a lock */
+ mov (40,sp),d0
+ cmp 32,d0
+ bcc 15f
+ mov (4,sp),d0
+ call tg_op,[d2,d3,a2,a3],20
+ mov d0,(44,sp)
+ cmp 0,a0
+ beq 80f
+ mov a0,(48,sp)
+ mov 16,d0
+ mov d0,(52,sp)
+13:
+ mov (20,sp),d0
+ call tg_ra,[],0
+ mov d0,a0
+ mov (24,sp),d0
+ call tg_ra,[],0
+ mov d0,a1
+ mov (28,sp),d0
+ call tg_rc,[d2,d3,a2,a3],16
+ mov (40,sp),d0
+ inc d0
+ mov d0,(40,sp)
+ cmp 32,d0
+ bcc 14f
+ mov (52,sp),d0
+ add -1,d0
+ mov d0,(52,sp)
+ bne 13b
+14:
+ mov (44,sp),d0
+ call tg_cl,[d2,d3,a2,a3],20
+ bra 12b
+15:
+ mov (24,sp),d0                   /* this strip goes on from its row sy + 32 */
+ add 32,d0
+ mov d0,(32,sp)
+ mov (28,sp),d0
+ mov d0,(36,sp)
+ mov (16,sp),d0
+ inc d0
+ mov d0,(16,sp)
+ cmp 20,d0
+ bcs 10b
+ clr d0                           /* the wrap: rows 0..B - 1 crossfaded from the last strip going on */
+ mov d0,(40,sp)
+ mov d0,(20,sp)
+16:
+ mov (4,sp),d0
+ call tg_op,[d2,d3,a2,a3],20
+ mov d0,(44,sp)
+ cmp 0,a0
+ beq 80f
+ mov a0,(48,sp)
+ mov (20,sp),d0
+ call tg_ra,[],0
+ mov d0,a2
+ mov (32,sp),d0
+ call tg_ra,[],0
+ mov d0,a1
+ mov a2,a0
+ call tg_wi,[],0
+ mov (36,sp),d0
+ call tg_bl,[d2,d3,a2,a3],32
+ mov (44,sp),d0
+ call tg_cl,[d2,d3,a2,a3],20
+ mov (40,sp),d0
+ inc d0
+ mov d0,(40,sp)
+ mov (8,sp),d1
+ cmp d1,d0
+ bcs 16b
+ clr d0
+ ret [d2,d3,a2,a3],72
+80:
+ mov (44,sp),d0
+ call UNLOCK,[d2],8
+ mov 1,d0
+ ret [d2,d3,a2,a3],72
+
+/* tg_ra: `call tg_ra,[],0` from tg_mix (same sp: the return address goes in its call slot): d0 = a row r -> d0 =
+ * the tile's cached view (48,sp) + (r + i) 3072, i = (40,sp). Uses d0, d1, MDR. */
+tg_ra:
+ mov (40,sp),d1
+ add d1,d0
+ mov TG_ROWB,d1
+ mul d1,d0
+ mov (48,sp),d1
+ add d1,d0
+ ret [],0
+
+/* tg_wi: `call tg_wi,[],0` from tg_mix -> d1 = the weights c | s << 16 for row i = (40,sp) of a crossfade, from
+ * (12,sp) + 4 i. Uses d0, a3. */
+tg_wi:
+ mov (40,sp),d0
+ asl2 d0
+ mov (12,sp),d1
+ add d1,d0
+ mov d0,a3
+ mov (a3),d1
+ ret [],0
+
  .balign 4
 tg_kt:                            /* K by box width 1..5: 16 / (73.9 w) x 65536 */
  .long 14189, 7094, 4730, 3547, 2838
+tg_wt:                            /* g3 crossfade weights, B = 2w rows: c, s = 256 cos, 256 sin ((i + 1) 90 / (B + 1)) */
+ .hword 222, 128, 128, 222
+ .hword 243, 79, 207, 150, 150, 207, 79, 243
+ .hword 250, 57, 231, 111, 200, 160, 160, 200, 111, 231, 57, 250
+ .hword 252, 44, 241, 88, 222, 128, 196, 165, 165, 196, 128, 222, 88, 241, 44, 252
+ .hword 253, 36, 246, 72, 233, 106, 215, 138, 193, 168, 168, 193, 138, 215, 106, 233, 72, 246, 36, 253
 tg_sb:                            /* this tile's seed */
  .long 0
 tg_n:                             /* tiles made this power-on */
@@ -8945,6 +9331,8 @@ tg_n:                             /* tiles made this power-on */
 tg_nb:                            /* tiles that failed */
  .long 0
 tg_ms:                            /* the last tile's time in ms (g1b; g1 logged end - start >> 10, wrong way round) */
+ .long 0
+tg_nf:                            /* g3: tiles made the fast way (band + strips) */
  .long 0
 tg_own:                           /* set by the code block's xb_tex around TXGET: our tile's size 1..5, 0 = stock */
  .byte 0
@@ -8954,13 +9342,15 @@ tg_w:                             /* the last tile's size */
  .byte 0
  .balign 4
 tg_l1:
- .asciz "\r\nGrain tiles (better grain g2): made "
+ .asciz "\r\nGrain tiles (better grain g3): made "
 tg_l2:
  .asciz ", failed "
 tg_l3:
  .asciz ", last size "
 tg_l4:
  .asciz ", last time (ms) "
+tg_l5:
+ .asciz ", fast "
  .balign 4
 
 /* ------------------------------------------------------------------ better grain g2: the Film Grain and Grain Size rows
@@ -11225,6 +11615,9 @@ lg_sum:
  LGD
  LGS tg_l4
  mov (tg_ms),d0
+ LGD
+ LGS tg_l5                        /* g3: tiles made the fast way */
+ mov (tg_nf),d0
  LGD
  LGS lg_y0                        /* now: mode, exposure, WB, picture, screen */
  call lg_new,[],0

@@ -321,7 +321,8 @@ more work than the tests above.
 - **Stills.** om-emu has no sensor or capture pipeline, so grain, glow, halation, RAW+JPEG, and Pin Hole regressions
   need the camera. The halation pass's bytes are the exception (`halation-matches-the-model`, a direct call on test
   frames in plain DRAM); its timing, the bus window path it takes on the camera, and the capture route stay
-  camera-only.
+  camera-only. Likewise our grain tile's bytes (`grain-tile-matches-the-model`, `tg_fill` called directly, against
+  `research/grain/tile_model.py`); its time, the window path and the look on photos stay camera-only.
 - **Video.** om-emu does not model movie recording. A camera video boot puts films back, and an om-emu one does not.
   The v0.29.5 live view freeze (#53) itself is camera-only. `video-boot-after-photo-boot` checks the code path its
   fix removes.

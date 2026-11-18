@@ -43,6 +43,11 @@ DIAL = 'rgb-page-counts-every-click'
 # output offset (+180): g1 / g2 put it there, after the clamp, and capped the highlights (camera, 2026-11-16).
 GRAINMIX = 'grain-mix-keeps-the-highlights'
 GRAIN_GAINS = {1: (400, 175), 3: (1024, 448), 5: (1536, 672)}   # strength -> texture Y gain, Cb / Cr gain (xblock.s)
+# grain g3 (faster tile, 2026-11-17): tg_fill called directly (FLUSH stubbed) must give every byte of
+# research/grain/tile_model.py: the band + strips tile when the whole tile is in one 128 MB window segment (Fine, Coarse),
+# the full box-filter tile (g2c's) when it is across an edge. About 40 s.
+GRAINTILE = 'grain-tile-matches-the-model'
+GRAINTILE_CASES = [('fine-fast', 1, 0xb0100000), ('coarse-fast', 3, 0xb0100000), ('medium-across-an-edge', 2, 0xaff00000)]
 REAR_DIAL = 0x9032                               # the rear dial's event (cv_ev); a1 its signed clicks
 # (name, a1): first no clicks (the value as it is), then a fast turn of 3, then one past the range.
 DIAL_CASES = [('as-is', 0), ('up-3', -3), ('down-20', 20)]
@@ -616,6 +621,49 @@ def run_grainmix(emu, build, out, card0):
     return GRAINMIX, errors
 
 
+def run_graintile(emu, build, out, card0):
+    """tg_fill on GRAINTILE_CASES (size, the tile's bus address), FLUSH stubbed: the tile equals the model's byte for
+    byte, the fast way (band + strips) taken only when the tile is in one window segment, and no failure."""
+    import numpy as np
+    spec_ = importlib.util.spec_from_file_location('tile_model', REPO / 'research/grain/tile_model.py')
+    tm = importlib.util.module_from_spec(spec_)
+    spec_.loader.exec_module(tm)
+    d = out / GRAINTILE
+    d.mkdir(parents=True, exist_ok=True)
+    sym = elf_symbols(build / 'p.elf')
+    tg = f"{sym['tg_sb']:#x}"                        # tg_sb, tg_n, tg_nb, tg_ms, tg_nf; tg_own, tg_bad, tg_w
+    spec = [{'name': name, 'pc': 'B', 'stop': ['B+7'], 'max': 100000000,
+             'mem': [['B', 'dd'], ['B+1', f"={sym['tg_fill']:#x}-B"], ['B+5', 'f078'],    # call tg_fill,[..],120
+                     [f"{sym['FLUSH']:#x}", 'dfc010'], [f"{sym['tg_own']:#x}", f'{w:02x}'],
+                     [f"{sym['tg_bad']:#x}", '00']],
+             'regs': {'d0': hex(bus)}, 'read': [[hex(bus), 1536 * 3072], [tg, 23]]}
+            for name, w, bus in GRAINTILE_CASES]
+    res = run_ncall(emu, build, d, card0, 's1 wait wait ncall', spec)
+    if isinstance(res, str):
+        return GRAINTILE, [res]
+    errors, nf0 = [], 0
+    for (name, w, bus), o in zip(GRAINTILE_CASES, spec):
+        r = res[name]
+        if r['steps'] >= o['max']:
+            errors.append(f'{name}: tg_fill did not return (out.json)')
+            continue
+        tile = np.frombuffer(bytes.fromhex(r['mem'][0]), np.uint8).reshape(1536, 3072)
+        sb, n, nb, ms, nf = struct.unpack_from('<5I', bytes.fromhex(r['mem'][1]))
+        bad = bytes.fromhex(r['mem'][1])[21]
+        fast = (bus & 0x07ffffff) + 1536 * 3072 <= 0x08000000
+        if bad or nb:
+            errors.append(f'{name}: the tile failed (tg_bad {bad}, tg_nb {nb})')
+        if nf - nf0 != fast:
+            errors.append(f"{name}: made {'the full way' if fast else 'the fast way'}, not "
+                          f"{'the fast way' if fast else 'the full way'} (tg_nf {nf})")
+        nf0 = nf
+        want = (tm.fast_tile if fast else tm.full_tile)(w, sb)
+        if not np.array_equal(tile, want):
+            rows = sorted(set(np.nonzero(tile != want)[0].tolist()))
+            errors.append(f'{name}: {int((tile != want).sum())} bytes differ from the model, rows {rows[:12]}')
+    return GRAINTILE, errors
+
+
 def run_dial(emu, build, out, card0):
     """The RGB page open: one rear-dial event carrying several clicks (a fast turn on the camera) moves the selected
     value by all of them, clamped to -7..+7. om-emu's dial tokens send one click an event, so the test calls cv_ev."""
@@ -703,7 +751,7 @@ def newest_looks():
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('build', type=pathlib.Path)
-    ap.add_argument('--only', nargs='+', choices=sorted([*TESTS, AUDIT, HALATION, BORDER, ENGINE, DIAL, GRAINMIX, *STATIC]))
+    ap.add_argument('--only', nargs='+', choices=sorted([*TESTS, AUDIT, HALATION, BORDER, ENGINE, DIAL, GRAINMIX, GRAINTILE, *STATIC]))
     ap.add_argument('--jobs', type=lambda v: max(1, int(v)), default=DEFAULT_JOBS)
     ap.add_argument('--out', type=pathlib.Path)
     ap.add_argument('--looks', type=pathlib.Path)
@@ -726,7 +774,7 @@ def main():
     looks = (a.looks or newest_looks()).resolve()
     make_card(emu, build, looks, card0)
     fixtures = make_fixtures(out, looks)
-    names = a.only or sorted([*TESTS, AUDIT, HALATION, BORDER, ENGINE, DIAL, GRAINMIX, *STATIC])
+    names = a.only or sorted([*TESTS, AUDIT, HALATION, BORDER, ENGINE, DIAL, GRAINMIX, GRAINTILE, *STATIC])
     stock = static_check.find_stock(a.stock) if any(n in STATIC for n in names) else None
     runs = [(n, k) for n in names for k in range(1, a.repeat + 1)]
     print(f'{len(names)} tests{f" x {a.repeat}" if a.repeat > 1 else ""} on {build}, results in {out}')
@@ -757,6 +805,8 @@ def main():
                 return run_dial(emu, build, d, card0)
             if n == GRAINMIX:
                 return run_grainmix(emu, build, d, card0)
+            if n == GRAINTILE:
+                return run_graintile(emu, build, d, card0)
             first = shared.get((k, boot_key(TESTS[n][0])))
             return run_test(n, TESTS[n], emu, build, card0, d, first and first.result(), fixtures)
         except static_check.Skip as e:
