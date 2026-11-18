@@ -6045,3 +6045,7 @@ rgb-page-counts-every-click, halation-matches-the-model). Package `test-builds/2
   `--without` the g2c build (out-g2g): caught (its tg_fill has the old frame and does not come back).
 - **Camera-only:** the window path (the band read back through the 0x78.. view, several rows a lock), the real time,
   the look on photos, video.
+- Suite on d361b4f (its own build): **31 of 31 pass**. Package `test-builds/2026-11-17-grain-g3` (private folder):
+  E1479999.BIN `4692fc78…6089` (VERSION "v0.30.3-dev (grain g3: faster grain tile)"), go-backs v0.30.3
+  `60b6d954…f546`, border test 1c `d8ce3d89…3db3` and grain g2c `317747e1…23a6`; a g2c / g3 comparison picture made
+  from the model. Camera questions: the time per tile, no stripes / lines / repeats at Coarse, "fast N" = "made".
