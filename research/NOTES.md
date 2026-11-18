@@ -7415,3 +7415,6 @@ camera's own info-display settings, with show / hide per item, several set-ups, 
 - Build `58db258b…cbfc` (a second clean build matches). Suite: 65 pass, 2 FAIL = screen info's hook 0x6123043d and its
   patch sites (0x60e57478, 0x6152a064 / 70 / 7c, 0x6156d0a4 / bc / d4), as on s2; not yet in `hooks.json` (owner's OK
   needed). On the owner's card 2026-11-18 (sha256 checked).
+- **Camera-tested 2026-11-18** (owner: "It all looks good and works as advertised!"): log clean, build "v0.41-dev
+  (grain g3, screen info s2)", 25 photos, grain tiles made 20, failed 0, all fast, last 270 ms; play, menu and Picture
+  Mode screens visited; nothing unusual. The owner erased the photos before the card came back.
