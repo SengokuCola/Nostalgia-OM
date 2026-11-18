@@ -216,15 +216,15 @@ cr_sin:                           /* jmp from 0x60061183 (its frame; d2, d3, a2 
  mov (CR_MH),a1
  cmp a1,a0
  bne 9f
+ mov (cr_nsin),d0                 /* the log counts these saves of M (crop83-3: all of them) */
+ inc d0
+ mov d0,(cr_nsin)
  movbu (CR_A1),d0
  cmp 5,d0
  bcs 8f
  cmp 8,d0
  bcc 8f
  mov d0,d2                        /* the crop */
- mov (cr_nsin),d1                 /* crop83-2: the log counts these (the live value is the base until power-off) */
- inc d1
- mov d1,(cr_nsin)
  mov 1,d1
  cmp 5,d0
  beq 1f
@@ -234,6 +234,16 @@ cr_sin:                           /* jmp from 0x60061183 (its frame; d2, d3, a2 
  movbu d1,(CR_A1 + CR_UNC)
  movbu d1,(CR_A2)
  movbu d1,(CR_A2 + CR_UNC)
+ mov (cr_sra),d0                  /* crop83-3: the write returns through cr_sinr, which puts the crop back (once) */
+ cmp 0,d0
+ bne 2f
+ movbu d1,(cr_sib)
+ movbu d2,(cr_sic)
+ mov (32,sp),d0                   /* the return address: the callers' `call 0x60061183,[d2,d3,a2,a3],32` */
+ mov d0,(cr_sra)
+ mov cr_sinr,d0
+ mov d0,(32,sp)
+2:
  mov CR_TAGV,d0
  or d2,d0
  bra 7f
@@ -242,14 +252,46 @@ cr_sin:                           /* jmp from 0x60061183 (its frame; d2, d3, a2 
 7:
  mov d0,(CR_TG)
  mov d0,(CR_TG + CR_UNC)
+ mov d0,(cr_stg)                  /* crop83-3: the tag the last save wrote (the log) */
 9:
  call cr_ef,[],0                  /* the stock call (a0 = the store) */
  jmp cr_sin_back
+
+/* cr_sinr (crop83-3, 2026-11-18) <- the store write's `ret [d2,d3,a2,a3],32` after cr_sin patched a crop: the caller's
+ * registers and sp, d0 = the write's result. Camera, test 8 (crop83-2): "save patches 2" in a power-on, and the next
+ * start found no tag. The camera also saves M without a callback while it runs (not only at power-off), and that write
+ * goes out of the RAM image itself (0x60061214: no buffer copy), so cr_sin has to patch the live value; until crop83-3
+ * nothing put the crop back, Image Aspect stayed at the base (the screen showed 16:9) and the power-off save then
+ * sealed no tag. Here the crop goes back into both copies as soon as the write returns, if the live value is still
+ * the base cr_sin wrote. d1 / a0 / a1 / MDR are free (the callers keep nothing in them over the call). */
+cr_sinr:
+ mov d0,(cr_sir)
+ movbu (CR_A1),d0
+ movbu (cr_sib),d1
+ cmp d1,d0
+ bne 1f                           /* changed during the write: it stays */
+ movbu (cr_sic),d0
+ movbu d0,(CR_A1)
+ movbu d0,(CR_A1 + CR_UNC)
+ movbu d0,(CR_A2)
+ movbu d0,(CR_A2 + CR_UNC)
+ mov (cr_nsr),d0
+ inc d0
+ mov d0,(cr_nsr)
+1:
+ mov (cr_sra),a0
+ clr d0
+ mov d0,(cr_sra)
+ mov (cr_sir),d0
+ jmp (a0)
 
 cr_sbuf:                          /* jmp from 0x6006120e (0x60061183's frame; a3 = the store, the buffer is filled) */
  mov (CR_MH),a1
  cmp a1,a3
  bne 9f
+ mov (cr_nsb),d0                  /* crop83-3: the log counts these */
+ inc d0
+ mov d0,(cr_nsb)
  movbu (CR_BUF + 0x2c2),d0
  cmp 5,d0
  bcs 8f
@@ -275,6 +317,7 @@ cr_sbuf:                          /* jmp from 0x6006120e (0x60061183's frame; a3
 7:
  mov (CR_BUF + 0x39ff0),d2        /* the tag: old -> new, and its two halves into the sum */
  mov d0,(CR_BUF + 0x39ff0)
+ mov d0,(cr_stg)                  /* crop83-3: the tag the last save wrote (the log) */
  mov d0,d3
  exthu d3
  add d3,d1
@@ -405,6 +448,9 @@ cr_chk:                           /* `call cr_chk,[d2,d3,a2,a3],24` */
  call cr_pho,[],0
  cmp 0,d0
  beq 9f                           /* not now in video (#53): a later pass */
+ mov (cr_sra),d0                  /* crop83-3: not while a save of M goes out of RAM (cr_sinr due) */
+ cmp 0,d0
+ bne 9f
  mov (cr_nre),d1
  inc d1
  mov d1,(cr_nre)
@@ -504,6 +550,9 @@ cr_rst:
  movbu d0,(cr_self)
  ret [d2,d3,a2,a3],24
 2:
+ mov (cr_sra),d0                  /* crop83-3: not while a save of M goes out of RAM: as not ready, tried again */
+ cmp 0,d0
+ bne 7b
  mov d1,(cr_dst)
  movbu d1,(cr_crp)
  mov 1,d0
@@ -803,12 +852,27 @@ cr_owv:
  .long 0
 cr_nsin:
  .long 0
+cr_sra:                           /* crop83-3: cr_sinr's way back (0: none due), the result, the crop and base, put back */
+ .long 0
+cr_sir:
+ .long 0
+cr_nsr:
+ .long 0
+cr_nsb:                           /* crop83-3: saves through the buffer (after a menu), the tag the last save wrote */
+ .long 0
+cr_stg:
+ .long 0
+cr_sic:
+ .byte 0
+cr_sib:
+ .byte 0
+ .balign 2
 cr_owt:                           /* the task of the last write of 269 by others; the GUI task */
  .hword 0xffff
 cr_gtid:
  .hword 0xffff
 cr_t1:
- .asciz "\r\n\r\nCROP MODES (crop round 12): tag "
+ .asciz "\r\n\r\nCROP MODES (crop round 13): tag "
 cr_w0:
  .asciz " (not read yet)"
 cr_w1:
@@ -852,7 +916,13 @@ cr_t23:
 cr_t24:
  .asciz ", GUI task "
 cr_t25:
- .asciz "); save patches "
+ .asciz "); saves of M this power-on: from memory "
+cr_t26:
+ .asciz " (crop put back after "
+cr_t27:
+ .asciz "), after a menu "
+cr_t28:
+ .asciz ", last tag written "
  .balign 2
 cr_txt:                           /* `call cr_txt,[d2,d3,a2,a3],24` */
  LGS cr_t1
@@ -929,6 +999,15 @@ cr_txt:                           /* `call cr_txt,[d2,d3,a2,a3],24` */
  LGS cr_t25
  mov (cr_nsin),d0
  LGD
+ LGS cr_t26                       /* crop83-3 */
+ mov (cr_nsr),d0
+ LGD
+ LGS cr_t27
+ mov (cr_nsb),d0
+ LGD
+ LGS cr_t28
+ mov (cr_stg),d0
+ call lg_h,[],0
  ret [d2,d3,a2,a3],24
 
 /* ---- Grid lines inside the strip (crop round 2; camera c5: "the gridlines/guides do not match the framing"). The

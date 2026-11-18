@@ -458,6 +458,11 @@ def CROP_NOW(now):
     return rf'^CROP MODES \(crop round \d+\w*\): .*, now {now};'
 
 
+def CROP_SAVES(memory, put_back, tag):           # crop83-3: saves of M from memory, crop put back after, last tag written
+    return (rf'^CROP MODES \(crop round \d+\w*\): .*; saves of M this power-on: from memory {memory} \(crop put back after '
+            rf'{put_back}\), after a menu \d+, last tag written {tag}')
+
+
 def CROP_SET_AGAIN(n):                           # crop83-2: times cr_chk set the crop again after its start-up restore
     return rf'^CROP MODES \(crop round \d+\w*\): .*\), set again {n};'
 
@@ -1858,8 +1863,39 @@ def run_livelook(emu, build, out, card0):
     return LIVE, errors
 
 
+# crop83-3: the camera saves M without a callback while it runs too (camera, test 8: two in a power-on), and that write
+# goes out of the RAM image, so cr_sin patches the live Image Aspect to the crop's base; until crop83-3 it stayed there
+# (16:9 on the screen) and the power-off save sealed no tag. Boot 1 sets XPan and calls the camera's own save
+# (0x60061183, a0 = M, a1 = 0) as its store task would: XPan again right after it, the tag written; boot 2 starts in XPan.
+CROPSAVE = 'crop-kept-over-a-save-of-m-while-on'
+STORE_WRITE, CR_MH = 0x60061183, 0xa32bb920
+
+
+def run_cropsave(emu, build, out, card0):
+    d = out / CROPSAVE
+    d.mkdir(parents=True, exist_ok=True)
+    spec = [{'name': 'save', 'pc': 'B', 'stop': ['B+7'], 'max': 20000000,
+             'mem': [['B', 'dd'], ['B+1', f'={STORE_WRITE:#x}-B'], ['B+5', 'f020']],    # call 0x60061183,[d2,d3,a2,a3],32
+             'regs': {'a0': f'W({CR_MH:#x})', 'a1': '0', 'd0': '0', 'd1': '0'},
+             'read': [['0x629209c2', 1], ['0x62952b58', 1], [f'{CR_TG:#x}', 4]]}]
+    (d / 'spec.json').write_text(json.dumps(spec))
+    nc = (('NCALL', str(d / 'spec.json')), ('NOUT', str(d / 'out.json')))
+    name, errors = run_test(CROPSAVE, [
+        Boot(f's1 wait wait {PICK_ASPECT(6)} s1 wait wait {CROP_ASPECT_IS(6)} ncall wait wait {CROP_ASPECT_IS(6)} '
+             f's1 wait wait {CROP_ASPECT_IS(6)} poweroff', env=nc, expect=[CROP_SAVES(r'\d+', 1, '43520006')]),
+        Boot(f'wait wait {CROP_ASPECT_IS(6)} s1 wait wait poweroff', expect=[CROP_LINE('43520006', AT_START_UP, 3, 6, 6, 6)]),
+    ], emu, build, card0, out)
+    if (d / 'out.json').exists():
+        o = json.loads((d / 'out.json').read_text())['out'][0]
+        if o['steps'] >= 20000000:
+            errors.append('the store write did not return (out.json)')
+        elif o['mem'] != ['06', '06', '06005243']:
+            errors.append(f'right after the save: Image Aspect copies and tag {o["mem"]}, want 06, 06, 06005243 (out.json)')
+    return CROPSAVE, errors
+
+
 # Tests that call our code directly through run_ncall: name -> runner(emu, build, out, card0).
-DIRECT = {WB: run_wb, HL: run_hl, CROPEL: run_cropel, LIVE: run_livelook}
+DIRECT = {WB: run_wb, HL: run_hl, CROPEL: run_cropel, LIVE: run_livelook, CROPSAVE: run_cropsave}
 
 
 def newest_looks():
