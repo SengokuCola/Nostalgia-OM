@@ -8096,3 +8096,7 @@ Test driver tools/emulator/focus_stacking.mjs runs this routine with controlled 
   `test-builds/2026-11-18-crop83-3` (private folder), go-backs test 8 `af37586c…5f4c` and v0.40b `94fbd976…2fab`;
   TEST-STEPS: XPan set and switched off at once, cycles with and without a half-press and with photos, 21:9, 5:4.
   Camera test pending.
+- **crop83-3 camera-tested 2026-11-18** (owner: "the xpan fix worked!!!!"): `39634ace…cc08` = test 8 + the crop put back
+  after each save of M while on (cr_sinr). Log of the last power-on: "saves of M this power-on: from memory 8 (crop
+  put back after 8), after a menu 7, last tag written 43520006", now 6 (XPan), nothing unusual. try/v0.41-dev
+  fast-forwarded to fix/83-crop-at-start (17b1d73): #83 fixed in the v0.41 line; issue #83 not answered yet.
