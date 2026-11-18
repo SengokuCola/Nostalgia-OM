@@ -1,6 +1,6 @@
 # Using Caduceus for OM-3
 
-This page is for **v0.30.3**, the latest version (and the v0.30.4-alpha test version). Not installed yet? Start with [Install](INSTALL.md).
+This page is for **v0.30.3**, the latest version (and the v0.30.4-alpha and v0.40-alpha test versions). Not installed yet? Start with [Install](INSTALL.md).
 
 > [!NOTE]
 > Caduceus works on the **COLOR** profiles (COLOR 1–4) and your **films** (FILM 1–20). The Monochrome profiles keep
@@ -28,6 +28,8 @@ the first half-press. The camera remembers the film you were on when you switch 
 
 What each of the 20 film sims looks like: [the film sims](../README.md#the-20-film-sims).
 
+From v0.40-alpha Picture Mode stays open 30 s when you leave it alone (8 s before); other screens still close after 8 s.
+
 **Quicker:** on the super control panel, select the Picture Mode cell and turn a dial. It steps through COLOR 1–4, then
 FILM 1–20.
 
@@ -53,10 +55,12 @@ The rows under Picture Mode change the film (or the COLOR) you're on, straight a
 | **Shading** | Darker or lighter corners, as an effect. |
 | **Glow Effect** | +1 to +5 adds a soft glow. −1 to −5 adds Clarity (crisper local contrast). 0 = off. |
 | **Halation Effect** | 0 to 5: a red-orange glow around bright lights, as on cinema film (CineStill). Works with or without Glow; fades out in bright daylight scenes. The halo fades gradually away from the light. Saving takes a little longer with it on (much less since v0.30.3). |
-| **Film Grain Effect** | Off, Low, Med or High. Added in colour, with no extra wait after the photo. |
+| **Film Grain Effect** | Off, Low, Med or High. Added in colour, with no extra wait after the photo. From v0.40-alpha: our own colour grain, Off and 1 to 5 (a film's Low / Med / High become 2 / 3 / 5); highlights stay white and Halation keeps its glow. |
+| **Grain Size** | From v0.40-alpha: Fine, Medium or Coarse, for Film Grain. |
+| **Border** | From v0.40-alpha: a white border, 0 (off) to 5, the same width on every side. JPEG only: the photo keeps its size and the border covers its outer edge; RAW is untouched. In live view a thin frame line shows where its inner edge will be (from the first half-press; not in video). |
 
 The rows come five to a page in this order, as the camera works on a photo: the film and its colour, then white
-balance and tone, then detail, lens and light effects, then grain. The 20 film sims have their own Color Mix and RGB
+balance and tone, then detail, lens and light effects, then grain (and from v0.40-alpha the border). The 20 film sims have their own Color Mix and RGB
 curves once the camera has taken `CURVES.BIN` (from v0.30); changing them on a film gives it a "*" like any other row.
 
 <!-- picture: the Picture Mode rows for one film -->
@@ -140,6 +144,21 @@ other films keep the changes you made on the camera, and your selection and Extr
 hold OK on it in Picture Mode.
 
 More on LookLab: [how to use it](CONTROL_PANEL.md).
+
+## Crop modes: XPan, 21:9 and 5:4 (v0.40-alpha)
+
+Image Aspect has three more choices, on the super control panel and in the Image Aspect menus: **5:4**, **XPan**
+(65:24, the panoramic film camera's shape) and **21:9**.
+
+- **Photos:** JPEGs are saved at that shape: XPan 5184 × 1920, 21:9 5184 × 2224, 5:4 4864 × 3888. RAW keeps the whole
+  sensor with the crop marked, as for the camera's own ratios.
+- **Shooting:** live view shows the crop; the grid lines, the focus target and the histogram fit inside it, and a
+  film's Border is drawn inside the crop.
+- **Image review and playback** show XPan, 21:9 or 5:4 with the quality (for example LSF+RAW). A photo trimmed to one
+  of those shapes in the camera gets the same label.
+- **Switching on:** the camera starts on 16:9 (for XPan and 21:9) or 4:3 (for 5:4) and shows that until your first
+  half-press; then the crop is back. Nothing of ours runs while the camera starts.
+- Photos only. LookLab doesn't know the crops yet.
 
 ## Questions
 

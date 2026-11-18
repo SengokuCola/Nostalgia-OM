@@ -394,6 +394,31 @@ Stock: OLY_E_147_1100_0000_0000_3.BIN sha 8c133084…696d, main 5e8d376e…7d59.
 - The looks are only as good as the preview model (`src/preview.ts`) is of the camera; check a film on the camera
   before trusting it for anything critical.
 
+## v0.40-alpha (try/v0.40-alpha = crop round 10 + section gates + PR #76 + try/v0.30.4; test 1, camera-tested 2026-11-17; GitHub pre-release)
+
+- Base: `feature/crop-modes` (crop round 10) on `feature/border-live-view` (border preview 1) on `try/v0.31-alpha`
+  (v0.30.4 + borders b1 / 1c + better grain g2c). Each part's record is in `research/NOTES.md` ("Photo borders b1",
+  "Better grain g1 / g2 / g2b / g2c", "Border preview in live view", "Crop modes reopened" .. "Crop round 10").
+- Crop modes (`firmware/src/crop.s`, `firmware/crop.py`): Image Aspect 5 (5:4), 6 (XPan), 7 (21:9) through the
+  validator and the stills rule; the save guard (hooks `hook_crs` / `hook_crb` in section 1 behind `cr_g1` / `cr_g2`)
+  saves the base ratio with a tag, and `cr_rst` restores the crop at the first shutter event; the screen spec
+  (`hook_crg`), the histogram (`hook_crh`), the playback ratio label by picture (`hook_crk` notes the shape, `cr_ic`
+  swaps 10930 / 10931) and the quality label (`hook_crq` notes the base size's record mode read-only, `hook_crr`
+  passes it to the GUI's quality lookup). No stock result or layout changed in playback (rounds 9 / 9b rebooted with
+  a changed label element).
+- Section gates G1..G3 (`fix/section-gates`): `mx_g`, `tn_g`, `lv_g` in `.ext1` wait for section 6's ready bit
+  (SEC_READY 0xa32de58c); `static:section-order` follows paths on past each crossing. It found `cr_rst`'s three
+  section-7 calls (`ar_getv` / `ar_setv`): each now checks bit 0x40; not ready, the next shutter event tries again.
+- `.ext1` had no room for both branches' gates (1816 / 1744): `pf_cnt` / `pf_vbi` moved to `.ext11` beside `sl_cnt` /
+  `sl_vbi`, their only callers: `.ext1` 1704 / 1744.
+- PR #76 (crombach, #75): Picture Mode's nine id-500 idle arms 8000 -> 30000 ms; `hook_tch` (0x612a8db3, section 7)
+  -> `s_tch` raises a tap's re-arm to 30000 only in GUI state 0x0418.
+- `tools/test/hooks.json`: crop's seven hooks and patch sites recorded with the owner's OK. Suite on the test build: 61
+  pass, then all static checks pass.
+- `firmware/VERSION` "v0.40-alpha (crop modes, start-up gates, PR #76)", 48 characters as test 1's: main.bin differs
+  only in that string, the code-block tag and the built-in GUIDES CRC (42 bytes). E1479999.BIN fbef591d…72a2;
+  `patch.py` makes it by default on this branch. Extras as v0.30.4-alpha.
+
 ## v0.30.4-alpha (try/v0.30.4 = main v0.30.3 + fix/72-record-keep + PR #70 + PR #73; test 5, camera-tested 2026-11-17; GitHub pre-release)
 
 - #72: `gx_map` holds `el_pk` (the group's record keep, `cm_hp`) while the Picture Mode list (GUI state 0x0418) or the

@@ -7126,3 +7126,9 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   section 7 check (tag 43520006: XPan saved, Image Aspect 3 -> 6). Photos: 4:3 / 16:9 / 3:2 / 1:1 / 3:4 / 5:4 / XPan /
   21:9 at their sizes. Log and photos in `card-backups/2026-11-17-v0.40-alpha-test1-tested` (private folder).
   **Camera-tested.**
+- **v0.40-alpha release files (2026-11-17, owner: "Hell yeah!!" to preparing the pre-release):** merged `try/v0.30.4`
+  (v0.30.4-alpha as published); crop's hooks recorded (`hooks.json`); VERSION "v0.40-alpha (crop modes, start-up
+  gates, PR #76)" (48 characters as test 1's: main.bin differs only in the name, the code-block tag and the GUIDES CRC,
+  42 bytes). `releases/v0.40-alpha`: E1479999.BIN `fbef591d…72a2`, `patch.py --release v0.40-alpha` makes it byte for
+  byte; static checks (release-rebuild included), boot-smoke, video boot and patch-audit pass on it. Not pushed or
+  published yet.

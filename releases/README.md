@@ -5,6 +5,7 @@ card files it needs, the expected checksums, and short notes. No OM firmware is 
 
 | Version | What's new | Status |
 |---|---|---|
+| [v0.40-alpha](v0.40-alpha/NOTES.md) | Test version of v0.40: v0.30.4-alpha plus crop modes (XPan, 21:9, 5:4), a white Border per film with a live-view frame line, our own film grain (strength 1–5, Grain Size), safer start-up, and Picture Mode open 30 s (#75, by crombach) | Test version (pre-release), camera-tested |
 | [v0.30.4-alpha](v0.30.4-alpha/NOTES.md) | Test version of v0.30.4: v0.30.3 plus the fix for the reboot when switching films fast (#72), the color wheel's label naming the page (#64, by crombach) and our looks kept out of video and S&Q (#68, by crombach) | Test version (pre-release), camera-tested |
 | [v0.30.3](v0.30.3/NOTES.md) | v0.30.2 plus faster halation with a smoother fade, every dial click counted on the RGB / Mix pages with faster looks and saves (#69, by crombach), and a debug log that doesn't slow the shutter | Camera-tested |
 | [v0.30.2](v0.30.2/NOTES.md) | v0.30.1 plus one fix: with Image Review on, Glow / Clarity / Halation photos no longer give a black review or freeze live view at the switch to a standard picture mode (#65) | Camera-tested |
@@ -52,5 +53,5 @@ the launchers never copy them to the card.
 **v0.28-alpha** is a test version: it is published by hand as a GitHub pre-release from `feature/v0.28-halation`
 (not from `main`), and the launchers in its download make it by default. **v0.29-beta** is published the same way from
 `feature/films-in-camera`; it has no card files (they are built into the firmware). **v0.30.4-alpha** likewise from
-`try/v0.30.4`.
+`try/v0.30.4`, and **v0.40-alpha** from `try/v0.40-alpha`.
 See [CHANGELOG.md](../CHANGELOG.md) for the full history.

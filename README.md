@@ -1,9 +1,3 @@
-> **Branch `feature/crop-modes`: camera-tested (2026-11-17, crop round 10).** Real crop modes XPan 65:24, 21:9 and 5:4
-> on border preview 1 (`research/NOTES.md`, "Crop modes reopened" .. "Crop round 10"). Camera-tested: the crops in the
-> files, start-up, the focus target, grid lines and the live histogram in the strip, the Border inside the crop, and
-> the ratio and quality labels in image review and playback. Local only (not pushed), not released. The released
-> firmware is on `main`.
-
 <h1 align="center">Caduceus for OM-3</h1>
 
 
@@ -23,7 +17,7 @@
 </p>
 
 <p align="center">
-  Latest: <b>v0.30.3</b> (2026-11-17) &nbsp;·&nbsp; Test version: <b>v0.30.4-alpha</b> (pre-release)
+  Latest: <b>v0.30.3</b> (2026-11-17) &nbsp;·&nbsp; Test version: <b>v0.40-alpha</b> (pre-release)
 </p>
 
 ## What it does
