@@ -84,6 +84,16 @@ CROPQ_GUI = {   # (the record mode asked, w, h, the note's code, w, h): the reco
     (57, 5184, 1920, 0, 5184, 1920): 57, (1, 5184, 2920, 5, 5184, 2920): 1}
 CROPQ_PICTURE = {(5, 1): 16, (1, 1): 1, (5, 57): 0}   # 0x6110130d (file type, record mode): the quality picture code
 GRAIN_GAINS = {1: (400, 175), 3: (1024, 448), 5: (1536, 672)}   # strength -> texture Y gain, Cb / Cr gain (xblock.s)
+# fix/section-gates (2026-11-17): live view's picture set-up runs three section-2 sites that lead into section 6, also at
+# power-on, while the camera may still be marking section 6 ready (research/NOTES.md "Section order audit"). Each site,
+# called directly with the camera's ready word (SEC_READY) at 0x1f (sections 1..5) must reach the stock code; at 0x3f
+# (section 6 too) our code. om-emu runs neither live view's set-up nor the load order, so the test calls the sites.
+GATES = 'live-view-gates-wait-for-section-6'
+SEC_READY = 0xa32de58c
+SEC_NOT6, SEC_WITH6, SEC_OMEMU = 0x1f, 0x3f, 0x7f     # SEC_OMEMU: the word as om-emu leaves it (S-BOOTSTAGE)
+MX_SITE, MX_ROW = 0x6051485a, 0x605144ef               # hook_mx; the camera's row scaling it calls
+TONE_SITE = 0x605197d7                                 # hook_tone; the stock goes on at TONE_NEXT
+LV_SITE, LV_SKIP, LV_X = 0x6046b8bb, 0x6046b94f, 0x6046b8ee   # hook_lv (a COLOR request); the stock: no flags
 REAR_DIAL = 0x9032                               # the rear dial's event (cv_ev); a1 its signed clicks
 # (name, a1): first no clicks (the value as it is), then a fast turn of 3, then one past the range.
 DIAL_CASES = [('as-is', 0), ('up-3', -3), ('down-20', 20)]
@@ -1082,6 +1092,40 @@ def run_video(emu, build, out, card0):
     return VIDEO, errors
 
 
+def run_gates(emu, build, out, card0):
+    """The three live-view gates, called at their hook sites: before section 6 is ready the stock path (and d0 = 11 at
+    lv_skip, as the stock arrives there), once it is ready our code (mx_go, tone, s_lv6)."""
+    d = out / GATES
+    d.mkdir(parents=True, exist_ok=True)
+    sym = elf_symbols(build / 'p.elf')
+    word = lambda v: [f'{SEC_READY:#x}', v.to_bytes(4, 'little').hex()]
+    sites = {   # name: (pc, regs, mem, stock stop, our stop)
+        'mx': (MX_SITE, {'a0': 'B', 'd2': 'B', 'a1': 'B+0x40', 'a2': 'B+0x40'}, [], MX_ROW, sym['mx_go']),
+        'tone': (TONE_SITE, {'d3': 'B'}, [], TONE_NEXT, sym['tone']),
+        'lv': (LV_SITE, {'d2': '0', 'a3': 'B', 'a0': 'B+0x200'}, [['B', '00' * 0x200], ['B+0x200', '0b']], LV_SKIP,
+               sym['s_lv6']),
+    }
+    spec = []
+    for name, (pc, regs, mem, stock, ours) in sites.items():
+        for case, v in (('not-ready', SEC_NOT6), ('ready', SEC_WITH6)):
+            spec.append({'name': f'{name}:{case}', 'pc': hex(pc), 'regs': regs, 'mem': [*mem, word(v)],
+                         'stop': [hex(stock), hex(ours), hex(LV_X)], 'max': 200, 'restore': [word(SEC_OMEMU)]})
+    res = run_ncall(emu, build, d, card0, 'ncall', spec)
+    if isinstance(res, str):
+        return GATES, [res]
+    errors = []
+    for name, (pc, regs, mem, stock, ours) in sites.items():
+        for case, want in (('not-ready', stock), ('ready', ours)):
+            o = res[f'{name}:{case}']
+            got = int(o['regs']['pc'], 16)
+            if got != want:
+                errors.append(f'{name}, section 6 {case.replace("-", " ")}: reached {got:#x}, not {want:#x} '
+                              f'({"the stock code" if want == stock else "our code"}) (out.json)')
+            elif name == 'lv' and case == 'not-ready' and int(o['regs']['d0'], 16) != 11:
+                errors.append(f'lv, section 6 not ready: d0 {o["regs"]["d0"]} at lv_skip, the stock path has 11')
+    return GATES, errors
+
+
 def newest_looks():
     def key(d):
         n, _, pre = d.name.lstrip('v').partition('-')
@@ -1093,7 +1137,7 @@ def newest_looks():
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('build', type=pathlib.Path)
-    ap.add_argument('--only', nargs='+', choices=sorted([*TESTS, AUDIT, HALATION, BORDER, ENGINE, DIAL, VIDEO, GRAINMIX, CROPHIST, CROPPL, CROPQ, *STATIC]))
+    ap.add_argument('--only', nargs='+', choices=sorted([*TESTS, AUDIT, HALATION, BORDER, ENGINE, DIAL, VIDEO, GRAINMIX, CROPHIST, CROPPL, CROPQ, GATES, *STATIC]))
     ap.add_argument('--jobs', type=lambda v: max(1, int(v)), default=DEFAULT_JOBS)
     ap.add_argument('--out', type=pathlib.Path)
     ap.add_argument('--looks', type=pathlib.Path)
@@ -1116,7 +1160,7 @@ def main():
     looks = (a.looks or newest_looks()).resolve()
     make_card(emu, build, looks, card0)
     fixtures = make_fixtures(out, looks)
-    names = a.only or sorted([*TESTS, AUDIT, HALATION, BORDER, ENGINE, DIAL, VIDEO, GRAINMIX, CROPHIST, CROPPL, CROPQ, *STATIC])
+    names = a.only or sorted([*TESTS, AUDIT, HALATION, BORDER, ENGINE, DIAL, VIDEO, GRAINMIX, CROPHIST, CROPPL, CROPQ, GATES, *STATIC])
     stock = static_check.find_stock(a.stock) if any(n in STATIC for n in names) else None
     runs = [(n, k) for n in names for k in range(1, a.repeat + 1)]
     print(f'{len(names)} tests{f" x {a.repeat}" if a.repeat > 1 else ""} on {build}, results in {out}')
@@ -1155,6 +1199,8 @@ def main():
                 return run_croppl(emu, build, d, card0)
             if n == CROPQ:
                 return run_cropq(emu, build, d, card0)
+            if n == GATES:
+                return run_gates(emu, build, d, card0)
             first = shared.get((k, boot_key(TESTS[n][0])))
             return run_test(n, TESTS[n], emu, build, card0, d, first and first.result(), fixtures)
         except static_check.Skip as e:

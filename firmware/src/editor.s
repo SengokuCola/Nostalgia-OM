@@ -40,7 +40,7 @@
 .section .hook_set,"ax"
  call cv_sv,[d2,d3,a2,a3],68      /* stock: call 0x60bb528f,[d2,d3,a2,a3],68 (settings manager); cv_sv (rgb-curves page) -> sl_set -> ed_set */
 .section .hook_tone,"ax"
- call tone,[d2,d3,a2,a3],56       /* stock 0x605197d7: mov d3,a0; call 0x60518fa4,[d2,d3,a2,a3],56 */
+ call tn_g,[d2,d3,a2,a3],56       /* stock 0x605197d7: mov d3,a0; call 0x60518fa4,[d2,d3,a2,a3],56. tn_g: tone once section 6 is in */
 .section .hook_rng,"ax"
  jmp sl_rng                       /* v0.23 stock 0x611d1041: call facade; mov 7,d0; bra (the Sharpness slider's -2..+2) */
  .byte 0xcb,0xcb,0xcb,0xcb,0xcb,0xcb
@@ -2581,7 +2581,7 @@ xp:                               /* also Z = (a1 == 0) for the ext2 stubs (v0.2
  retf [],0
 
 s_lv:                             /* d0 = 11, a2 = request, a3 = record+248; d3 live */
- jmp s_lv6                        /* #68: the body is in .ext11 (.ext2 is full) */
+ jmp lv_g                         /* #68: the body is in .ext11 (.ext2 is full), s_lv6, through lv_g (section 6 in) */
 
 s_nr:                             /* the site's `call ...,[d2,d3],12` frame; d0 key, d1, a0 as for the getter */
  mov d0,d3
@@ -2602,8 +2602,41 @@ s_cl:                             /* v0.21 grain: request configuration 0x604955
 9:
  jmp SEL                          /* 0x6052cf39, in the same frame as the stock call */
 
+/* ---- Section gates (fix/section-gates, 2026-11-17; research/NOTES.md "Section order audit"). Live view's picture
+ * set-up runs these three section-2 sites, also at power-on, and they lead into section 6 (.ext11 / .ext12). The loader
+ * copies the sections while the camera starts and the camera marks each one ready (SEC_READY, bit id - 1, set at
+ * 0x60046064); no stock wait puts live view's first set-up after section 6's. Each gate tests section 6's bit and,
+ * until it is set, runs the stock instructions: the same picture as now (our looks need the films, which load
+ * later). d0 is free at all three sites (each target writes it before reading it). Section 1's tail: always in. */
+ .set SEC_READY, 0xa32de58c       /* bit id - 1: section id is ready (crop.s sets the same) */
+.section .ext1,"ax"
+mx_g:                             /* G1: jmp from .hook_mx (0x6051485a), in the matrix function's frame */
+ mov (SEC_READY),d0
+ and 0x20,d0
+ beq 1f
+ jmp mx_go
+1:
+ call mx_row,[d2,d3,a2,a3],20     /* the stock instruction at 0x6051485a */
+ jmp MX_BACK
+tn_g:                             /* G2: `call tn_g,[d2,d3,a2,a3],56` from .hook_tone (0x605197d7); tone (section 5) */
+ mov (SEC_READY),d0               /* always ends in st_run (section 6) */
+ and 0x20,d0
+ beq 1f
+ jmp tone
+1:
+ mov d3,a0                        /* the stock 0x605197d7: mov d3,a0, then 0x60518fa4 in this call's frame */
+ jmp tone_next
+lv_g:                             /* G3: jmp from s_lv (the live view / movie request at a COLOR mode, d0 = 11) */
+ mov (SEC_READY),d0
+ and 0x20,d0
+ beq 1f
+ jmp s_lv6
+1:
+ mov 11,d0                        /* the stock path: picture mode 11 (< 100) -> 0x6046b94f with d0 = 11 */
+ jmp lv_skip
+
 .section .ext5,"ax"
-s_wt:                             /* leaf: MDR = return, a0 = combiner context; keep a0 for the stock getter */
+s_wt:                            /* leaf: MDR = return, a0 = combiner context; keep a0 for the stock getter */
  mov (48,a0),a1
  cmp 11,a1                        /* job key 11: COLOR */
  bne 9f
