@@ -407,18 +407,28 @@ function lensFalloff(w: number, h: number): Float32Array {
   return f;
 }
 
-/** OM-3 Shading -5..+5: the camera's own (firmware v0.41 test 7 went back to it, owner 2026-11-18: "the +2, -2").
- *  Measured on a plain wall (the Shading session's probe p1, 2026-11-18, PB183489..493): -2 and +2 are one radial mask
- *  m(r), r = the distance from the centre / the half-diagonal: nothing inside r 0.42, then 0.05 at r 0.52, 0.15 at
- *  0.62, 0.28 at 0.72, 0.52 at 0.82, 0.79 at 0.92, 0.87 at 0.97. Darker blends toward black, Y' = Y (1 - m), lighter
- *  toward white, Y' = 1 - (1 - Y)(1 - m), the colour toward grey by the same amount (probe s1, 2026-11-12). The other
- *  levels are estimates from the 2026-11-12 photos (a room at -1 / -3 / -5, a wall at -5 / +5): every level is strong,
- *  higher levels a little more, as (1 - m)^k, k = 0.87 / 1 / 1.17 / 1.30 / 1.39 for 1..5. */
-const SHADE_K = [0, 0.87, 1, 1.17, 1.3, 1.39];
-const SHADE_M = (() => {
-  const P = [[0, 0], [0.42, 0], [0.47, 0.015], [0.52, 0.052], [0.57, 0.109], [0.62, 0.153], [0.67, 0.208], [0.72, 0.284],
-    [0.77, 0.361], [0.82, 0.517], [0.87, 0.67], [0.92, 0.792], [0.97, 0.872], [1, 0.91]], n = P.length;
-  const hh = P.slice(0, -1).map((p, i) => P[i + 1][0] - p[0]), d = hh.map((v, i) => (P[i + 1][1] - P[i][1]) / v);
+/** OM-3 Shading -5..+5: the camera's own (firmware v0.41 test 7 went back to it, 2026-11-18). Measured on a plain
+ *  wall, every level (card backup 2026-11-18-shading-stock-levels, PB183616..626: Shading 0, then -5..-1, +1..+5; OM
+ *  17 mm f/1.8, exposure matched at the centre): a radial mask m(r), r = the distance from the centre / the
+ *  half-diagonal, nothing inside r 0.4 and most of it past r 0.8. Darker blends toward black, Y' = Y (1 - m), lighter
+ *  toward white, Y' = 1 - (1 - Y)(1 - m), the colour toward grey by the same amount (probe s1, 2026-11-12). The tables
+ *  are the measured m at SHADE_R (the last point extended to the corner); -2 also matches the probe p1 photos. */
+const SHADE_R = [0.3, 0.325, 0.375, 0.425, 0.475, 0.525, 0.575, 0.625, 0.675, 0.725, 0.775, 0.825, 0.875, 0.925, 0.975, 1];
+const SHADE_DARK = [
+  [0, 0, 0, 0, 0.018, 0.053, 0.083, 0.127, 0.178, 0.234, 0.31, 0.448, 0.617, 0.737, 0.835, 0.884],
+  [0, 0, 0, 0.002, 0.023, 0.065, 0.11, 0.153, 0.211, 0.279, 0.36, 0.508, 0.677, 0.794, 0.886, 0.932],
+  [0, 0, 0, 0.002, 0.03, 0.078, 0.128, 0.176, 0.238, 0.309, 0.392, 0.549, 0.721, 0.836, 0.916, 0.956],
+  [0, 0, 0.001, 0.013, 0.043, 0.095, 0.169, 0.214, 0.276, 0.345, 0.422, 0.599, 0.766, 0.874, 0.937, 0.969],
+  [0, 0, 0.003, 0.021, 0.059, 0.118, 0.19, 0.253, 0.317, 0.391, 0.478, 0.668, 0.825, 0.917, 0.964, 0.987]];
+const SHADE_LIGHT = [
+  [0, 0, 0, 0.004, 0.021, 0.046, 0.085, 0.126, 0.179, 0.265, 0.351, 0.465, 0.595, 0.72, 0.809, 0.854],
+  [0, 0, 0, 0.004, 0.025, 0.054, 0.097, 0.148, 0.211, 0.311, 0.396, 0.517, 0.654, 0.775, 0.859, 0.901],
+  [0, 0, 0.004, 0.008, 0.035, 0.068, 0.117, 0.175, 0.248, 0.355, 0.441, 0.567, 0.709, 0.824, 0.904, 0.944],
+  [0, 0, 0.004, 0.015, 0.039, 0.084, 0.148, 0.199, 0.268, 0.377, 0.476, 0.606, 0.739, 0.849, 0.919, 0.954],
+  [0, 0, 0.004, 0.017, 0.05, 0.096, 0.176, 0.23, 0.305, 0.417, 0.523, 0.662, 0.786, 0.883, 0.937, 0.964]];
+/** m by r^2 (513 steps) for a measured row: a monotone cubic through the points, 0 inside the first. */
+function shadeTable(v: number[]): Float32Array {
+  const X = SHADE_R, n = X.length, hh = X.slice(0, -1).map((x, i) => X[i + 1] - x), d = hh.map((w, i) => (v[i + 1] - v[i]) / w);
   const t = new Array<number>(n).fill(0);
   t[n - 1] = d[n - 2];
   for (let i = 1; i < n - 1; i++) {
@@ -426,26 +436,31 @@ const SHADE_M = (() => {
     const w1 = 2 * hh[i] + hh[i - 1], w2 = hh[i] + 2 * hh[i - 1];
     t[i] = (w1 + w2) / (w1 / d[i - 1] + w2 / d[i]);
   }
-  const m = (r: number) => {
+  return Float32Array.from({ length: 513 }, (_, k) => {
+    const r = Math.sqrt(k / 512);
+    if (r <= X[0]) return 0;
     let i = 0;
-    while (i < n - 2 && r > P[i + 1][0]) i++;
-    const sp = (r - P[i][0]) / hh[i], s2 = sp * sp, s3 = s2 * sp;
-    return (2 * s3 - 3 * s2 + 1) * P[i][1] + (s3 - 2 * s2 + sp) * hh[i] * t[i] + (-2 * s3 + 3 * s2) * P[i + 1][1] + (s3 - s2) * hh[i] * t[i + 1];
-  };
-  return Float32Array.from({ length: 513 }, (_, i) => Math.max(0, Math.min(1, m(Math.sqrt(i / 512)))));   // by r^2
-})();
+    while (i < n - 2 && r > X[i + 1]) i++;
+    const sp = Math.min(1, (r - X[i]) / hh[i]), s2 = sp * sp, s3 = s2 * sp;
+    return Math.max(0, Math.min(1, (2 * s3 - 3 * s2 + 1) * v[i] + (s3 - 2 * s2 + sp) * hh[i] * t[i] + (-2 * s3 + 3 * s2) * v[i + 1] + (s3 - s2) * hh[i] * t[i + 1]));
+  });
+}
+const shadeTables = new Map<number, Float32Array>();
 function om3Shading(img: Float32Array, w: number, h: number, level: number) {
-  const k = SHADE_K[Math.min(5, Math.abs(level))], D = w * w + h * h;
+  const L = Math.max(-5, Math.min(5, level));
+  let T = shadeTables.get(L);
+  if (!T) { T = shadeTable((L < 0 ? SHADE_DARK : SHADE_LIGHT)[Math.abs(L) - 1]); shadeTables.set(L, T); }
+  const D = w * w + h * h;
   for (let y = 0; y < h; y++) {
     const Yc = (2 * y + 1 - h) ** 2;
     for (let x = 0; x < w; x++) {
-      const m2 = SHADE_M[Math.min(512, Math.round((((2 * x + 1 - w) ** 2 + Yc) * 512) / D))];
-      if (m2 <= 0) continue;
-      const g = (1 - m2) ** k;                   // what is left of the pixel's distance to the target
+      const m = T[Math.min(512, Math.round((((2 * x + 1 - w) ** 2 + Yc) * 512) / D))];
+      if (m <= 0) continue;
+      const g = 1 - m;                           // what is left of the pixel's distance to the target
       const q = (y * w + x) * 3, r = img[q], gg = img[q + 1], b = img[q + 2];
       const Y = 0.299 * r + 0.587 * gg + 0.114 * b;
       const cb = (-0.168736 * r - 0.331264 * gg + 0.5 * b) * g, cr = (0.5 * r - 0.418688 * gg - 0.081312 * b) * g;
-      const Y2 = level < 0 ? Y * g : 1 - (1 - Y) * g;
+      const Y2 = L < 0 ? Y * g : 1 - (1 - Y) * g;
       img[q] = clamp01(Y2 + 1.402 * cr); img[q + 1] = clamp01(Y2 - 0.344136 * cb - 0.714136 * cr); img[q + 2] = clamp01(Y2 + 1.772 * cb);
     }
   }

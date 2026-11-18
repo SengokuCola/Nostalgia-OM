@@ -5931,3 +5931,9 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   0.79 at 0.92, 0.87 at 0.97), darker Y (1 - m), lighter 1 - (1 - Y)(1 - m); the preview matches both within 0.01.
   Other levels estimated from the 2026-11-12 photos (room -1 / -3 / -5, wall -5 / +5) as (1 - m)^k, k 0.87 / 1 / 1.17 /
   1.30 / 1.39: only +-2 is measured. Card 2's Shading photos were s1 and no longer apply.
+- **Every level measured (owner, 2026-11-18, v0.41-dev test 7; card backup 2026-11-18-shading-stock-levels,
+  PB183616..626: Shading 0, -5..-1, +1..+5, a plain wall, OM 17 mm f/1.8, ISO 500):** the camera's own mask per level
+  (exposure matched at the centre), darker / lighter: corner (r 0.975) -1 0.84 / +1 0.81, -2 0.89 / 0.86, -3 0.92 /
+  0.90, -4 0.94 / 0.92, -5 0.96 / 0.94; r 0.725 -1 0.23 .. -5 0.39, +1 0.27 .. +5 0.42; nothing inside r 0.4. Every
+  level is strong; the steps add a little. preview.ts keeps the ten measured rows (SHADE_DARK / SHADE_LIGHT) and
+  matches the photos within 2..6 of 255 at every radius; the (1 - m)^k estimate is gone. -2 agrees with probe p1.
