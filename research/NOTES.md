@@ -8059,3 +8059,7 @@ Test driver tools/emulator/focus_stacking.mjs runs this routine with controlled 
   text conflicts only (VERSION, NOTES, emu_test.py: DIRECT takes CROPEL and LIVE). Build `af37586c…5f4c` (a second build
   matches); static checks all pass, no new hook; suite **93 of 93**. Package `test-builds/2026-11-18-v0.41-dev-test8`,
   go-back v0.40b. Camera test pending.
+- **Test 8 camera 2026-11-18:** live look **camera-tested** (owner: "the live view updates work flawlessly!!!"). The crop
+  not kept even one power cycle (owner: "xpan doesnt even last through one power cycle"); log: "tag 00000000 at
+  start-up ... kept after start-up: checks 0 ... save patches 2": the tag in M was gone by the power-off, so nothing
+  to restore -> crop83-3 (the #83 session).
