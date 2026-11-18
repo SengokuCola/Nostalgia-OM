@@ -48,6 +48,10 @@ mx_go:
  call mx_photo,[],0               /* mix test 2 (owner: "Photos only"): video (recording, its live view) stays stock */
  cmp 0,d0
  beq 80f
+ mov (108 + MXF,sp),a0            /* live look: the development function's (24,sp) is its context C + 12 */
+ add -12,a0
+ mov (96 + MXF,sp),a1             /* its request R */
+ call lv_ref,[d2,d3,a2,a3],16
  call mx_any,[d2],8               /* no mix on any COLOR: no getter call */
  cmp 0,d0
  beq 80f
@@ -228,6 +232,100 @@ mx_zk:
  .balign 4
 mx_n:                             /* matrices put in (a count, for om-emu) */
  .long 0
+
+/* ------------------------------------------------------------------ live look (2026-11-18, feature/live-look-refresh)
+ * The camera rebuilds a job's tone tables only when the job's context C asks for it (C+60, a mask per pass): the RGB
+ * gamma stage 0x60516ad9 copies the picture mode's curve into O+1252.. (mask 0x2230001e), the luminance LUT 0x60518db2
+ * (0x4134063e), the tone curve 0x60518fa4 (0x3024ae). Split toning, Tone Balance and the RGB curves (st_run) and
+ * Blacks / Whites (tone) work on those tables, so live view showed a change of ours only when the camera rebuilt them
+ * itself (a half-press, AF, its own tone settings). om-emu, the development function 0x605196b4 on a fake live-view
+ * job: after a change, a pass with C+60 0 keeps the old tables (~3k instructions); with bit 3 (8, in all three masks)
+ * it copies, bends and builds them anew (~50k). lv_ref sets that bit once per change and output, as the camera's own
+ * tone settings do.
+ * `call lv_ref,[d2,d3,a2,a3],16` from mx_go after its gates (section 6 in, the films read, the development function
+ * 0x605196b4's call, a COLOR job, a photo mode), a0 = the context C, a1 = the request R. A fingerprint of the tone
+ * inputs of COLOR 1-4 (P slot +33 Tone Balance, +47 / +48 Blacks / Whites, +55..+58 split toning; cv_ram live[4]'s
+ * curves, not the mix) is kept per output O (C+12) in lv_tab; when it differs from O's last one, C+60 |= LV_TONE.
+ * An output not in the table yet is only recorded. Still development (R+14 0x1000) builds fresh: left alone.
+ * Uses d0, d1, a0, a1. Stores: C+60, lv_tab, lv_rr, lv_n. */
+ .set LV_TONE, 8
+ .set LV_N, 4                     /* outputs kept, a power of 2 */
+ .macro LVH
+ mov d2,d3
+ asl 5,d3
+ add d3,d2
+ add d0,d2
+ .endm
+lv_ref:
+ mov a0,a3                        /* a3 = C */
+ movhu (14,a1),d0
+ cmp 0x1000,d0
+ beq 9f
+ PVAL 9f                          /* a2 = P (uses d3, a2) */
+ clr d2                           /* d2 = the fingerprint, h = 33 h + x */
+ add 32,a2                        /* COLOR 1's slot */
+ mov 4,d1
+1:
+ .irp o, 33, 47, 48, 55, 56, 57, 58
+ movbu (\o,a2),d0
+ LVH
+ .endr
+ add 64,a2
+ add -1,d1
+ bne 1b
+ mov cv_ram + CV_LV,a0            /* live[k]'s curves: 18 bytes of its 26 */
+ mov 4,d1
+2:
+ .irp o, 0, 2, 4, 6, 8, 10, 12, 14, 16
+ movhu (\o,a0),d0
+ LVH
+ .endr
+ add CV_ESZ,a0
+ add -1,d1
+ bne 2b
+ mov (12,a3),d3                   /* O */
+ mov lv_tab,a0
+ mov LV_N,d1
+4:
+ mov (a0),d0
+ cmp d3,d0
+ beq 6f
+ add 8,a0
+ add -1,d1
+ bne 4b
+ movbu (lv_rr),d0                 /* a new output: recorded in the next entry, round robin */
+ mov d0,d1
+ inc d1
+ and LV_N - 1,d1
+ movbu d1,(lv_rr)
+ asl 3,d0
+ mov lv_tab,a0
+ add d0,a0
+ mov d3,(a0)
+ mov d2,(4,a0)
+ bra 9f
+6:
+ mov (4,a0),d0
+ cmp d2,d0
+ beq 9f
+ mov d2,(4,a0)
+ mov (60,a3),d0                   /* changed since O's last pass: this pass rebuilds O's tone tables */
+ or LV_TONE,d0
+ mov d0,(60,a3)
+ mov (lv_n),d0
+ inc d0
+ mov d0,(lv_n)
+9:
+ ret [d2,d3,a2,a3],16
+
+ .balign 4
+lv_tab:                           /* LV_N x {output O, its fingerprint} */
+ .space 8 * LV_N
+lv_n:                             /* passes given the tone bit (a count, for om-emu) */
+ .long 0
+lv_rr:                            /* the entry a new output takes */
+ .byte 0
+ .balign 4
 
 /* ------------------------------------------------------------------ the Mix page (mockup C, owner 2026-11-15)
  * Row MX_IT under the RGB row: the RGB page's machinery (rgbcurves.inc) with cv_on = 2. INFO = the colour (cv_c,
