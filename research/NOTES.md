@@ -8063,3 +8063,36 @@ Test driver tools/emulator/focus_stacking.mjs runs this routine with controlled 
   not kept even one power cycle (owner: "xpan doesnt even last through one power cycle"); log: "tag 00000000 at
   start-up ... kept after start-up: checks 0 ... save patches 2": the tag in M was gone by the power-off, so nothing
   to restore -> crop83-3 (the #83 session).
+
+## #83 crop83-3: the crop put back after the camera's own save of M (2026-11-18; test 8 camera, crop83-3 emulator + analysis)
+- **Camera, test 8** (crop83-2 + live look 1, `af37586c…`; owner: "xpan doesnt even last through one power cycle"). Log
+  of the last power-on (private, `card-backups/2026-11-18-v0.41-dev-test8-tested`): "tag 00000000 at start-up ... now
+  2; ... histogram trimmed 5; kept after start-up: checks 0 ...; save patches 2". The previous power-off sealed no
+  tag, and in this power-on cr_sin patched the live value twice: **the camera saves M without a callback while it runs**
+  (the store task's command 1, 0x60063afc -> 0x60063c2c), not only at power-off. When is not known (3 photos in that
+  power-on); om-emu does it only at power-off (and once on a blank camera's first start).
+- **Why that loses the crop (stock code, 0x60061183):** without a callback the write compares the RAM image with
+  flash, then counts, seals and writes the RAM image itself (0x60061214: d3 stays the image; only the callback path
+  copies to the buffer 0xa373d280). So cr_sin must patch the live Image Aspect to the base for the saved bytes, and
+  nothing put the crop back: the screen went to 16:9, and the power-off save then found no crop and sealed tag 0.
+  Most likely crop83-1's revert after its start-up restore too (its log had no save counter yet).
+- **crop83-3:** when cr_sin patches a crop, it saves the caller's return address ((32,sp): all four callers use
+  `call 0x60061183,[d2,d3,a2,a3],32`, and every exit is `ret [d2,d3,a2,a3],32`) and puts `cr_sinr` there.
+  `cr_sinr` puts the crop back into both copies if the live value is still the base it wrote, then returns
+  to the caller with the write's result (d1 / a0 / a1 / MDR free; d2 / d3 / a2 / a3 already the caller's). The
+  saved image keeps the base and the tag; the RAM image's checksum is stale until the next save, as after any setting
+  change. cr_rst and cr_chk do not call ar_setv while such a write is out (cr_sra: the write goes out of RAM). No new
+  hook or patch site. crop83-2's cr_chk stays as a safety net; drop it if camera logs keep "set again 0".
+- **Reproduced in om-emu:** XPan set, then the camera's own write called directly (ncall: `call 0x60061183`, a0 = M's
+  handle, a1 = 0; it returns after ~2.9 M instructions in S-NVRAM mode): crop83-2 leaves both copies at 3 ("03, not
+  06", test 8's failure); crop83-3 has 6, 6 and tag 43520006 in RAM right after it, and the next start comes up in
+  XPan. Test `crop-kept-over-a-save-of-m-while-on` (crop83-2's build: caught).
+- **Log** (crop round 13): "...; saves of M this power-on: from memory N (crop put back after R), after a menu M, last
+  tag written T". N counts every save of M without a callback (crop or not), M those through the buffer; the next
+  start's "tag ... at start-up" is what the power-off save kept.
+- **Branch:** fast-forwarded to try/v0.41-dev 3c2ee5c (crop83-2 + live look 1, test 8) first; crop83-3 = test 8 + this.
+- **Build** of 83d2fba: E1479999.BIN `39634ace…cc08` (a second clean build matches), VERSION "v0.41-dev crop83-3 (#83:
+  the crop kept over saves of M)". Suite **94 of 94 pass** (static checks and live look's tests included). Package
+  `test-builds/2026-11-18-crop83-3` (private folder), go-backs test 8 `af37586c…5f4c` and v0.40b `94fbd976…2fab`;
+  TEST-STEPS: XPan set and switched off at once, cycles with and without a half-press and with photos, 21:9, 5:4.
+  Camera test pending.
