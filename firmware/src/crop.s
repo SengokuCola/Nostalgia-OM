@@ -988,40 +988,70 @@ cr_trim:                          /* `call cr_trim,[],0`, a1 -> {x, y, w, h} (u1
  * (+78) and shows entry code - 1 of the 5-entry list; research/NOTES.md. Removed in round 7.) */
 
 /* ---- Crop round 7: the Border inside the crop (camera, round 6: "the borders get cropped off on the new crop
- * sizes"). bd_run (editor.s) paints the border on the finished buffer, which at a crop is larger than the photo the
- * camera keeps (the crop is cut from it afterwards), so its top / bottom (XPan, 21:9) or sides (5:4) fell outside.
+ * sizes"). bd_run (editor.s) paints the border on the finished buffer, which is the full 4:3 frame: the camera cuts the
+ * photo it keeps out of it afterwards, so at any other ratio the border's top / bottom or sides fell outside.
+ * 2026-11-18 (owner's camera, Border 5: the border cut off at 16:9, 3:2, 1:1 and 3:4, the camera's own ratios): the
+ * same for every ratio, from one table by Image Aspect id (cr_bdt).
  * cr_bdc: `call cr_bdc,[d2,d3,a2,a3],28` from bd_run after its checks, d0 = W, a0 -> bd_run's locals ((8) P pairs,
- * (12) H, (16) pitch, (20) bus) -> d0 = the W to use. With Image Aspect 6 / 7 the crop is the full width and
- * Hc = round16(W 24 / 65) or round16(W 9 / 21) rows, centred (y0 even); with 5 the full height and Wc = round16(H 5 / 4),
- * centred; a buffer no larger than that is left as it is. The width B then follows the crop's short side, as the live
- * view frame line (round 2). research/border/model.py crop_area is the exact model. */
+ * (12) H, (16) pitch, (20) bus) -> d0 = the W to use (a0 kept). A ratio cut from the rows (3:2, 16:9, XPan, 21:9) keeps
+ * the full width and Hc = ((W num + add) / (den << q)) << q rows, centred (y0 even); one cut from the sides (1:1, 5:4,
+ * 3:4) keeps the full height and Wc = ((H num + add) / (den << q)) << q, centred; a buffer no larger is left as it is.
+ * The width B then follows the crop's short side, as the live view frame line (round 2). The stock ratios' rounding
+ * gives the camera's own photo sizes (0x606e60c0 / 0x606e6270) for every size of 4:3 frame they list (5184 x 3888:
+ * 5184 x 3456, 5184 x 2920, 3888 x 3888, 2912 x 3888); 5:4, XPan and 21:9 as round 7. research/border/model.py
+ * crop_area is the exact model. */
+ .balign 4
+cr_bdt:                           /* by Image Aspect id 1..9: side (1 rows, 2 sides, 0 none), num, den, q; u16 add, 0 */
+ .byte 0, 0, 0, 0
+ .hword 0, 0                      /* 1 4:3 */
+ .byte 1, 2, 3, 3
+ .hword 23, 0                     /* 2 3:2: W 2 / 3 up to 8 */
+ .byte 1, 9, 16, 3
+ .hword 127, 0                    /* 3 16:9: W 9 / 16 up to 8 */
+ .byte 2, 1, 1, 4
+ .hword 0, 0                      /* 4 1:1: H down to 16 */
+ .byte 2, 5, 4, 4
+ .hword 32, 0                     /* 5 5:4: H 5 / 4 to the nearest 16 (round 7) */
+ .byte 1, 24, 65, 4
+ .hword 520, 0                    /* 6 XPan 65:24: W 24 / 65 to the nearest 16 (round 7) */
+ .byte 1, 9, 21, 4
+ .hword 168, 0                    /* 7 21:9: W 9 / 21 to the nearest 16 (round 7) */
+ .byte 0, 0, 0, 0
+ .hword 0, 0                      /* 8 7:5 (not offered) */
+ .byte 2, 3, 4, 4
+ .hword 32, 0                     /* 9 3:4: H 3 / 4 to the nearest 16 */
 cr_bdc:
  mov a0,a3
  mov d0,a2                        /* W */
  movbu (CR_A1),d1
- cmp 5,d1
- beq 5f
- cmp 6,d1
- beq 6f
- cmp 7,d1
- bne 9f
- mov 9,d2
- mov 21,d3
- bra 7f
-6:
- mov 24,d2
- mov 65,d3
-7:
- mov a2,d0                        /* Hc = (W num + 8 den) / (16 den) x 16 */
- mul d2,d0
- mov d3,d1
+ add -1,d1
+ cmp 9,d1
+ bcc 9f                           /* not 1..9 */
  asl 3,d1
- add d1,d0
- add d1,d1
- clr d2
- mov d2,mdr
+ mov cr_bdt,a0
+ add d1,a0                        /* a0 -> the ratio's record */
+ movbu (a0),d1                    /* side */
+ cmp 0,d1
+ beq 9f
+ mov a2,d0                        /* rows: X = W */
+ cmp 1,d1
+ beq 1f
+ mov (12,a3),d0                   /* sides: X = H */
+1:
+ movbu (1,a0),d1
+ mul d1,d0                        /* X num */
+ movhu (4,a0),d1
+ add d1,d0                        /* + add */
+ movbu (3,a0),d2                  /* q */
+ movbu (2,a0),d1
+ asl d2,d1                        /* den << q */
+ clr d3
+ mov d3,mdr
  divu d1,d0
- asl 4,d0
+ asl d2,d0                        /* Xc */
+ movbu (a0),d1
+ cmp 1,d1
+ bne 5f
  mov (12,a3),d1                   /* H */
  cmp d1,d0
  bcc 9f
@@ -1036,12 +1066,6 @@ cr_bdc:
  mov d0,(20,a3)                   /* bus + y0 pitch */
  bra 9f
 5:
- mov (12,a3),d0                   /* Wc = (5 H + 32) / 64 x 16 */
- mov 5,d1
- mul d1,d0
- add 32,d0
- lsr 6,d0
- asl 4,d0
  mov a2,d1                        /* W */
  cmp d1,d0
  bcc 9f
@@ -1054,6 +1078,7 @@ cr_bdc:
  mov d0,(8,a3)                    /* P = Wc / 2 */
 9:
  mov a2,d0
+ mov a3,a0
  ret [d2,d3,a2,a3],28
 
 /* ---- (Crop round 7's playback info diagnosis, cr_pbi at 0x6057fb1b, is removed: that hook sat in section 2 and jumped

@@ -30,7 +30,7 @@ def frame(W, H, pad, seed):
     return rng.integers(0, 256, H * pitch, dtype=np.uint8), W, H, pitch
 
 
-CASES = {   # name: (W, H, pad pixels, level[, Image Aspect: 5 / 6 / 7 = 5:4 / XPan / 21:9])
+CASES = {   # name: (W, H, pad pixels, level[, Image Aspect 1..9: 2 3:2, 3 16:9, 4 1:1, 5 5:4, 6 XPan, 7 21:9, 9 3:4])
     'land5': (640, 480, 16, 5),
     'port3': (480, 640, 0, 3),
     'wide2': (1024, 576, 8, 2),
@@ -41,14 +41,22 @@ CASES = {   # name: (W, H, pad pixels, level[, Image Aspect: 5 / 6 / 7 = 5:4 / X
     'level0': (320, 240, 0, 0),
     'level6': (320, 240, 0, 6),
     'big5': (5184, 3888, 0, 5),
+    'big169': (5184, 3888, 0, 5, 3),   # the owner's 16:9 / 3:4 photos (5184 x 2920 / 2912 x 3888) at Border 5
+    'big34': (5184, 3888, 0, 5, 9),
     'xpan3': (640, 480, 16, 3, 6),     # crop round 7: the border inside the crop's centred band
     'xp169': (1024, 576, 8, 2, 6),
     'w219': (640, 480, 0, 4, 7),
     'c54': (640, 480, 16, 3, 5),
     'xpcut': (640, 240, 0, 3, 6),      # a buffer already the crop's shape: as without a crop
+    'c43': (640, 480, 0, 3, 1),        # 2026-11-18: the camera's own ratios cut from the 4:3 buffer too (Image
+    'c32': (640, 480, 16, 5, 2),       # Aspect 1 4:3, 2 3:2, 3 16:9, 4 1:1, 9 3:4; owner's camera, Border 5: cut off)
+    'c169': (1024, 768, 8, 3, 3),
+    'c11': (640, 480, 0, 4, 4),
+    'c34': (640, 480, 16, 5, 9),
+    'c169cut': (1024, 576, 0, 2, 3),
 }
 CR_A1 = 0x629209c2                     # Image Aspect in the camera's settings image (crop.s CR_A1)
-BIG = ('big5',)   # camera-sized (20 MP): for the counts, not in the default run
+BIG = ('big5', 'big169', 'big34')   # camera-sized (20 MP): for the counts, not in the default run
 
 
 def main():

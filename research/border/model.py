@@ -21,18 +21,24 @@ def widths(W, H, level):
     return B, (B + 1) // 2
 
 
+# crop.s cr_bdt, by Image Aspect id: (side: 1 rows from W, 2 sides from H), num, den, q, add -> ((X num + add) //
+# (den << q)) << q. 2 3:2 / 3 16:9 up to 8, 4 1:1 down to 16, 9 3:4 nearest 16 (the camera's own photo sizes);
+# 5 5:4, 6 XPan, 7 21:9 as crop round 7.
+CROPS = {2: (1, 2, 3, 3, 23), 3: (1, 9, 16, 3, 127), 4: (2, 1, 1, 4, 0), 5: (2, 5, 4, 4, 32), 6: (1, 24, 65, 4, 520),
+         7: (1, 9, 21, 4, 168), 9: (2, 3, 4, 4, 32)}
+
+
 def crop_area(W, H, crop):
-    """crop round 7 (editor.s bd_run -> crop.s cr_bdc): with Image Aspect 5 (5:4), 6 (XPan) or 7 (21:9) the photo the
-    camera keeps is a centred part of the buffer: -> (x0 pairs, y0 rows, Wc, Hc); a buffer no larger: (0, 0, W, H)."""
-    if crop in (6, 7):
-        num, den = (24, 65) if crop == 6 else (9, 21)
-        Hc = (W * num + den * 8) // (den * 16) * 16
-        if Hc < H:
-            return 0, ((H - Hc) // 2) & ~1, W, Hc
-    elif crop == 5:
-        Wc = (H * 5 + 32) // 64 * 16
-        if Wc < W:
-            return (W - Wc) // 4, 0, Wc, H
+    """crop.s cr_bdc (crop round 7; every ratio 2026-11-18): at any Image Aspect but 4:3 the photo the camera keeps
+    is a centred part of the 4:3 buffer: -> (x0 pairs, y0 rows, Wc, Hc); a buffer no larger: (0, 0, W, H)."""
+    if crop not in CROPS:
+        return 0, 0, W, H
+    side, num, den, q, add = CROPS[crop]
+    Xc = ((W if side == 1 else H) * num + add) // (den << q) << q
+    if side == 1 and Xc < H:
+        return 0, ((H - Xc) // 2) & ~1, W, Xc
+    if side == 2 and Xc < W:
+        return (W - Xc) // 4, 0, Xc, H
     return 0, 0, W, H
 
 
