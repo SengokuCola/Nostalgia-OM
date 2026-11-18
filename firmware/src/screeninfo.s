@@ -32,6 +32,19 @@
 /* si_upd <- .hook_si (jmp; the updater's frame: `this` at (12,sp), item buffers at (slot,sp)). d0 / d1 / a0 / a1 are
  * free here (the stock code reloads them); d2 / d3 / a2 / a3 are kept (saved and restored). */
 si_upd:
+ movbu (cr_rch),d0                /* crop83-2: the crop set at start-up kept (crop.s cr_chk), before this hook's gates */
+ cmp 0,d0
+ beq 0f
+ movm [d2,d3,a2,a3],(sp)
+ add -8,sp                        /* (0) call slot, (4) MDR */
+ mov mdr,d0
+ mov d0,(4,sp)
+ call cr_chk,[d2,d3,a2,a3],24
+ mov (4,sp),d0
+ mov d0,mdr
+ add 8,sp
+ movm (sp),[d2,d3,a2,a3]
+0:
  movhu (STATE),d0
  cmp 0,d0
  beq 9f                           /* before the films load: nothing */
