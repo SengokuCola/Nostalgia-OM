@@ -5908,6 +5908,13 @@ rgb-page-counts-every-click, halation-matches-the-model). Package `test-builds/2
   debug log's strings: 13,002 bytes apart). main.bin vs test 5: 48 bytes (the name, the code-block tag twice, the
   built-in GUIDES CRC). E1479999.BIN 2814bfde…c0e; patch.py --release v0.30.4 and the default make it; v0.30.3 still
   60b6d954…f546.
+- **Owner: "push 30.4 as an alpha, not full release" (2026-11-17):** as v0.28-alpha and v0.29-beta, a GitHub pre-release
+  from its branch (`try/v0.30.4`); main stays v0.30.3 (the local merge into main, never pushed, taken back). VERSION
+  "v0.30.4-alpha (#72 fix, PR #70, PR #73; tested)", 47 characters: main.bin vs test 5 47 bytes. Folder
+  `releases/v0.30.4-alpha`, E1479999.BIN 90a0325a…27bd (patch.py --release v0.30.4-alpha and its default).
+- **Published (owner's OK, 2026-11-17):** branch `try/v0.30.4` pushed (6609deb); GitHub pre-release `v0.30.4-alpha` at
+  6609deb with patch.json, LOOKS.BIN, CURVES.BIN, DEBUG.TXT, the photo code kit and SHA256SUMS; the latest release
+  stays v0.30.3. PR #70 and PR #73 stay open (their commits are on the branch, not on main).
 
 ## Issue #64: the wheel's dial label names the page (2026-11-16; feature/dial-label-per-page; camera-tested)
 - Owner on #64: "I like these changes, if you make a pr with them, I'll merge". This replaces the sp1 request (2026-11-09)

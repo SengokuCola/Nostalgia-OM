@@ -8,7 +8,7 @@ What changed in each version of Caduceus for OM-3, newest first. To install or u
 
 | Version | Released | What's new |
 |---|---|---|
-| [v0.30.4](#v0304) | 2026-11-17 | Fix: no reboot when switching films fast (#72); the color wheel's label names the page (#64); our looks kept out of video and S&Q (#68) |
+| [v0.30.4-alpha](#v0304-alpha-test-version) | 2026-11-17 (test version) | Fix: no reboot when switching films fast (#72); the color wheel's label names the page (#64); our looks kept out of video and S&Q (#68) |
 | [v0.30.3](#v0303) | 2026-11-17 | Faster halation with a smoother fade; every dial click counted on the RGB / Mix pages, faster looks and saves (#69); a debug log that doesn't slow the shutter |
 | [v0.30.2](#v0302) | 2026-11-17 | Fix: with Image Review on, Glow / Clarity / Halation photos no longer give a black review or freeze live view at the switch to a standard picture mode |
 | [v0.30.1](#v0301) | 2026-11-17 | Fix: no more one-frame flash when leaving the B/W or WB Compensation row in Picture Mode |
@@ -42,9 +42,10 @@ What changed in each version of Caduceus for OM-3, newest first. To install or u
 Versions are named v0.N from v0.18 on. Earlier builds were called "test N" while they were tried on the camera; the
 same number is used here (test 17 = v0.17).
 
-## v0.30.4
-v0.30.3 plus one fix and two pull requests by [crombach](https://github.com/crombach). Firmware camera-tested
-(2026-11-17, test 5; only its name was changed).
+## v0.30.4-alpha (test version)
+A test version of v0.30.4 (a GitHub pre-release; v0.30.3 stays the current version): v0.30.3 plus one fix and two
+pull requests by [crombach](https://github.com/crombach). Firmware camera-tested (2026-11-17, test 5; only its name
+was changed).
 
 - **Fix: switching films fast rebooted the camera** ([#72](https://github.com/androidfanman/caduceus-om3/issues/72)):
   after every step in the Picture Mode list (and on the super control panel's dial) the firmware wrote which film each
@@ -56,7 +57,7 @@ v0.30.3 plus one fix and two pull requests by [crombach](https://github.com/crom
 - **Our looks for photos only** ([#68](https://github.com/androidfanman/caduceus-om3/issues/68),
   [#73](https://github.com/androidfanman/caduceus-om3/pull/73)): video and S&Q no longer get split toning, Tone
   Balance, RGB curves, Glow or Art Effects. Photos unchanged.
-  Details: [release notes](releases/v0.30.4/NOTES.md).
+  Details: [release notes](releases/v0.30.4-alpha/NOTES.md).
 
 ## v0.30.3
 v0.30.2 plus faster halation, one pull request by [crombach](https://github.com/crombach) and a debug log fix. Firmware
