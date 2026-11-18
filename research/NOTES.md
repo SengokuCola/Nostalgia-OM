@@ -6866,3 +6866,31 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
 - **Suite** (out-cr9b, E1479999.BIN 2bb52ef9…bba3, commit 755a1f7): **50 pass** (crop-playback-label-and-quality
   among them), **2 FAIL** as before: static:hook-list (crs, crb, crg, crh, crk, crl, crm for the owner's OK) and
   static:changed-bytes. Package `test-builds/2026-11-17-crop-round-9b`.
+
+## Crop round 9b: the reboot; round 9c (2026-11-17; camera, analysis, emulator)
+- **Camera, round 9b (owner, 2026-11-17, 2bb52ef9…): "still rebooting"** in image review. Card
+  (card-backups/2026-11-17-crop-round-9b-tested): the only photo, PB173213, is **2912 x 3888, a plain 3:4 photo**;
+  CROP MODES "tag at the first half-press 43520006, Image Aspect then 3, set to 6, after 6, now 9" (XPan restored at
+  the half-press, then 3:4 picked and shot); the log was written at event 10, before the review.
+- **What this shows (main chat, analysis):** for a 3:4 photo cr_pbk1 notes 0 and the label hooks take the stock path,
+  so the reboot comes with a stock-shaped photo. Shared by rounds 9 and 9b and not by round 8 (no reboot): the three
+  label elements patched to 8 states pointing at cr_pll in .ext12, with our pictures for the new states. **Likely
+  cause (not proven):** something that reads the label element (all of its states, its list in .ext12, or our
+  picture ids CR_IC0 + 3..5 through a path other than the picture getter) when the review screen is built. Round 9's
+  reboot then needs no other cause, and its notes' two suspects (the changed codes / record mode) are not shown.
+- **Round 9c: no layout or stock value changes.** The elements stay stock (5 states, the stock lists), the label
+  updates (0x611509bc, 0x611525b9), 0x61101381 and 0x60c7c18a are stock (byte-checked by the test). `.hook_crk`
+  0x6111341e notes the shown photo's crop shape (as 9b). **cr_ic answers the label's picture request instead:** in
+  playback (GUI class 5..7) a request for 10931 (4:3) while cr_pbk is 6 gets our 5:4, for 10930 (16:9) while it is 7
+  / 8 our XPan / 21:9 (CR_IC0 + 3..5, the top bar's, drawn as 10930 / 10931). The widget asks the picture getter at
+  each draw (0x610db0df -> 0x610f5611, our .hook_ic; camera, round 6: the playback label's 10931 came through cr_ic
+  with mdr 0x610DB128, in that draw) and keeps no copy (no writes to its 32 slots at +172 in the widget code).
+- Against round 7b (camera: playback normal), outside .ext12: the 6-B hook at 0x6111341e, and crop.py's pointers
+  into .ext12 at their new addresses (0x611cb24e, 0x6129fc2b / 3e / 73, 0x6151ffa0, 0x6154a8dc, 0x615863ac,
+  0x61596f04). Sections 1..5 byte-identical to 7b.
+- Test `crop-playback-label-and-quality` (rewritten): the stock bytes at both label updates, 0x61101381 and
+  0x60c7c18a; the elements stock; 0x61101381 / 0x60c7c18a's stock results for crop sizes; cr_pbk1's kinds with
+  d0 / d1 / d2 / a0 as stock; the picture getter called with GUI class 5 for 10930 / 10931 / 10933 and kinds 0, 6, 7,
+  8 (ours exactly when they match) and with class 1 (the stock picture).
+- **Suite** (out-cr9c, E1479999.BIN a0889007…d938, commit 4307cdf): **50 pass**, **2 FAIL** as before
+  (static:hook-list: crs, crb, crg, crh, crk; static:changed-bytes). Package `test-builds/2026-11-17-crop-round-9c`.
