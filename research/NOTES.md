@@ -7136,3 +7136,60 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   v0.40-alpha (target a2551d0; NOTES.md as its text; assets: the photo code kit, CURVES.BIN from v0.30, DEBUG.TXT,
   LOOKS.BIN, patch.json, SHA256SUMS; patch.json and SHA256SUMS downloaded back and identical). v0.30.3 stays Latest.
   PR #76 is still open on GitHub (not merged into main).
+## Better grain g3: a faster grain tile (2026-11-17; branch feature/better-grain; emulator only)
+- **Owner (2026-11-17): "try the faster grain tile method"** (after the film-grain research: AV1's film grain makes a
+  small template once and copies blocks of it at random offsets, blending the joins).
+- **Where g2c's ~0.4 s per tile goes (analysis):** 66.3 M instructions (om-emu) and 1536 locks + FLUSHes (each row
+  put twice, one lock each). On the camera a FLUSH is costly: xb_grain gr4 (2 rows a FLUSH instead of 1) saved 0.3 s
+  over 3888 rows, about 0.15 ms each, so about 0.23 s of the tile's 0.39..0.43 s (estimate).
+- **Try 1, AV1 as it is (Mac only, dropped):** a 96 x 80 template (fits the 16448 B malloc cap) and 32 x 32 blocks at
+  random offsets. At Coarse the same specks show in nearby blocks (a pink speck four times in a row at 300 %), and the
+  block edges show faintly: the step between neighbouring rows across an edge 18.2 against 10.5 inside (size 3).
+- **g3, the band and strips:** the template is a band of the tile itself, so it can be big: tile rows 0..127 made by
+  the box filter as before (period 128: row 128 = row 0, so the band joins itself seamlessly), then rows 128..767 from
+  20 strips of 32 band rows each, every strip turned round by a random sx (rows wrap at 1536, so no side joins) and
+  its first B = 2 x size rows crossfaded from the strip before it going on (weights 256 cos / sin of (i + 1) 90 /
+  (B + 1) degrees, so the grain keeps its strength through the join); the last strip is crossfaded into rows 0..B - 1
+  (the tile's own wrap). Strip k: h = tg_seed(k, 3), sy = 2 ((h & 0xffff) 44 >> 16) (0..86: the strip and the 10 rows
+  after it stay in the band), sx = 4 ((h >> 16) 768 >> 16) bytes. Rows 768..1535 = rows 0..767 as before.
+- **Look (Mac, the exact model; analysis):** the step between rows at the joins against inside a strip: size 1 18.6 /
+  18.6, size 2 13.3 / 12.9, size 3 10.8 / 10.5 (g2c's own wrap: 10.55 / 10.52); mean and spread as g2c (Y 47.7..48.2
+  by seed, sigma 16.0; Cb / Cr 128, 16.0). The largest repeat in a tile (autocorrelation away from 0) 0.047 (one strip's
+  share), always 118+ rows apart with a sideways shift. Side by side with g2c (flat grey at 100 % and 300 %, a photo at
+  100 %; Medium and Coarse): no joins or repeats seen.
+- **The tile across a window edge:** the fast way needs the whole tile in one 128 MB window segment (bus & 0x07ffffff)
+  + 4.7 MB <= 128 MB; otherwise tg_fill makes all 768 rows the g2c way (unchanged; tested).
+- **Locks:** every fast-path row goes through `tg_op` (hl_open of the whole tile, its cached view: the window's 0x78..
+  view or DRAM's 0x6.. alias) and `tg_cl` (FLUSH, UNLOCK). A band row: one lock, written to rows y and y + 768
+  (`tg_rc`); a crossfaded row: one lock (~61 K instructions: `tg_rc` + `tg_bl`); other strip rows 16 a lock
+  (~87 K); all under HL_LOCKN's 120 K. Locks a tile: 210 (size 1), 252 (2), 294 (3) against 1536. The band is read
+  back from the tile through the cached view (the camera's cached window view was read and written by xb_grain gd4,
+  2026-11-05). The builder's stack: 68 B deeper than g2c (tg_mix 72, tg_op 20 inside tg_fill 120).
+- **Code (editor.s, ext12):** `tg_fill` (frame 104 -> 120: U the rows made, the fast flag, a lock token; the column
+  sums wrap at U and U / 2), `tg_op`, `tg_cl`, `tg_rc`, `tg_bl`, `tg_mix` (frame 72), `tg_ra`, `tg_wi`, table `tg_wt`,
+  counter `tg_nf`. ext12 240,048 B (of 262,144). No new hook or patch site. Debug log: "Grain tiles (better grain
+  g3): made N, failed N, last size W, last time (ms) T, fast N". VERSION "v0.30.3-dev (grain g3: faster grain tile)".
+- **om-emu** (tg_fill called directly, FLUSH stubbed, tile at bus 0xb0100000 = the direct DRAM path): instructions a
+  tile 16.3 M (size 1), 18.5 M (2), 20.7 M (3), 25.2 M (5) against g2c's 66.3 M; **every tile equals the model byte
+  for byte** (`research/grain/tile_model.py`: sizes 1, 2, 3, 5 the fast way; size 2 at 0xaff00000, across an edge, =
+  g2c's tile). Estimate for the camera (analysis): about 0.1 s a tile instead of 0.4 s; the log's time will tell.
+- New suite test `grain-tile-matches-the-model` (Fine and Coarse the fast way, Medium across an edge; ~20 s);
+  `--without` the g2c build (out-g2g): caught (its tg_fill has the old frame and does not come back).
+- **Camera-only:** the window path (the band read back through the 0x78.. view, several rows a lock), the real time,
+  the look on photos, video.
+- Suite on d361b4f (its own build): **31 of 31 pass**. Package `test-builds/2026-11-17-grain-g3` (private folder):
+  E1479999.BIN `4692fc78…6089` (VERSION "v0.30.3-dev (grain g3: faster grain tile)"), go-backs v0.30.3
+  `60b6d954…f546`, border test 1c `d8ce3d89…3db3` and grain g2c `317747e1…23a6`; a g2c / g3 comparison picture made
+  from the model. Camera questions: the time per tile, no stripes / lines / repeats at Coarse, "fast N" = "made".
+
+## Grain g3 on v0.40-alpha (2026-11-17; branch try/grain-g3-v0.40; emulator only)
+- **Owner (2026-11-17), asked whether to copy g3 (built on v0.30.3) over screen info s2 (on v0.40-alpha) on the camera:
+  "Rebuild g3 on v0.40-alpha"** (so the camera keeps crop modes during the grain test). `try/grain-g3-v0.40` =
+  `try/v0.40-alpha` (492c890, which has g2c) + `feature/better-grain` merged (g3: d361b4f, 39dced6). Conflicts: VERSION
+  ("v0.40-alpha + grain g3 (faster grain tile)"), emu_test.py (both sets of tests), NOTES (both), README / ROADMAP
+  (v0.40-alpha's kept). editor.s merged cleanly. ext12 257,216 B (4,928 B left).
+- `static:changed-bytes`: four reviewed patch sites hold pointers into our code that moved with g3 (0x60e574bc the
+  table word 0x60f8bf4c -> 0x60f8c2b4; 0x610830d4, 0x6108314f, 0x610831c6 the word 0x60f63de8 -> 0x60f64154). In the
+  v0.40-alpha build their low byte equalled the stock byte by chance; now it differs, so the runs grew by one byte:
+  hooks.json 0x60e574bd:2 -> 0x60e574bc:3, 0x610830d5:3 -> 0x610830d4:4, 0x61083150:3 -> 0x6108314f:4, 0x610831c7:3
+  -> 0x610831c6:4 (by hand, not --write-hooks; no new site; v0.40-alpha's build still passes).
