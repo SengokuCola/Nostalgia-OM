@@ -7132,3 +7132,7 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   42 bytes). `releases/v0.40-alpha`: E1479999.BIN `fbef591d…72a2`, `patch.py --release v0.40-alpha` makes it byte for
   byte; static checks (release-rebuild included), boot-smoke, video boot and patch-audit pass on it. Not pushed or
   published yet.
+- **Published 2026-11-17 (owner: "Yes, publish it"):** `try/v0.40-alpha` pushed at a2551d0; GitHub pre-release
+  v0.40-alpha (target a2551d0; NOTES.md as its text; assets: the photo code kit, CURVES.BIN from v0.30, DEBUG.TXT,
+  LOOKS.BIN, patch.json, SHA256SUMS; patch.json and SHA256SUMS downloaded back and identical). v0.30.3 stays Latest.
+  PR #76 is still open on GitHub (not merged into main).
