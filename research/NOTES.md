@@ -7434,3 +7434,7 @@ camera's own info-display settings, with show / hide per item, several set-ups, 
 - Emulator: emu_check 20 of 20 bit-exact (+ c43, c32, c169, c11, c34, c169cut), big169 / big34 exact; test 1's build
   `caught` on border-matches-the-model. Suite on d24ab1d: 67 of 67 pass (screen info's hook approved, b0aaaa2).
   Package `test-builds/2026-11-18-v0.41-dev-test2`: `1fae8adb…637b`, a second build matches. Camera test pending.
+- **Camera-tested 2026-11-18** (owner: "It looks good"): test 2 (`1fae8adb…`), Border 5, one photo per ratio, level and
+  upright (PB183425..440, private card backups): 4:3 291 / 292 px all round, 16:9 218, 3:2 259 / 260, 1:1 291 / 292,
+  3:4 218, 5:4 291 / 292, XPan 143 / 144, 21:9 166; no picture outside the border. Log clean ("border fix", 16 photos,
+  nothing unusual).
