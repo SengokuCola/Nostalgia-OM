@@ -53,10 +53,15 @@ CASES = {   # name: (W, H, pad pixels, level[, Image Aspect: 5 / 6 / 7 = 5:4 / X
     'xpan-3': (640, 480, 16, -3, 6),     # the crop's centred band: the vignette is the kept photo's
     'w219+2': (640, 480, 0, 2, 7),
     'c54-5': (640, 480, 16, -5, 5),
+    'r32-2': (640, 480, 0, -2, 2),        # the camera's own ratios: 3:2, 16:9, 1:1, 3:4 (cut from the 4:3 buffer)
+    'r169+4': (1024, 768, 8, 4, 3),
+    'r11-1': (640, 480, 0, -1, 4),
+    'r34+5': (640, 480, 16, 5, 9),
     'big-5': (5184, 3888, 0, -5),         # camera-sized (20 MP): for the counts, not in the default run
     'big+3': (5184, 3888, 0, 3),
+    'big169-5': (5184, 3888, 0, -5, 3),
 }
-BIG = ('big-5', 'big+3')
+BIG = ('big-5', 'big+3', 'big169-5')
 
 
 def main():

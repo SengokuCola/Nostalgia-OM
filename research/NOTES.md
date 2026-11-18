@@ -7418,3 +7418,23 @@ camera's own info-display settings, with show / hide per item, several set-ups, 
 - **Camera-tested 2026-11-18** (owner: "It all looks good and works as advertised!"): log clean, build "v0.41-dev
   (grain g3, screen info s2)", 25 photos, grain tiles made 20, failed 0, all fast, last 270 ms; play, menu and Picture
   Mode screens visited; nothing unusual. The owner erased the photos before the card came back.
+
+## The Border at the camera's own ratios (2026-11-18; emulator, test 2 packaged)
+- **Owner's camera (v0.41-dev test 1, Border 5, one photo per ratio, level and upright): the border cut off.** Measured
+  on the photos (private card backups): 4:3 291 / 292 px all round; 3:2 top / bottom 75; 16:9 top / bottom 0; 1:1 and
+  3:4 sides 0; 5:4 / XPan / 21:9 right (crop round 7). Upright photos identical to level ones (orientation is only an
+  EXIF tag). Cause: bd_run paints the full 4:3 buffer and the camera cuts the photo out of it afterwards; cr_bdc only
+  knew 5 / 6 / 7. In the release since Borders began (v0.40-alpha too); test 1c's camera report never covered the
+  ratios one by one.
+- Fix (d24ab1d): cr_bdc takes every ratio from cr_bdt by Image Aspect id (269 = table id: 1 4:3, 2 3:2, 3 16:9, 4 1:1,
+  9 3:4, as the size tables 0x606e60c0 / 0x606e6270): 3:2 / 16:9 cut rows (W 2/3, W 9/16 up to 8), 1:1 / 3:4 cut the
+  sides (H down to 16, H 3/4 nearest 16); these give the camera's listed photo sizes for every 4:3 size it lists
+  (classes 0, 17, 19, 20, 21, 22; 1:1 at 8160 x 6120 gives 6112 wide, the camera 6112 x 6112: 4 rows of the border
+  trimmed there). B follows the photo's short side (16:9 Border 5: 218 px). a0 now kept across the call.
+- Emulator: emu_check 20 of 20 bit-exact (+ c43, c32, c169, c11, c34, c169cut), big169 / big34 exact; test 1's build
+  `caught` on border-matches-the-model. Suite on d24ab1d: 67 of 67 pass (screen info's hook approved, b0aaaa2).
+  Package `test-builds/2026-11-18-v0.41-dev-test2`: `1fae8adb…637b`, a second build matches. Camera test pending.
+- **Camera-tested 2026-11-18** (owner: "It looks good"): test 2 (`1fae8adb…`), Border 5, one photo per ratio, level and
+  upright (PB183425..440, private card backups): 4:3 291 / 292 px all round, 16:9 218, 3:2 259 / 260, 1:1 291 / 292,
+  3:4 218, 5:4 291 / 292, XPan 143 / 144, 21:9 166; no picture outside the border. Log clean ("border fix", 16 photos,
+  nothing unusual).

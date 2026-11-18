@@ -23,7 +23,7 @@ The model, in integers (bit for bit what vg_run does):
     lighter: Y' = 255 - (((255 - Y) g + 128) >> 8)
     Cb', Cr' = (C g + 32896 - 128 g) >> 8                   (= 128 + (C - 128) g / 256, rounded)
 The buffer is the camera's YCbYCr 4:2:2 (byte 0 Y0, 1 Cb, 2 Y1, 3 Cr), rows `pitch` bytes apart; a pair shares its
-gain. Crop modes: the centred part the camera keeps (as the Border, research/border/model.py crop_area)."""
+gain. At any ratio but 4:3 the centred part the camera keeps (crop.s cr_bdc, as the Border)."""
 import math
 
 POINTS = ((0.0, 0.0), (0.30, 0.02), (0.525, 0.28), (0.75, 0.75), (1.0, 0.94))   # (r, m) of the strongest level
@@ -85,17 +85,14 @@ def check():
 
 
 def crop_area(W, H, crop):
-    """(x0 pairs, y0 rows, Wc, Hc): the camera's crop (Image Aspect 5 / 6 / 7) as crop.s cr_bdc, else the buffer."""
-    if crop in (6, 7):
-        num, den = (24, 65) if crop == 6 else (9, 21)
-        Hc = (W * num + den * 8) // (den * 16) * 16
-        if Hc < H:
-            return 0, ((H - Hc) // 2) & ~1, W, Hc
-    elif crop == 5:
-        Wc = (H * 5 + 32) // 64 * 16
-        if Wc < W:
-            return (W - Wc) // 4, 0, Wc, H
-    return 0, 0, W, H
+    """(x0 pairs, y0 rows, Wc, Hc): the part of the 4:3 buffer the camera keeps at Image Aspect `crop` (crop.s cr_bdc,
+    shared with the Border): research/border/model.py crop_area is its exact model."""
+    import importlib.util, pathlib
+    spec = importlib.util.spec_from_file_location(
+        'border_model', pathlib.Path(__file__).resolve().parents[1] / 'research' / 'border' / 'model.py')
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m.crop_area(W, H, crop)
 
 
 def ok(W, H, pitch, level):
