@@ -26,6 +26,7 @@ def widths(W, H, level):
 # crop.s cr_bdt, by Image Aspect id: (side: 1 rows from W, 2 sides from H), num, den, q, add -> ((X num + add) //
 # (den << q)) << q. 2 3:2 / 3 16:9 up to 8, 4 1:1 down to 16, 9 3:4 nearest 16 (the camera's own photo sizes);
 # 5 5:4, 6 XPan, 7 21:9 as crop round 7.
+MR, MP = 32, 16                            # crop.s CR_MR rows / CR_MP pairs past a crop's cut sides (32 px)
 CROPS = {2: (1, 2, 3, 3, 23), 3: (1, 9, 16, 3, 127), 4: (2, 1, 1, 4, 0), 5: (2, 5, 4, 4, 32), 6: (1, 24, 65, 4, 520),
          7: (1, 9, 21, 4, 168), 9: (2, 3, 4, 4, 32)}
 
@@ -52,8 +53,16 @@ def border(buf, W, H, pitch, level, crop=0):
     """buf (uint8, H x pitch bytes) changed in place as bd_run does; returns 'on' or 'off'. crop: Image Aspect now."""
     if not ok(W, H, pitch, level):
         return 'off'
+    W0, H0 = W, H
     x0, y0, W, H = crop_area(W, H, crop)
     B, Bp = widths(W, H, level)
+    # 2026-11-18 (test 4, the camera's 1600 px preview inside each JPEG): the preview is cut from the buffer a few
+    # pixels past the photo's crop, so past a cut side the border goes MR rows / MP pairs further (as far as the buffer
+    # goes); the photo itself is cut where it was and keeps its widths.
+    mr = min(MR, y0, H0 - y0 - H) if H < H0 else 0
+    mp = min(MP, x0, W0 // 2 - x0 - W // 2) if W < W0 else 0
+    y0, H, B = y0 - mr, H + 2 * mr, B + mr
+    x0, W, Bp = x0 - mp, W + 4 * mp, Bp + mp
     P = W // 2
     rows = buf.reshape(-1, pitch)[y0:y0 + H]
     pairs = rows[:, 4 * x0:4 * (x0 + P)].reshape(H, P, 4)

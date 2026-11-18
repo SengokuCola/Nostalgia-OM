@@ -17827,6 +17827,40 @@ bd_run:
  add 1,d0
  lsr 1,d0
  mov d0,(28,sp)                   /* Bp */
+ /* 2026-11-18 (test 4): past a crop's cut sides the border goes on for cr_mr rows / cr_mp pairs (crop.s cr_bdc), as far
+  * as the buffer goes: the camera cuts its 1600 px preview a few px wider than the photo, and those px showed as a thin
+  * line of picture at the preview's edge. The photo is cut where it was; B and Bp grow by the margin on the cut sides. */
+ mov (cr_mr),d0
+ cmp 0,d0
+ beq 14f
+ mov (24,sp),d1
+ add d0,d1
+ mov d1,(24,sp)                   /* B += mr */
+ mov (12,sp),d1
+ add d0,d1
+ add d0,d1
+ mov d1,(12,sp)                   /* H += 2 mr */
+ mov (16,sp),d1
+ mul d0,d1
+ mov (20,sp),d0
+ sub d1,d0
+ mov d0,(20,sp)                   /* bus -= mr pitch */
+14:
+ mov (cr_mp),d0
+ cmp 0,d0
+ beq 15f
+ mov (28,sp),d1
+ add d0,d1
+ mov d1,(28,sp)                   /* Bp += mp */
+ mov (8,sp),d1
+ add d0,d1
+ add d0,d1
+ mov d1,(8,sp)                    /* P += 2 mp */
+ asl2 d0
+ mov (20,sp),d1
+ sub d0,d1
+ mov d1,(20,sp)                   /* bus -= 4 mp */
+15:
  clr d0
  mov d0,(68,sp)                   /* band 0: rows 0 .. B - 1, the whole width */
  mov d0,(32,sp)

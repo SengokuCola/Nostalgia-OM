@@ -1000,7 +1000,13 @@ cr_trim:                          /* `call cr_trim,[],0`, a1 -> {x, y, w, h} (u1
  * gives the camera's own photo sizes (0x606e60c0 / 0x606e6270) for every size of 4:3 frame they list (5184 x 3888:
  * 5184 x 3456, 5184 x 2920, 3888 x 3888, 2912 x 3888); 5:4, XPan and 21:9 as round 7. research/border/model.py
  * crop_area is the exact model. */
+ .set CR_MR, 32                    /* 2026-11-18: the border goes this many rows / pairs past a crop's cut sides (as */
+ .set CR_MP, 16                   /* far as the buffer goes): the camera cuts its 1600 px preview a few px wider */
  .balign 4
+cr_mr:                            /* -> bd_run: rows past the cut top / bottom, pairs past the cut sides (0: no crop) */
+ .long 0
+cr_mp:
+ .long 0
 cr_bdt:                           /* by Image Aspect id 1..9: side (1 rows, 2 sides, 0 none), num, den, q; u16 add, 0 */
  .byte 0, 0, 0, 0
  .hword 0, 0                      /* 1 4:3 */
@@ -1021,6 +1027,9 @@ cr_bdt:                           /* by Image Aspect id 1..9: side (1 rows, 2 si
  .byte 2, 3, 4, 4
  .hword 32, 0                     /* 9 3:4: H 3 / 4 to the nearest 16 */
 cr_bdc:
+ clr d1
+ mov d1,(cr_mr)
+ mov d1,(cr_mp)
  mov a0,a3
  mov d0,a2                        /* W */
  movbu (CR_A1),d1
@@ -1058,7 +1067,13 @@ cr_bdc:
  mov d0,(12,a3)                   /* H = Hc */
  sub d0,d1
  lsr 1,d1
- and 0xfffffffe,d1                /* y0, even */
+ and 0xfffffffe,d1                /* y0, even (the rows below: y0 or y0 + 1) */
+ mov d1,d3                        /* rows past the cut: min(CR_MR, y0) */
+ cmp CR_MR,d3
+ bls 2f
+ mov CR_MR,d3
+2:
+ mov d3,(cr_mr)
  mov (16,a3),d0
  mul d0,d1
  mov (20,a3),d0
@@ -1071,6 +1086,13 @@ cr_bdc:
  bcc 9f
  mov d0,a2                        /* W = Wc */
  sub d0,d1                        /* W - Wc = the left offset in bytes ((W - Wc) / 2 px, 2 bytes each) */
+ mov d1,d3                        /* pairs past the cut: min(CR_MP, (W - Wc) / 4, the same on the right) */
+ lsr 2,d3
+ cmp CR_MP,d3
+ bls 3f
+ mov CR_MP,d3
+3:
+ mov d3,(cr_mp)
  mov (20,a3),d2
  add d1,d2
  mov d2,(20,a3)
