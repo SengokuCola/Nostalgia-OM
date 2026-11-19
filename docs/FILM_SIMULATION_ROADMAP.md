@@ -3,95 +3,80 @@
 **Goal:** make the OM-3 with Caduceus the best film-replicating camera available: looks that render like real film
 stock straight out of the camera, and that load and shoot like a roll of film.
 
-Last updated 2026-11-11 (checked against v0.27, the latest release). Update the status column as work moves, and add
-findings to the research log at the end (details go in [`research/NOTES.md`](../research/NOTES.md)). The general
-roadmap is [`ROADMAP.md`](../ROADMAP.md).
+Last updated 2026-11-18 (checked against v0.30.3, the latest release, and the v0.40-alpha test version). Update the
+status column as work moves, and add findings to the research log at the end (details go in
+[`research/NOTES.md`](../research/NOTES.md)). The general roadmap is [`ROADMAP.md`](../ROADMAP.md).
 
 **Effort:** Low = a few sessions on known hooks · Medium = new firmware work on parts we already understand ·
 Large = a new area of the firmware · Hard = no camera feature to borrow, everything drawn or computed by us.
-**Status:** Not started · Researching · Proven possible · Building · Camera testing · Done · Parked.
+**Status:** Not started · Researching · Building · Camera testing · Test version · Done.
 Efforts are estimates from what we know of the firmware today.
 
-## What v0.27.1 can do (camera-tested)
+## What v0.30.3 can do (camera-tested)
 
 - **20 film sims on the camera** as FILM 1–20 in the Picture Mode list, after COLOR 1–4, with their names on the
-  title, quick menu, shooting screen and viewfinder. They load at the first half-press after switching on (until
-  then the screen may show the plain COLOR look), and the super control panel's dials step COLOR 1–4, then
-  FILM 1–20. LookLab has 67 films to choose from (18 colour matched).
-- **Per film:** colour (hue, saturation, luminance for 12 colours), Highlights / Midtones / Shadows, Blacks / Whites,
-  Contrast, Sharp (−5 Off..+2), Noise Filter (Off / Low / Std / High), Vignette Correction on / off, Shading, WB shift
-  A-B / G-M −7..+7 (the camera's own WB grid), split toning (Shadows and Highlights wheels, 12 colours, −5..+5).
-- **Added by the user per film, never in a sim:** Film Grain Off / Low / Med / High (colour, from the image
-  processor, no extra time), the Glow row (+ Glow, − Clarity).
-- **Changes kept per film** (`EDITS.BIN`, `*` = changed, hold OK = back to as built), kept over power off.
-- **Live view** shows the look, split toning and glow included. Photos only: video keeps the camera's normal look.
-- **Film in the photo (v0.27):** each JPEG taken on a FILM has the film's name in its EXIF and the whole recipe as a
-  short code; LookLab opens it as a film ([`docs/PHOTO_CODE.md`](PHOTO_CODE.md)).
-- **Creative Dial (v0.27):** each of the four positions can be set to COLOR and keep its own film, so the dial
-  switches between up to four films.
-- **Not in v0.27:** Art Effects (removed in v0.25), mono films (parked), a WB mode / exposure / ISO per film, halation.
-
-**Firmware space.** The 64 KiB of section 6 proven on 2026-11-07 is used up. The 256 KiB proven on 2026-11-10
-(GX3, 0x60f59800..0x60f99800, camera-tested) is in use from v0.27: v0.27.1 leaves about 15 KB of it free (the button
-pictures and body diagrams take most of it). v0.28 work sizes the button pictures' area to fit (about 76 KB free) and
-probes the rest of section 6 (about 660 KB more, GX4); see `research/NOTES.md`, "v0.28 code space".
+  title, quick menu, shooting screen and viewfinder. They are ready when the camera starts, and the super control
+  panel's dials step COLOR 1–4, then FILM 1–20. LookLab has 67 films to choose from (18 colour matched).
+- **Per film:** colour (hue, saturation, luminance for 12 colours), Color Mix, RGB curves, Highlights / Midtones /
+  Shadows, Blacks / Whites grid (±7), Contrast, Sharp, Noise Filter, Vignette Correction, Shading, WB shift and WB mode,
+  split toning (0–10 with Tone Balance), Halation (0–5).
+- **Added by the user per film, never in a sim:** Film Grain, the Glow row (+ Glow, − Clarity).
+- **Changes kept per film** (`*` = changed, hold OK = back to as built); each custom mode keeps its own copy.
+- **Live view** shows the look. Photos only: video keeps the camera's normal look.
+- **Film in the photo:** each JPEG taken on a FILM has the film's name and the whole recipe as a short code in its EXIF;
+  LookLab opens it as a film ([`docs/PHOTO_CODE.md`](PHOTO_CODE.md)).
+- **Creative Dial:** each of the four positions can be set to COLOR and keep its own film.
 
 ## Next steps
 
-1. **Halation** (Next, owner 2026-11-09: halation and custom crop modes finish the colour profiles). Port the E-P7's
-   method, our own code, onto the Glow row's route; can use the new 256 KiB.
-2. **Our own grain texture:** colour speckle and grain size from the Grain Lab design, through the same fast texture
-   route. Plan: project doc `fast-grain-plan`, `research/NOTES.md`.
-3. **Fine-tune the 20 film sims** (draft 1, from the owner's colour checker photos, is in the optional `LOOKS.BIN` of
-   v0.26.1 to v0.27). Gold 200 and CineStill 800T now carry their split tone on the Highlights wheel, as in the approved
-   drafts (LookLab 2026-11-10, `LOOKS.BIN` from v0.27). Seven films keep
-   split tones from the older recipes.
-4. **White balance mode and exposure compensation per film:** quick wins that make a film behave like a roll.
+1. **The v0.40 update:** crop modes, a Border per film and our own grain are in the v0.40-alpha test version; black
+   borders, faster grain, Screen Info and more follow (see [`ROADMAP.md`](../ROADMAP.md)).
+2. **LookLab matched to the camera** for Shading, grain, Border, Glow, Sharpness and Contrast, with the v0.40 release.
 
 ## The film look itself
 
 | Feature | Why it matters for film | Effort | Status | Research notes |
 |---|---|---|---|---|
-| Split toning: colour by brightness | Teal shadows and warm highlights (cinema), cool shadows (Portra), green shadows (Superia). | Medium | **Done (v0.26)** | Shadows and Highlights wheel pages, 12 colours, −5..+5, in photos and live view; camera-tested 2026-11-09. Asked for: a Midtones control ([#23](https://github.com/androidfanman/caduceus-om3/issues/23), not planned) and finer steps (film-sim drafts, 2026-11-09). **v0.28:** wheels 0..10 in half steps (10 = v0.26's +5), positive only, and a Tone Balance row; in LookLab too. |
-| Coloured glow (halation) | The red glow around lights of CineStill and other cinema film. | Medium | **Done (v0.28)** | Its own Picture Mode row, 0..5, a CPU pass after the Soft Focus blend (method after Caduceus for the E-P7, our own code); camera-tested 2026-11-12; LookLab slider and preview. `research/NOTES.md`. |
-| Highlight roll-off and toe | Film compresses highlights gently and has a soft toe in the blacks. | Medium | Not planned | Covered by what exists (owner, 2026-11-12): Blacks + Shadows give the toe, Whites − and Highlights − a soft shoulder (Highlight & Shadow is the camera's own tone curve). |
-| Film grain: size, colour speckle, by brightness | Film grain depends on the stock: size, colour and where it shows. | Medium | On hold (owner compares with Lightroom / DxO first) | Today (v0.25 on): the camera's own Grainy Film texture laid on COLOR photos, Low / Med / High by strength only, no extra time, works with Glow and Shading. Next: our own texture with colour speckle and size (Grain Lab browser model, 2026-11-07; nothing built). |
-| Faster grain with Glow | Grain plus glow cost about 3 s per photo and blocked burst shooting. | Medium | **Done (v0.25)** | Grain from the image processor's texture route: as fast as no grain, with Glow / Clarity and Shading. Art Effects were removed in v0.25. |
+| Split toning: colour by brightness | Teal shadows and warm highlights (cinema), cool shadows (Portra), green shadows (Superia). | Medium | **Done (v0.26)** | v0.28: wheels 0..10 in half steps plus a Tone Balance row; in LookLab too. |
+| Coloured glow (halation) | The red glow around lights of CineStill and other cinema film. | Medium | **Done (v0.28)** | Its own Picture Mode row, 0..5; faster with a smoother fade in v0.30.3; LookLab slider and preview. |
+| Color Mix and RGB curves | Shape colour and tone like a film lab: each colour's strength and hue, and a tone curve per channel. | Medium | **Done (v0.30)** | Two Picture Mode rows; the 20 films regraded with them; in LookLab too. |
+| Film grain: size, colour speckle, by brightness | Film grain depends on the stock: size, colour and where it shows. | Medium | Test version (v0.40-alpha) | Our own colour grain, strength 1–5, and a Grain Size row; faster in v0.40. |
+| Faster grain with Glow | Grain plus glow cost about 3 s per photo and blocked burst shooting. | Medium | **Done (v0.25)** | Grain from the image processor's texture route: as fast as no grain, with Glow / Clarity and Shading. |
 
 ## Shooting like a roll of film
 
 | Feature | Why it matters for film | Effort | Status | Research notes |
 |---|---|---|---|---|
-| Films in the Picture Mode list | Pick a film like loading a roll. | Medium | **Done (v0.24.1, v0.26.2, v0.27)** | FILM 1–20 after COLOR 1–4 with their names; dial stepping in v0.26.2 (v0.26.2 and v0.27 also loaded the films at power-on; v0.27.1 went back to the first half-press because that could rarely freeze the camera at start-up); in v0.27 each Creative Dial position can be COLOR with its own film ([#21](https://github.com/androidfanman/caduceus-om3/issues/21)). Asked for: reorder films on the camera ([#32](https://github.com/androidfanman/caduceus-om3/issues/32)), one button / front dial to switch films ([#30](https://github.com/androidfanman/caduceus-om3/issues/30), main roadmap: tabled 2026-11-11). |
-| White balance mode per film | Tungsten film (CineStill 800T) shoots at 3200 K, daylight film at 5500 K. | Low | **Done (v0.28)** | Each film and COLOR remembers the WB last used with it (camera setting 1578 mode, 107 Custom WB Kelvin; LOOKS / EDITS record +59..+62); none = Auto. LookLab: a WB mode per film. |
-| Exposure compensation per film | Overexposed Portra, pushed Tri-X. Optional per film. | Low | Not planned (owner, 2026-11-12: the film's tone settings give the brighter look without changing the exposure) | Same route. Decide whether it adds to the user's exposure dial or sets it. |
-| ISO per film | "Load" Portra 400 and the camera shoots at ISO 400. Optional. | Low | Not planned (owner, 2026-11-12: ISO does not change a film's look on a digital camera; Auto ISO does better) | Same route. Off by default. |
-| Film name in the photo's EXIF | Photos say which film and settings made them, for sharing and sorting ([#20](https://github.com/androidfanman/caduceus-om3/issues/20)). | Medium | **Done (v0.27)** | Image Description `FILM n Name`; User Comment with the name and the whole recipe as an `om3.1.` code. LookLab opens a film from a JPEG or a pasted code; [devkit/photo-code](../devkit/photo-code/) reads it for other sites. Spec: [PHOTO_CODE.md](PHOTO_CODE.md). Camera-tested 2026-11-11 (dr7). |
-| Frame shape per film | XPan 65:24, square 6×6, 4:5 for 6×7, half-frame. | Medium | Not started | Ties into custom crop modes on the main roadmap (set aside 2026-11-12; Caduceus for the E-P7 has XPan and 21:9). |
-| Film borders | A black film edge or an instant-print border. | Medium | Not planned | Owner (2026-11-12): borders can be added in editing afterwards. |
+| Films in the Picture Mode list | Pick a film like loading a roll. | Medium | **Done (v0.24.1, v0.26.2, v0.27, v0.30)** | FILM 1–20 after COLOR 1–4 with their names; the dials step through them; each Creative Dial position can be COLOR with its own film ([#21](https://github.com/androidfanman/caduceus-om3/issues/21)); ready at switch-on (v0.30); each custom mode keeps its own copy (v0.29.5). |
+| White balance mode per film | Tungsten film (CineStill 800T) shoots at 3200 K, daylight film at 5500 K. | Low | **Done (v0.28)** | Each film remembers its WB (any mode, Custom WB with its Kelvin); a WB mode per film in LookLab. |
+| Film name in the photo's EXIF | Photos say which film and settings made them, for sharing and sorting ([#20](https://github.com/androidfanman/caduceus-om3/issues/20)). | Medium | **Done (v0.27)** | The film's name and the whole recipe as an `om3.1.` code; LookLab opens a film from a JPEG or a pasted code; [devkit/photo-code](../devkit/photo-code/) reads it for other sites. Spec: [PHOTO_CODE.md](PHOTO_CODE.md). |
+| Frame shape | XPan 65:24, 21:9 and 5:4, like wide-format film cameras. | Large | Test version (v0.40-alpha) | Image Aspect choices saved at that shape; live view, grid, focus target and playback labels fit. Idea from Caduceus for the E-P7. |
+| Film borders | A film edge or an instant-print border. | Medium | Test version (v0.40-alpha) | A Border row per film: white, 0..5; black (minus) comes in v0.40. |
 
 ## Bigger projects
 
 | Feature | Why it matters for film | Effort | Status | Research notes |
 |---|---|---|---|---|
-| Black-and-white film looks | Tri-X, HP5, Delta 3200, Acros. Films are COLOR-only today. | Large | Parked | Needs the Monochrome profiles: colour filter, toning, grain, contrast and their own film bank. Their editor is separate from the COLOR wheel. Caduceus for the E-P7 has 10 mono films. Parked by the owner 2026-11-10. |
-| Film looks in video | Rare among cameras. | Large | Not started | Main roadmap: Colour profiles in video, Planned ([#3](https://github.com/androidfanman/caduceus-om3/issues/3)). No video work started (owner, 2026-11-10). Sharp is photos only today. |
-| Light leaks and date stamps | Point-and-shoot touches. | Hard | Parked | No camera feature to borrow. Lowest priority. |
+| Film looks in video | Rare among cameras. | Large | Requested | Main roadmap: Colour profiles in video ([#3](https://github.com/androidfanman/caduceus-om3/issues/3)). Our looks stay out of video for now. |
 
 ## LookLab
 
 | Feature | Why it matters for film | Effort | Status | Research notes |
 |---|---|---|---|---|
-| Camera-style editor | Edit a film the way the camera shows it. | Medium | **Done (2026-11-09)** | HSL wheel with the camera's five pages, Highlight & Shadow box, WB grid, all draggable. Look links carry a format version and minimum firmware. |
+| Camera-style editor | Edit a film the way the camera shows it. | Medium | **Done (2026-11-09)** | HSL wheel with the camera's five pages, Highlight & Shadow box, WB grid, all draggable. |
 | Photo-to-look instructions | Build a look from any photo, opened by a link. | Low | Done | [`docs/PHOTO_TO_LOOK.md`](PHOTO_TO_LOOK.md), tested end to end 2026-11-07. |
-| Preview matched to the camera | LookLab shows what the OM-3 will give: its colour engine fitted to the camera's measured slider response (WB, saturation and hue per colour, luminance, split). | Low | **Done (2026-11-11, live)** | Branch `feature/preview-camera-match`; `research/film-grading/preview-fit/`. Film shots left out of the fit: preview vs camera ΔE 4.4 → 3.8. |
-| Film looks graded on the camera | Every film look measured and fitted to the OM-3's own response, so the camera gives what was meant (the camera's sliders are stronger than the preview, and uneven). | Medium | **Camera testing (2026-11-11)** | The 20: v6, camera-tested on a colour chart. The other 42: fitted to their preview with the camera model, not yet shot. Branch `feature/camera-graded-films`; [`research/film-grading/`](../research/film-grading/README.md), `research/NOTES.md` "Film sims graded on the camera". |
-| Colour-matched films | 18 films graded against film scans of a colour chart (real film colours), 5 of them new; the standard 20 = these 18 + CineStill 800T and Kodachrome 64. | Medium | **In LookLab (2026-11-13); camera testing** | Analysis / camera model and the preview as a second check; next a camera chart shoot with the new 20 (`LOOKS_CP2.BIN`). `research/NOTES.md` "Colour-matched films". |
+| Preview matched to the camera | LookLab shows what the OM-3 will give. | Low | **Done (2026-11-11, live)** | Fitted to the camera's measured slider response; a closer match for Shading, grain, Border, Glow, Sharpness and Contrast comes with v0.40. |
+| Film looks graded on the camera | Every film look measured and fitted to the OM-3's own response, so the camera gives what was meant. | Medium | **Camera testing (2026-11-11)** | The 20 were camera-tested on a colour chart, then regraded with Color Mix and RGB curves in v0.30; the other 42 are fitted with the camera model, not yet shot. [`research/film-grading/`](../research/film-grading/README.md). |
+| Colour-matched films | 18 films graded against film scans of a colour chart; the standard 20 = these 18 + CineStill 800T and Kodachrome 64. | Medium | **In LookLab (2026-11-13); camera testing** | `research/NOTES.md` "Colour-matched films". |
 
 ## Already done
 
 | Date | Item | What it gives film looks |
 |---|---|---|
+| 2026-11-17 | v0.40-alpha (test version) | Crop modes XPan, 21:9 and 5:4; a white Border per film; our own colour grain (strength 1–5, Grain Size). |
+| 2026-11-17 | v0.30.3 released | Faster Halation with a smoother fade. |
+| 2026-11-16 | v0.30 released | Color Mix and RGB curves; the 20 films regraded with them; films ready at switch-on. |
+| 2026-11-15 | v0.29.5 released | Each custom mode keeps its own copy of the films and all their changes. |
 | 2026-11-13 | v0.29 released | The films, edits and Extras kept in the camera's own memory, so any card works; the colour-matched standard 20 in the optional LOOKS.BIN and LookLab. |
 | 2026-11-13 | v0.29-beta (test version) | The 20 films redesigned as signature looks, each compared with real photos taken on the film (Wikimedia Commons; CineStill 800T with Custom WB 3200 K and Halation 3, 400D Halation 2; Cuban Negative reworked); the films, edits and Extras kept in the camera's own memory so any card works. |
 | 2026-11-12 | v0.28 released | Halation (its own row), split toning 0..10 with Tone Balance, WB remembered per film, Blacks / Whites as one grid (±7), the film as set in each photo's code; LookLab knows all of it. |
@@ -117,9 +102,8 @@ Newest first. Full details in [`research/NOTES.md`](../research/NOTES.md).
 
 | Date | Topic | Finding |
 |---|---|---|
-| 2026-11-14 | spektrafilm (analysis) | A spectral film / print simulation (GPLv3 code, CC BY-SA 4.0 film data) could be a second reference for our films, mainly Kodachrome 64 and CineStill 800T; it cannot make the preview closer to the camera. Options and licence notes in the notebook; on hold (owner). |
+| 2026-11-14 | spektrafilm (analysis) | A spectral film / print simulation (GPLv3 code, CC BY-SA 4.0 film data) could be a second reference for our films, mainly Kodachrome 64 and CineStill 800T; it cannot make the preview closer to the camera. Options and licence notes in the notebook. |
 | 2026-11-11 | Film in the photo (camera) | The `om3.1` code writes the whole 64-byte film record into the JPEG's User Comment, with spare bytes so newer settings stay readable by older readers (dr4 to dr7). |
-| 2026-11-10 | Owner decisions | Mono film looks parked. A preview calibrated to the camera dropped: not needed, the OM-3 already matches the preview well. |
 | 2026-11-10 | Firmware space (camera) | GX3 probe: section 6 loads 256 KiB more (0x60f59800..0x60f99800); 72 passes, 0 bad words, with RAW+JPEG bursts and a video. Room for halation and the next features. |
 | 2026-11-09 | Film name in EXIF | The EXIF writer and a hook point are found (analysis only); Image Description and User Comment are free in JPEGs. |
 | 2026-11-08 | WB grid (camera) | Test 12: a new A-B / G-M row opens the camera's own WB fine-tune grid with the look's values (emulator); on the camera OK went back to live view instead. Owner: the grid should sit on the Picture Mode screen itself. |
