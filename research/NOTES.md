@@ -8558,3 +8558,69 @@ Assign C4, Set B, Assign C5: C4 showed Set B's films, and Set A again is ignored
   shared pictures were 2x nearest-neighbour, which keeps the square edges hard (analysis).
 - Possible fixes (owner's call; not started): rounder clumps (box twice, or the two-size "film-like variant" above:
   about 2-3x tg_fill's work) for the straight edges; a longer band or more varied strips for the repeats (speed cost).
+
+## Better grain g4: round clumps and fewer repeats (2026-11-19; branch feature/better-grain-g4; emulator only)
+- **Owner (2026-11-19): "lets work on better grain"**, after v0.40's chart photos (the section above: square clumps at
+  Coarse, repeat peaks 0.04..0.10). Kept: the tile format and levels (1536 x 1536 YCbYCr, Y 48 / Cb, Cr 128, sigma 16,
+  seamless, row y + 768 = row y), so xb_c1e's gains / offsets and Film Grain 1..5 are unchanged; no new hook; nothing
+  at start-up.
+- **Look approved from a Mac preview (owner, 2026-11-19: "Looks good, build it").** The preview (exact model, v0.40 next
+  to g4, Fine / Medium / Coarse at 100 % and 300 %; flat grey at Film Grain 5, the public-domain `portrait.jpg` at 3,
+  added as xb_c1e intends) is in the private package folder `test-builds/2026-11-19-grain-g4/preview/`. It was made
+  with 32-row strips; the build uses 40 (same filters, so the same look; repeats 0.016..0.017 -> 0.017..0.018).
+- **Design (model: `research/grain/tile_model.py` `g4_tile` / `g4_full`; measures: `research/grain/g4_measure.py`):**
+  - Round filters on uniform random bytes instead of the w x w box, the same both ways: Fine 1 (single pixels, as
+    before), Medium 1-3-1, Coarse 1-3-3-1; Cb / Cr at half width and half height as before, Fine and Medium 1, Coarse
+    1-3-1. K = round(16 / (73.9 sum h^2) 65536), add = (mid << 16) + 32768 - ((255 (sum h)^2 K) >> 1), value =
+    max((K s + add) >> 16, 0). Random bytes per plane row from tg_seed(row, plane) (xorshift32 words; word g = pixels
+    4g, 4g + 1, 4g + 2, 4g + 3 from bytes 0, 2, 1, 3, so `x & 0x00ff00ff` and `x >> 8 & 0x00ff00ff` are two pixels each,
+    in order). Picked from candidates by neighbour correlation (Medium ~ box 2's 0.5, Coarse ~ box 3's 0.67) and
+    look: 1-4-1 / 1-3-1 / 1-2-1 / 1-3-3-1 / 1-2-2-1 / 1-2-3-2-1 (box-like kernels such as 1-2-2-1 and 1-2-3-2-1 keep
+    side lobes along the axes).
+  - The band: 128 rows (period 128) made that way. Rows 128..767: 16 strips of 40 rows, each 12 blocks of 128 px from
+    a random x0 (tg_seed(k, 3)); block j (tg_seed(k << 4 | j, 4)): band rows from sy (even), upside down for half the
+    blocks (rows sy + 1 - i, so chroma row pairs stay together), turned sideways by sx (even px). Each block's first
+    G groups of 2 px crossfaded from the block before going on (Y per pixel over 2G steps, Cb / Cr per group over G;
+    Medium G 2, Coarse 3), each strip's first Bh rows from the strip before going on (Medium 4, Coarse 6; strip 0 from
+    the band going on), and at the end rows 0..Bh - 1 from the last strip (the wrap; read from the tile as it is then).
+    Weights round(256 cos / sin ((i + 1) 90 / (B + 1) degrees)) as g3. Fine needs no crossfades (white noise). Across
+    a 128 MB window edge: all 768 rows the band's way (period 768), rows by tg_put.
+- **Model, seed 0x12345678 (another seed the same within 0.01):**
+
+  | | Y mean / sigma | neighbours side / down / diagonal | box mark (axes / diagonals, 0.35..0.45 cycle / px) | repeats: tile / 640 x 640 |
+  |---|---|---|---|---|
+  | Fine g3 / g4 | 48.0 / 16.0 both | 0 / 0 / 0 both | 0.98 / 1.00 | 0.044 / 0.051 -> 0.007 / 0.014 |
+  | Medium g3 / g4 | 47.9 / 16.0 -> 48.0 / 16.0 | 0.50 / 0.50 / 0.25 -> 0.55 / 0.54 / 0.29 | 0.64 / 1.07 | 0.047 / 0.052 -> 0.009 / 0.015 |
+  | Coarse g3 / g4 | 47.9 / 16.0 -> 48.0 / 15.95 | 0.67 / 0.66 / 0.44 -> 0.75 / 0.75 / 0.56 | 14.6 / 0.42 | 0.048 / 0.055 -> 0.011 / 0.018 |
+
+  g2c's full tile (no reuse) for comparison: repeats 0.005..0.010 / 0.007..0.013. The box mark >> 1 is the box filter's
+  side lobes along the axes (the straight edges the camera photos showed); the round filters have none. Joins
+  (Medium / Coarse): the step between neighbouring rows at a strip's crossfade 1.02 / 1.04 x inside (g3 1.03), between
+  neighbouring columns at a block join at most 1.04 / 1.05 x inside (2-px weight steps gave 1.10: per-pixel Y weights
+  fixed it). Coarse with Bh 4 instead of 6: 1.07 (Y) / 1.10 (chroma), so 6 kept.
+- **Firmware (editor.s):** `tg_fill` rewritten (frame 120 -> 40; tr_ld2's call follows) with `tg_bnd` (the band; rings
+  of the last T - 1 random rows per plane, `tg_rf` / `tg_gw` fill them), `tg_vt` (vertical sums, T = 1 / 3 / 4, two
+  pixels a word), `tg_hy` / `tg_hc` (horizontal, five variants from the macro `TGH`), and in `.ext13` (ext12 is full)
+  `tg_str` (strips), `tg_tab` (a strip's 12 blocks), `tg_cmp` (a row: `tg_br`, `tg_cp`, `tg_jn`), `tg_lk` / `tg_ul` /
+  `tg_tr`, tables `tg_g4p` and the weights. Kept: tg_seed, tg_put, tg_op, tg_cl, tg_rc, tg_bl. Gone: tg_par, tg_col,
+  tg_row, tg_mix, tg_ra, tg_wi, tg_kt, tg_wt. The data after tg_bl needs its `.balign 4` (without it tg_n sat on an odd
+  address and om-emu stopped at the first half-press, in lg_sum). Work buffer one malloc of 14,280 B (row 3072, V 3080,
+  rings 4608 + 3072, two strip tables, context). Deepest stack tg_fill 40 + tg_str 40 + tg_cmp 56 + tg_cp / tg_jn 44 =
+  180 B, or via tg_lk -> tg_op -> hl_open about 148 B (g3: about 240 B). Locks a tile (analysis): Fine 208, Medium 276,
+  Coarse 310 (g3 210 / 252 / 294); the longest (estimates from the code): a Coarse crossfaded row ~85 K instructions,
+  8 other strip rows ~100 K, both under HL_LOCKN 120 K. Sizes: ext12 261,872 of 262,144 (v0.40 262,016), ext13 74,880
+  (73,664): the loader end word 0x60fbe000 -> 0x60fbf000 (the camera's boot copy 4 KB longer, inside the GX4-proven
+  reserve). Debug log: "Grain tiles (better grain g4): made N, failed N, last size S (1..3), last time (ms) T, fast N".
+  VERSION "v0.40-dev (grain g4)".
+- **om-emu** (tg_fill called directly, FLUSH stubbed): every tile equals the model byte for byte: Fine, Medium and
+  Coarse the fast way, Medium across an edge (suite test `grain-tile-matches-the-model`, now 4 cases; `--without` the
+  v0.40 build: caught, its tg_fill has the old frame and does not come back). Instructions a tile: **Fine 9.5 M,
+  Medium 18.7 M, Coarse 24.2 M** (g3 16.3 / 18.5 / 20.7 M); across an edge 49.1 M (g3's fallback 66 M). Suite on
+  6816925 (its own build): **112 of 112 pass**.
+- Package `test-builds/2026-11-19-grain-g4` (private folder): E1479999.BIN `fbaeec52…5a2a` (a second build of 6816925
+  matches) with its GUIDES.BIN `4d3eb8a0…af95`; go-back v0.40 `1e039ee2…1c37` (patch.py --release v0.40) with v0.40's
+  GUIDES.BIN `9460bf1a…4b1a`; TEST-STEPS: the chart test at Off / Fine / Medium / Coarse 1, 3, 5, Halation 5 + grain,
+  a burst of 10, the log's time line.
+- **Camera-only:** the time per tile (v0.40 ~270 ms; guess: Fine quicker, Coarse about the same or a little slower),
+  the look on photos (no squares, stripes or repeats), Halation with grain, bursts, start-up with the 4 KB longer boot
+  copy.
