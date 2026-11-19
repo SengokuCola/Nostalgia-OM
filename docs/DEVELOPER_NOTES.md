@@ -394,6 +394,23 @@ Stock: OLY_E_147_1100_0000_0000_3.BIN sha 8c133084…696d, main 5e8d376e…7d59.
 - The looks are only as good as the preview model (`src/preview.ts`) is of the camera; check a film on the camera
   before trusting it for anything critical.
 
+## v0.40-beta (try/v0.40-beta = try/v0.41-dev 2a86f1e; every part camera-tested 2026-11-18; the package under the owner's test)
+
+- Base: v0.40-alpha + `try/v0.41-dev`: grain g3 (the tile from a 128-row band, ~0.27 s), screen info s2 (`screeninfo.s`,
+  `hook_si`, M + 0x3C000 'OM3I'), the Border inside the crop at every ratio (`cr_bdt` by Image Aspect id) and 32 px past
+  a crop's cut sides (`cr_mr` / `cr_mp`, for the camera's 1600 px preview), Border -5..+5 (BD_BLACK; xb_cap routes any
+  non-zero Border), PR #82 (crombach: pf_eq, s_cur, cv_draw, slot_any, `hook_rr`, rv_chk +152; at the merge bl_gv's new
+  Border pre-check takes -5..5), PR #79 (Bensonson: 0x6090199e bne -> nop nop), Shading the camera's own (`XB_SH` 0; the
+  s1 pass stays in, unused), live look (`lv_ref` in mx_go: C+60 |= 8 once per tone change per live output), #83 (cr_el
+  restores the crop at the GUI's first state change with the films' early load; cr_sinr puts it back after each save of
+  M while on; the start-up re-check stays as a safety net), fwver 1 (`hook_fv` 0x6120b698, the page's value boxes
+  80 -> 300 px), framelines-1 (`cr_gvf` on 0x612385d1, frame table 0x60377760 styles 22 / 26 / 27 / 29 / 30 / 31).
+- New: `static:comment-swallow` (an instruction line inside a `/* */` comment is not assembled; it found four).
+- `tools/test/hooks.json`: `hook_si`, `hook_rr`, `hook_fv`, #79's site and the frame-table entries, each with the owner's
+  OK. Suite on test 9: 99 of 99; on the beta build: see the release commit.
+- `firmware/VERSION` "v0.40-beta (crops at switch-on, live looks, black borders)": this exact package is the one under the
+  camera test; E1479999.BIN 741c17da…fee1, `patch.py --release v0.40-beta` makes it byte for byte.
+
 ## v0.40-alpha (try/v0.40-alpha = crop round 10 + section gates + PR #76 + try/v0.30.4; test 1, camera-tested 2026-11-17; GitHub pre-release)
 
 - Base: `feature/crop-modes` (crop round 10) on `feature/border-live-view` (border preview 1) on `try/v0.31-alpha`

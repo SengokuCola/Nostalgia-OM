@@ -8,6 +8,7 @@ What changed in each version of Caduceus for OM-3, newest first. To install or u
 
 | Version | Released | What's new |
 |---|---|---|
+| [v0.40-beta](#v040-beta-test-version) | 2026-11-18 (test version) | Crops back at switch-on (#83) with the frame lines at their edges; looks shown in live view as you adjust them; black borders (Border −5..+5) and the border at every ratio; your own choice of screen info; faster grain; our version on the Firmware Version screen; faster looks and two fixes (#82); focus stacking with more lenses (#79) |
 | [v0.40-alpha](#v040-alpha-test-version) | 2026-11-17 (test version) | Crop modes XPan, 21:9 and 5:4; a white Border per film with a frame line in live view; our own film grain with strength 1–5 and Grain Size; safer start-up; Picture Mode stays open 30 s (#75) |
 | [v0.30.4-alpha](#v0304-alpha-test-version) | 2026-11-17 (test version) | Fix: no reboot when switching films fast (#72); the color wheel's label names the page (#64); our looks kept out of video and S&Q (#68) |
 | [v0.30.3](#v0303) | 2026-11-17 | Faster halation with a smoother fade; every dial click counted on the RGB / Mix pages, faster looks and saves (#69); a debug log that doesn't slow the shutter |
@@ -42,6 +43,30 @@ What changed in each version of Caduceus for OM-3, newest first. To install or u
 
 Versions are named v0.N from v0.18 on. Earlier builds were called "test N" while they were tried on the camera; the
 same number is used here (test 17 = v0.17).
+
+## v0.40-beta (test version)
+A test version (a GitHub pre-release; v0.30.3 stays the current version): v0.40-alpha plus the changes below and two
+pull requests, by [crombach](https://github.com/crombach) and [Bensonson](https://github.com/Bensonson). Every part
+camera-tested on its own (2026-11-18), then the package as a whole.
+
+- **Crops back at switch-on** ([#83](https://github.com/androidfanman/caduceus-om3/issues/83), reported by crombach):
+  XPan, 21:9 and 5:4 are there as soon as the camera has started, with no half-press. The camera still saves the plain
+  ratio with a note of the crop.
+- **The frame lines follow the crop:** the camera's green frame lines sit at the crop's edges, on the rear screen and
+  in the viewfinder.
+- **Looks in live view as you adjust them:** split toning, Split Tone Balance, the RGB curves and B/W follow each dial
+  click, without a half-press.
+- **Black borders:** the Border row runs from −5 (black) to +5 (white). At 3:2, 16:9, 1:1 and 3:4 the border is now
+  inside the photo on all four sides, and it reaches the edge of the camera's preview in each JPEG.
+- **Your own choice of shooting-screen info:** Information 1, 2 and 3 (Custom menu → 4. Information → Camera Info
+  Settings) get 14 more tick rows; an unticked item leaves that display. Rear screen only.
+- **Faster film grain**, and **our version on the camera's Firmware Version screen**.
+- **Faster looks and two fixes** ([#82](https://github.com/androidfanman/caduceus-om3/pull/82)): film switching and
+  dial clicks do less work; no flash between the WB table and Highlight & Shadow; Border, Glow, Halation, Tone Balance
+  and Film Grain step the same way as Contrast.
+- **Focus stacking with more lenses** ([#79](https://github.com/androidfanman/caduceus-om3/pull/79)).
+- Shading is the camera's own. LookLab doesn't know the black Border, the grain or the crops yet.
+  Details: [release notes](releases/v0.40-beta/NOTES.md).
 
 ## v0.40-alpha (test version)
 A test version (a GitHub pre-release; v0.30.3 stays the current version): v0.30.4-alpha plus crop modes, photo

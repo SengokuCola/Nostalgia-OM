@@ -1,12 +1,4 @@
-> [!WARNING]
-> **Feature branch `feature/live-look-refresh`, not released** (local, not pushed; on `try/v0.41-dev` = v0.40b).
-> Our tone rows (split toning, Tone Balance, Blacks / Whites, RGB curves) show in live view as they are
-> adjusted, without a half-press. Test build live look 1: emulator only, camera test pending. Details:
-> `research/NOTES.md`, "Live look".
-
 <h1 align="center">Caduceus for OM-3</h1>
-
-> **Experimental fork: focus stacking lens unlock (fs1).** OM-3 firmware 1.1 only. Removes the stacking-capability rejection for otherwise eligible autofocus lenses. Not camera-tested, including the M.Zuiko 17mm f/1.8 II. The upstream downloads below do **not** include this change. See [build and camera test instructions](docs/FOCUS_STACKING.md).
 
 
 <p align="center"><strong>Film looks and a colour editor, built into the OM SYSTEM OM-3.</strong></p>
@@ -25,7 +17,7 @@
 </p>
 
 <p align="center">
-  Latest: <b>v0.30.3</b> (2026-11-17) &nbsp;·&nbsp; Test version: <b>v0.40-alpha</b> (pre-release)
+  Latest: <b>v0.30.3</b> (2026-11-17) &nbsp;·&nbsp; Test version: <b>v0.40-beta</b> (pre-release)
 </p>
 
 ## What it does
