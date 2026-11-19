@@ -617,6 +617,45 @@ def log_written_off_the_shutter_task(hits):
     return errors + ([] if opens else ['CADLOG.TXT never opened'])
 
 
+# glow-shots-1 (owner, 2026-11-19: "I cannot take more than one picture in a row if I have glow or halation on"): the
+# log's third line times our code at each shutter event (the shutter waits for it), the background CADLOG.TXT writes
+# and our passes on each photo. om-emu takes no photos and its counter barely moves, so the times themselves are
+# camera-only; here: the line is there, every logged event is timed in the HLS_EVENT task after lg_write, and every
+# background write is timed in the writer's task.
+SHOT_TIMING_LINE = (r'^Shot timing \(ms\): our code at shutter events last \d+, longest \d+ \(event \d+\); '
+                    r'log file writes last \d+, longest \d+; photos with our passes \(Halation, Border, CPU grain\) '
+                    r'0, last 0, longest 0$')
+SHOT_TIMING = ('lg_write', 'lg_ptm', 'lg_wkw', 'lg_ums')
+
+
+def shot_timing_measured(hits):
+    """Each lg_write followed by lg_ptm in the HLS_EVENT task before the next event; each writer fwrite (lg_wkw)
+    followed by one lg_ums in the writer's task."""
+    errors, events, timed, writes, wtimed, open_event = [], 0, 0, 0, 0, False
+    for n, _, tid, hls in hits:
+        if n == 'lg_write':
+            if open_event:
+                errors.append('a shutter event without lg_ptm')
+            events, open_event = events + 1, True
+        elif n == 'lg_ptm':
+            if tid != hls:
+                errors.append(f'lg_ptm in task {tid}, not the HLS_EVENT task {hls}')
+            if open_event:
+                timed += 1
+            open_event = False
+        elif n == 'lg_wkw':
+            writes += 1
+        elif n == 'lg_ums' and tid != hls:
+            wtimed += 1
+    if open_event:
+        errors.append('the last shutter event without lg_ptm')
+    if not events or timed != events:
+        errors.append(f'{events} shutter events, {timed} timed')
+    if not writes or wtimed != writes:
+        errors.append(f'{writes} background writes, {wtimed} timed')
+    return errors
+
+
 CK_WORDS = ['none', 'none (its film has some)', "its film's", 'changed']   # has values x 2 + differs from the built-in
 
 
@@ -884,6 +923,10 @@ TESTS = {
     'debug-log-card-write-off-the-shutter-task': [
         Boot('s1 wait wait s1 wait wait s1 wait wait poweroff', expect=[DEBUG_LOG_RELEASES_ONLY], watch=LOG_WRITER,
              tids=True, hits=log_written_off_the_shutter_task),
+    ],
+    'debug-log-times-the-shutter-events-and-writes': [
+        Boot('s1 wait wait s1 wait wait s1 wait wait poweroff', expect=[DEBUG_LOG_RELEASES_ONLY, SHOT_TIMING_LINE],
+             watch=SHOT_TIMING, tids=True, hits=shot_timing_measured),
     ],
     'debug-log-off-writes-no-log': [
         Boot('s1 wait wait s1 wait wait s1 wait wait poweroff', card={'DEBUG.TXT': None}, no_log=True, watch=LOG_GATE,

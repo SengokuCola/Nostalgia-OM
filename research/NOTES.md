@@ -8270,3 +8270,56 @@ Test driver tools/emulator/focus_stacking.mjs runs this routine with controlled 
 - Suite, first full run (106 tests): 93 pass, 13 FAIL, all "driver exit 1, no ncall result": the direct-call tests
   start om-emu through `run_ncall`, which did not pass the writer's entry yet (om-emu refused to start the task at their
   half-press). The runner now passes it there too (`writer_env`); those 13 then pass on the same build.
+
+## Glow / Halation: the next shot waits for the save, glow-shots-1 (2026-11-19; analysis + emulator, camera test pending)
+- **Owner (camera, v0.40-beta2, 2026-11-19):** "I cannot take more than one picture in a row if I have glow or halation
+  on. I thought we had solved this a while back, but it seems they are taking forever to save." Branch
+  `fix/glow-halation-shots`, cut from `fix/85-debug-log-shots` 7b13351 (v0.40-beta2 + fix85-1).
+- **Where our Glow / Halation work runs (code + earlier camera results):**
+  - Glow alone: nothing of ours touches the picture. `xb_cap` sets the Soft Focus flag (0x80) on the COLOR job and
+    `xb_wt` gives the blend its weight; `xb_gs` sees no Halation, Border, CPU grain or Shading and tail-jumps to the
+    stock blend set-up (SF_ENT). The extra time is the camera's own Soft Focus passes.
+  - Halation: `hl_run` inside `xb_gs`, after SF_ENT, in the capture job's task on the image side (the request set-up
+    runs on CPU 2: gl2c, 2026-11-06), never in the shutter's task (HLS_EVENT). Each photo waits for it before the
+    JPEG is made, so it lengthens the save, not the shutter. Bursts with Halation saved fine (h4 camera, 2026-11-12).
+  - What was "solved": h7 (v0.30.3 test 1, camera: "that is much quicker") halved the halation pass. h8 (v0.30.3, test
+    2, the longer fade) costs 20-50 % more on night scenes again (om-emu: 20 MP night at 5, 84 M -> 124 M
+    instructions; blue hour 85 M -> 104 M). At the ~170 M instructions a second seen for the grain tile (g1), that
+    is roughly 0.5-0.8 s of CPU per photo, plus the bus window's reads and writes (~27 ns a byte, Shading s2's
+    calibration): about 1 s for a night scene at 5, a few tenths in daylight (pass A only). Analysis, not measured.
+  - Since v0.30.3 the Glow / Halation photo path has not changed: h8 was already in v0.30.3; Border and gentler
+    Shading run nothing with Border 0 and XB_SH 0 (the owner's log: Border / Shading not in use, Film Grain Off).
+- **Why the next shot waits (analysis):** Sequential bursts work, quick single presses don't. A burst is one long
+  press; every single press goes through the shutter handler, where our `lg_pr` runs before `trig_resume`. With
+  `DEBUG.TXT` on, `lg_write` wrote `CADLOG.TXT` at each release in that task (#85), and the camera's file calls wait
+  their turn behind the last photo's save. With Glow or Halation that photo takes seconds longer to develop and save,
+  so the shutter task (and the next shot) waits seconds longer: #85, made much worse. Without a card or without
+  `DEBUG.TXT` nothing of ours waits at a shutter event (`ed_trig`, `ub_try`, `ck_card`, `el_card`, `cr_hp`, `cm_hp`,
+  `ex_live` do no card work after the first half-press, apart from a held-back CURVES.BIN write).
+- **The fix is #85's fix85-1** (in this branch): the card write moved to the log's own task (CADLOG, `lg_wk`), so the
+  shutter task no longer waits for the card. The report is still built in the shutter's task at a release (reads
+  only, no card work); whether any of those reads can wait while a photo develops is not known, so this build
+  measures it.
+- **glow-shots-1 adds shot timing to the log's third line** (ext13, xblock; no new hook, nothing at start-up, nothing
+  new with `DEBUG.TXT` off but a few counter reads and stores per shutter event and per photo with a pass of ours,
+  no card work): "Shot timing (ms): our code at shutter events
+  last L, longest M (event E); log file writes last W, longest X; photos with our passes (Halation, Border, CPU grain)
+  N, last T, longest U". From the camera's microsecond counter USCLK (0x98900284, counting down; read by the start-up
+  timing and grain g1b on the camera):
+  - `lg_pr` notes USCLK at its start, `lg_ptm` at its end (before `trig_resume`): how long the shutter waited for us.
+    A report shows the times up to the event before it (its own is still running).
+  - `lg_wk` times each write from fopen to fclose: its wait behind the camera's card work included.
+  - `xb_gs` (code block) times our passes on the finished picture, from after SF_ENT to its return, into `pt_n` /
+    `pt_us` / `pt_mx` (editor RAM, ext13: written from the image side as `vg_ms` is). Glow alone is not timed (no pass
+    of ours). Several CPUs may develop stills at once: a count can miss one.
+  - Expected on the camera if the analysis holds: our code at shutter events a few ms; log file writes long with Glow
+    / Halation (the wait for the photo's save); photos with our passes ~0.3-1 s each with Halation.
+- **om-emu (pin 0819080):** new test `debug-log-times-the-shutter-events-and-writes` (three clicks: the line is there,
+  each of the 5 logged events timed in HLS_EVENT after `lg_write`, each of the 3 background writes timed in the
+  writer's task): pass; on fix85-1's build `caught` (no timing code). All times read 0 there (om-emu's counter barely
+  moves); it takes no photos: the times, the photo passes and the shots are camera-only (TESTING.md "Past
+  regressions").
+- Sizes: ext13 71,232 -> 71,760 of 81,920; GUIDES.BIN 13,844 -> 13,904 B (cap 16,448). ext11 / ext12 unchanged.
+- **Camera test (TEST-STEPS):** Single drive, Glow on, quick presses; the same with Halation; then once with
+  `DEBUG.TXT` off to compare. If shots still wait with `DEBUG.TXT` off, the camera's own handling of the slow
+  development holds them (no code of ours runs at that point): the timing line then says how long our pass takes.

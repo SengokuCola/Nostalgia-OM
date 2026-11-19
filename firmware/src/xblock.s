@@ -602,7 +602,8 @@ xb_rec:                           /* `call xb_rec,[d2,d3],12`, a0 = job -> a1 = 
 
  .set P_DIRTY, 685
  .set P_LPTR, 708
-xb_gs:                            /* `calls` (0,sp) = return, a0 = job */
+ .set XB_USCLK, 0x98900284        /* glow-shots-1: the camera's us counter (counts down; editor.s USCLK) */
+xb_gs:                           /* `calls` (0,sp) = return, a0 = job */
  movm [d2,d3,a2,a3],(sp)
  add -28,sp                       /* (0) call slot, (4) job, (8) level, (12) result, (16) halation 0..5, (20) border 0..5,
                                      (24) gentler Shading -5..5 */
@@ -688,12 +689,15 @@ xb_gs:                            /* `calls` (0,sp) = return, a0 = job */
  mov SF_ENT,a1
  calls (a1)
  mov d0,(12,sp)
+ clr d2                           /* glow-shots-1: our passes' start (USCLK), 0 = none timed */
  cmp 0,d0
  bne 20f
  mov (4,sp),a0
  call xb_rec,[d2,d3],12
  cmp 0,a1
  beq 20f
+ mov (XB_USCLK),d2                /* glow-shots-1: our passes start (every call below keeps d2) */
+ or 1,d2
  .if XB_HL
  mov (16,sp),d0                   /* h1: halation first, so grain sits over the glow */
  cmp 0,d0
@@ -749,6 +753,20 @@ xb_gs:                            /* `calls` (0,sp) = return, a0 = job */
  call BD_RUN,[d2,d3,a2,a3],88
  .endif
 20:
+ cmp 0,d2                         /* glow-shots-1: our passes' time on this photo (editor.s's log reads it) */
+ beq 21f
+ mov (XB_USCLK),d1
+ sub d1,d2                        /* start - now: the counter counts down */
+ and 0x7fffffff,d2
+ mov d2,(PT_US)
+ mov (PT_N),d1
+ inc d1
+ mov d1,(PT_N)
+ mov (PT_MX),d1
+ cmp d1,d2
+ bls 21f
+ mov d2,(PT_MX)
+21:
  mov (12,sp),d0
  ret [d2,d3,a2,a3],44
 

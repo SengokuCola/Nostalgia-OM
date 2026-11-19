@@ -922,7 +922,8 @@ def make_xblock(out, sy, xtag):
                FL_HAS=sy['fl_has'], FACADE=0x60b8696a, AGET=0x603f039d, TXGET=0x604cd921, TXATT=0x604bc0cf, TXPF=0x604b77fb, TWO=sy['TWO'], TW_LEN=sy['TW_LEN'], FV0=sy['FV0'],
                WB_V=sy['wb_v'], wb_wtk=sy['wb_wtk'], wb_wem=sy['wb_wem'], HL_RUN=sy['hl_run'], BD_RUN=sy['bd_run'], TYPEMAP=0x60555b58,
                TG_OWN=sy['tg_own'], TG_BAD=sy['tg_bad'], GS_EFF=sy['gs_eff'],
-               VG_RUN=sy['vg_run'], VG_LVL=sy['vg_lvl'], VG_NT=sy['vg_nt'], VG_ND=sy['vg_nd'])
+               VG_RUN=sy['vg_run'], VG_LVL=sy['vg_lvl'], VG_NT=sy['vg_nt'], VG_ND=sy['vg_nd'],
+               PT_N=sy['pt_n'], PT_US=sy['pt_us'], PT_MX=sy['pt_mx'])    # glow-shots-1: our passes' timing (log)
     sys.path.insert(0, str(ROOT / 'firmware'))
     import mkicons                                # v0.25 WB grid row: the left cell's glyphs (xblock xb_wbc)
     inc = ''.join(f'.set {k}, {getattr(mkicons, k)}\n' for k in ('WBC_IX', 'WBC_IY', 'WBC_TY', 'WBC_GH'))

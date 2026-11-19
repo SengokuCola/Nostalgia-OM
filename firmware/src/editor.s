@@ -10951,6 +10951,8 @@ fl_stw:
  .set KCM_W, 40
  .set KBT_W, 42                   /* lg_cv[CI_BTN .. CI_DIAL + 15] */
 lg_pr:                            /* jmp from pr_ed, pr_hook's frame: as `call ed_trig; jmp trig_resume` there */
+ mov (USCLK),d0                   /* glow-shots-1: when our code at this shutter event starts (lg_ptm) */
+ mov d0,(lg_pt0)
  movbu (18,sp),d0                 /* v0.30.3: the shutter handler's event word (16,sp) {0x0100 half-press, 0x0101 its
                                    * release} (om-emu trace at 0x60415216, 2026-11-17): byte 18 is 1 at the release */
  movbu d0,(lg_rel)
@@ -10965,8 +10967,9 @@ lg_pr:                            /* jmp from pr_ed, pr_hook's frame: as `call e
  call cm_hp,[d2,d3,a2,a3],24      /* k4: in P / A / S / M, their films and choice now (kept in M) */
  call lg_write,[d2,d3,a2,a3],40
  call ex_live,[d2,d3,a2,a3],48    /* v0.28 pc1: the film's settings now, for the next photo's code */
+ call lg_ptm,[d2,d3],12           /* glow-shots-1: how long the shutter waited for our code at this event */
  jmp trig_resume
-lg_pre:                           /* edits waiting before ed_trig (it saves them and clears DIRTY) */
+lg_pre:                         /* edits waiting before ed_trig (it saves them and clears DIRTY) */
  clr d0
  movbu d0,(lg_dty)
  PVAL 1f
@@ -11282,6 +11285,8 @@ lg_wk:
  cmp d1,d0
  bne 1b
 4:
+ mov (USCLK),d0                   /* glow-shots-1: the write's time, its wait behind the camera's own card work included */
+ mov d0,(lg_wt0)
  mov lg_plog,a0                   /* CADLOG.TXT */
  mov lg_mw,a1
  call fopen,[],4
@@ -11296,6 +11301,16 @@ lg_wkw:                           /* the writer's fwrite (tests watch it) */
  call fwrite,[d2,d3,a2,a3],24
  mov (4,sp),a0
  call fclose,[d2,a2,a3],16
+ mov (lg_wt0),d0                  /* glow-shots-1: -> lg_wms (this write), lg_wmx (the longest) */
+ mov (USCLK),d1
+ sub d1,d0
+ call lg_ums,[],0
+ mov d0,(lg_wms)
+ mov (lg_wmx),d1
+ cmp d1,d0
+ bls 5f
+ mov d0,(lg_wmx)
+5:
  mov (lg_wd),d0
  inc d0
  mov d0,(lg_wd)
@@ -11303,7 +11318,63 @@ lg_wkw:                           /* the writer's fwrite (tests watch it) */
 lg_wkn:
  .asciz "CADLOG"
  .balign 4
-lg_tid:                           /* #85: the log writer task's id (0 not made yet, -1 could not be made) */
+
+/* ---- glow-shots-1 (2026-11-19, owner: "I cannot take more than one picture in a row if I have glow or halation on"):
+ * the debug log's third line gets the shot timing, so a camera test shows where a quick second shot waits. USCLK is
+ * the camera's microsecond counter (it counts down; camera-read since the start-up timing of 2026-11-14 and grain g1b).
+ *   - our code at each shutter event (lg_pr to trig_resume, the shutter waits for it): last and longest, and the
+ *     longest's event number; a report shows the times up to the event before it (its own is still running);
+ *   - the log writer's CADLOG.TXT writes (fopen to fclose: the wait behind the camera's own card work included);
+ *   - photos where xb_gs ran a pass of ours on the finished picture (Halation, CPU grain, gentler Shading, Border):
+ *     count, last and longest (xblock.s writes pt_n / pt_us / pt_mx; several CPUs may develop stills at once, so a
+ *     count can miss one: a diagnostic only). research/NOTES.md, "Glow / Halation: the next shot waits". */
+/* lg_ums: `call lg_ums,[],0`, d0 = start - end of USCLK -> d0 = ms (to 65 s, as tg_ms); uses d1, MDR. */
+lg_ums:
+ and 0x7fffffff,d0
+ lsr 4,d0
+ mov 1049,d1
+ mul d1,d0                        /* (us / 16) x 1049 / 65536 = us / 999.6 */
+ lsr 16,d0
+ ret [],0
+
+/* lg_ptm: `call lg_ptm,[d2,d3],12` at the end of lg_pr (HLS_EVENT task): this event's time in our code -> lg_pms,
+ * the longest -> lg_pmx and its event (lg_n) -> lg_pme. Uses d0, d1, MDR. */
+lg_ptm:
+ mov (lg_pt0),d0
+ mov (USCLK),d1
+ sub d1,d0
+ call lg_ums,[],0
+ mov d0,(lg_pms)
+ mov (lg_pmx),d1
+ cmp d1,d0
+ bls 9f
+ mov d0,(lg_pmx)
+ mov (lg_n),d0
+ mov d0,(lg_pme)
+9:
+ ret [d2,d3],12
+ .balign 4
+lg_pt0:                           /* glow-shots-1: USCLK at lg_pr's start */
+ .long 0
+lg_pms:                           /* the last finished shutter event's time in our code (ms) */
+ .long 0
+lg_pmx:                           /* the longest (ms) */
+ .long 0
+lg_pme:                           /* its event (lg_n) */
+ .long 0
+lg_wt0:                           /* USCLK before the writer's fopen */
+ .long 0
+lg_wms:                           /* the writer's last CADLOG.TXT write (ms) */
+ .long 0
+lg_wmx:                           /* the longest (ms) */
+ .long 0
+pt_n:                             /* photos with a pass of ours in xb_gs (xblock.s) */
+ .long 0
+pt_us:                            /* the last one's passes (us) */
+ .long 0
+pt_mx:                            /* the longest (us) */
+ .long 0
+lg_tid:                         /* #85: the log writer task's id (0 not made yet, -1 could not be made) */
  .long 0
 lg_wbf:                            /* its buffer (malloc, lg_bend - lg_buf B) */
  .long 0
@@ -12206,6 +12277,32 @@ lg_sum:
  LGD
  LGS vg_l5
  mov (vg_ms),d0
+ LGD
+ LGS gs1_t1                        /* glow-shots-1: shot timing (ms) */
+ mov (lg_pms),d0
+ LGD
+ LGS gs1_t2
+ mov (lg_pmx),d0
+ LGD
+ LGS gs1_t3
+ mov (lg_pme),d0
+ LGD
+ LGS gs1_t4
+ mov (lg_wms),d0
+ LGD
+ LGS gs1_t2
+ mov (lg_wmx),d0
+ LGD
+ LGS gs1_t5
+ mov (pt_n),d0
+ LGD
+ LGS gs1_t6
+ mov (pt_us),d0
+ call lg_ums,[],0
+ LGD
+ LGS gs1_t2
+ mov (pt_mx),d0
+ call lg_ums,[],0
  LGD
  LGS lg_y0                        /* now: mode, exposure, WB, picture, screen */
  call lg_new,[],0
@@ -14144,6 +14241,18 @@ lg_t3b:
  .asciz ", written in the background"
 lg_t3c:
  .asciz ", written in the shutter's task"
+gs1_t1:                            /* glow-shots-1: shot timing (lg_sum) */
+ .asciz "\r\nShot timing (ms): our code at shutter events last "
+gs1_t2:
+ .asciz ", longest "
+gs1_t3:
+ .asciz " (event "
+gs1_t4:
+ .asciz "); log file writes last "
+gs1_t5:
+ .asciz "; photos with our passes (Halation, Border, CPU grain) "
+gs1_t6:
+ .asciz ", last "
 lg_t4:
  .asciz "\r\n\r\nSTART-UP (this power-on)\r\nSettings block: "
 lg_found:
