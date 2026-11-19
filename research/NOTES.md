@@ -8727,3 +8727,22 @@ screen gets 3200 K A3 M2 at the half-press that takes the set; FILM 15 Shade G3;
   GUIDES.BIN `3b7819e5…70e6`. Suite: **119 of 119 pass** (exit 0, recorded on 58227b4).
 - Package `test-builds/2026-11-19-fix88-grain4` (private folder); copied to the owner's card by cad and checked by
   sha256 (2026-11-19). Camera test pending.
+- **Camera result, grain (owner's OM-3, 2026-11-19; camera-tested).** Files in the private package folder
+  (`camera-results/`: PB194011..4039, CADLOG.TXT; never in the repo). Log: build "v0.40-dev fix88 + grain g4 (test
+  1)", "Look at: nothing unusual", **"Grain tiles (better grain g4): made 10, failed 0, last size 3, last time (ms)
+  322, fast 10"** (v0.40 about 270 ms), Halation photo 974 ms in all. Chart test PB194011..020 (Off, Fine / Medium /
+  Coarse 1, 3, 5, ISO 1000) against the morning's v0.40 set (PB193999..4008), light grey patch 384 x 384:
+  - strength and colour noise the same at every setting (Y high-pass std v0.40 / g4: Fine 5 25.2 / 25.2, Medium 5
+    24.5 / 24.4, Coarse 5 23.9 / 23.8; chroma 8.4..9.3 both);
+  - **square clumps gone:** the box filter's axis side lobes (power at |f| > 0.36 on the axes over the diagonal) Coarse
+    1 / 3 / 5 10.1 / 23.9 / 33.4 -> 1.6 / 1.6 / 1.2 (grain Off 1.9..2.0, the camera's own floor); neighbours
+    sideways / diagonal Coarse 0.64 / 0.41 -> 0.73 / 0.53 (rounder, a touch bigger);
+  - **repeats down to the floor:** the largest autocorrelation peak away from 0, Medium 0.05..0.10 -> 0.03..0.04,
+    Coarse 0.06..0.10 -> 0.04 (grain Off 0.03);
+  - Halation 5 + Film Grain 5 Coarse on a lamp (PB194021): the orange glow is there; a burst of 18 at Coarse 5
+    (PB194022..039): all saved, all grained (high-pass 24.6..25.1). The log's last write was at the burst's
+    half-press (event 68, 11 photos), so the burst's own tiles and timing are not in it.
+  - The new chart shots' greys are bluer (grey patch RGB 168 / 174 / 194 against 177 / 177 / 174): the camera's own
+    Auto WB chose more blue (WB_RBLevels 380 / 818 against 438 / 636, afternoon light); both record WB compensation
+    0 0 (exiftool WhiteBalanceBracket), so not the grain (analysis).
+- **WB (#88): no photos and no log line for it in this run;** the owner's report on the panel steps is pending.
