@@ -8157,3 +8157,47 @@ Test driver tools/emulator/focus_stacking.mjs runs this routine with controlled 
   camera-tested crop83-3 (try/v0.41-dev at 01eefc9). Conflicts: VERSION, NOTES. Build `ac702af7…3065` (a second build
   matches); static checks all pass; suite **99 of 99**. On the owner's card 2026-11-18 ("copy it to the card when
   ready"), sha256 checked. Camera test pending.
+
+## framelines-1: the camera's aspect frame lines at the crop's edges (2026-11-18; emulator + analysis, camera test pending)
+- **Owner (2026-11-18, photo of the rear screen in XPan):** "Can we get the frame lines (the green lines in the photo I
+  attached) to match the crop mode like it does on the default crop modes." The green lines sat at 16:9's edges at
+  XPan (the leftover noted in crop round 2), at 21:9 too, and at 4:3's at 5:4.
+- **om-emu draws them** (very faint, no live view): rear 900 x 600, 4:3 columns 50 / 850, 16:9 rows 47 / 552, 3:2 none;
+  viewfinder (`DEVICE=evf`, 1024 x 768 = the GUI's 800 x 600 x 1.28) 16:9 rows 97 / 672, 4:3 none. On test 9 XPan and
+  21:9 showed 16:9's, 5:4 4:3's.
+- **Where they come from (om-emu bisect + analysis):** the 16 shooting-screen reads of 269 go through cr_gv (crop ->
+  the ratio it sits in); pointing groups of them back at the stock getter at XPan (runtime pokes) showed site 5,
+  **0x612385d1**, alone decides the lines (raw 6: no lines, a lookup miss). It sits in **0x6123853c**
+  (`movm [d2,d3,a2,a3]; add -36,sp`, frame 52), which writes a **frame style** u16 into the shooting screen object at
+  +2962 (a3) from the ratio: rear 4:3 8, 16:9 10 (13 in one mode), 1:1 11, 3:4 12, 17:9 13, 3:2 32 (none); viewfinder
+  ((12,sp) 3) 3:2 15, 16:9 16 / 19, 1:1 17, 3:4 18, 4:3 32; a third display's path writes 2..7 (no table entry). A
+  second writer, 0x61238902 (+2960, site 7), writes 8..18 and 9 / 14 for another item: left alone (its site did not
+  move the rear lines).
+- **The table:** 0x60377760 (section 2), 24 entries of 20 B {u32 style, u32 on, u16 kind, i16 x0, y0, x1, y1, u16 0},
+  styles 8..31; **lookup 0x61176b7a** (sub-panel +1098 = the style; the first entry that is on and matches -> its
+  rectangle to the frame widget, 0x6128acd1, kind to method 432; style 0 or >= 32: hidden). The lines are the
+  rectangle's edges: 8 (50, -1, 850, 600), 10 (-1, 47, 900, 552), 11 (150, -1, 750, 600), 13 (-1, 62, 900, 537),
+  16 (-1, 75, 800, 524). Off (rectangle 0) and never written by either writer: 22, 26, 27, 29, 30, 31.
+- **framelines-1:** crop.py (4b) fills those six with the crops' rectangles (crop round 2's areas): rear XPan
+  (-1, 134, 900, 465), 21:9 (-1, 107, 900, 492), 5:4 (75, -1, 825, 600) = 26, 27, 29; viewfinder XPan
+  (-1, 152, 800, 447), 21:9 (-1, 129, 800, 470), 5:4 (25, -1, 775, 600) = 30, 31, 22. Site 0x612385d1 calls
+  `cr_gvf` (crop.s, in .ext13: .ext12 was 32 B short): as cr_gv, and with a crop set (cr_on, 269 = 5..7, a photo mode,
+  none pending) it puts `cr_fst` in place of 0x6123853c's return ((80,sp): its 52 + the getter call's 28), as cr_sinr
+  does for the save. cr_fst: 10 -> 26 / 27, 16 -> 30 / 31, 8 -> 29, 32 with (6916,this) 5 (the viewfinder) -> 22, any
+  other style as it is; back through MDR with d0 / d1 / a0 / a1 as the function left them. Before the first restore of
+  a power-on and in video: cr_gv's path. Log (crop round 14): "frame lines set to the crop N".
+- **Not covered:** the third display's styles (2..7, 20..28: its own family, field 2), and 13 / 19 (16:9 in the mode
+  that gives the 17:9 frame): those keep the base's frame.
+- **om-emu (build of dcb0f2e):** rear XPan rows 134 / 465, 21:9 107 / 492, 5:4 columns 75 / 825, none at 16:9's 47 or
+  4:3's 50; 4:3, 16:9, 3:2, 1:1 as before; viewfinder XPan 195 / 573, 21:9 166 / 603, 5:4 columns 32 / 993, 16:9 97 /
+  672 as before; video with XPan saved: no line at 134. Tests `crop-frame-lines-at-the-crop-edges`,
+  `crop-frame-lines-stock-ratios-unchanged`, `crop-frame-lines-in-the-viewfinder` (the driver takes `DEVICE=evf` now:
+  `session_ed1.mjs` runs and shoots that device), `crop-frame-lines-not-in-video`; test 9's build: caught.
+- **New patch sites (owner's OK needed to record them in hooks.json; static:changed-bytes fails until then):** the six
+  table entries 0x60377878 (22), 0x603778c8 (26), 0x603778dc (27), 0x60377904 (29), 0x60377918 (30), 0x6037792c (31),
+  20 B each, data in section 2 read only by the GUI's frame lookup (section 7) while it draws the shooting screen; the
+  camera never selects these styles, only cr_fst does, after the first restore of a power-on. No new code hook.
+- **Build** of dcb0f2e: E1479999.BIN `9b8efa91…0116` (a second clean build matches), VERSION "v0.41-dev framelines-1
+  (frame lines at the crop edges)". Suite **102 of 103**: the one FAIL is `static:changed-bytes` for the six table
+  entries above (hooks.json not changed: the owner's OK first). Package `test-builds/2026-11-18-framelines-1`
+  (private folder), go-back test 9 `ac702af7…3065`, with an emulator before / after picture. Camera test pending.
