@@ -8262,10 +8262,14 @@ Assign C4, Set B, Assign C5: C4 showed Set B's films, and Set A again is ignored
   changes-to-films-it-left` (FILM 2's Contrast change and '*' stay when a set changes only films 19 and 20; on
   v0.40-beta2 that part holds too). `--without` v0.40-beta2: the first two **caught** (the '*' lines, not only the new
   log line).
-- **The owner's steps in om-emu** (test package's three sets: SET-A "A ..." names, SET-B the records reversed "B ...",
-  BACK-TO-STANDARD the release LOOKS.BIN with byte 15 of one name 1, after its end: never shown, records unchanged so
-  EDITS / CURVES checks still match): after SET-B, P and C1 on B's films, no '*'; after BACK-TO-STANDARD, the standard
-  names in P and C1, no '*'.
+- **The owner's steps in om-emu** (test package's three sets, from the release LOOKS.BIN = the owner's camera films:
+  its log's built-in curves follow all 20, keyed by record CRC; FILM 6, the owner's changed film (own mix), byte for
+  byte in every set, so nothing touches it. SET-A "A ..." names; SET-B the records reversed except FILM 6 and its pair
+  FILM 15, "B ..."; BACK-TO-STANDARD the release file with byte 15 of one name 1, after its end: never shown, records
+  unchanged so EDITS / CURVES checks still match). FILM 5 on COLOR 1, FILM 6 on COLOR 2 with Contrast +2: after SET-B,
+  P and C1 "B Superia 400" with no '*'; after BACK-TO-STANDARD "ColorPlus 200", no '*'; FILM 6 kept its Contrast and
+  '*' throughout. With a set that changed FILM 6, its change would be gone unless FILM 6's own saved record held it
+  (captured only when leaving the film), hence the sets keep it.
 - **Build** of 5153cc0: E1479999.BIN `1427b0fd…6a57`, GUIDES.BIN `80bf3b7a…3cb9`, VERSION "v0.40-dev fix86-1 (#86: a
   new film set in every mode)". Suite **109 of 109**. Package `test-builds/2026-11-19-fix86-1` (private folder: the
   three sets, TEST-STEPS, go-back v0.40-beta2 `70e0d8c8…`). Camera test pending.
