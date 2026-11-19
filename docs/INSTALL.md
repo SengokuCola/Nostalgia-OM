@@ -131,8 +131,8 @@ Do steps 1–5 again with the new version. On the card:
   `OM3MOD` for the first start: at the first half-press the camera copies your films and your changes into its own
   memory (once). `GUIDES.BIN`, `LABELS.BIN` and `TONES.BIN` aren't needed any more (the camera ignores them).
 - **New film sims (v0.29):** copy the new `LOOKS.BIN` into `OM3MOD`. The camera takes a set of films once, if it never
-  had it, and keeps your selection, your Extras and your changes to the films that didn't change. A `LOOKS.BIN` the
-  camera already had is ignored.
+  had it, and keeps your selection, your Extras and your changes to the films that didn't change. The new films reach
+  every mode, custom modes included. A `LOOKS.BIN` the camera already had is ignored.
 - **Between versions before v0.29:** replace `GUIDES.BIN`, `LABELS.BIN` and `TONES.BIN` with the new ones (always
   with their firmware) and keep `LOOKS.BIN`, `EDITS.BIN` and `BUNDLES.BIN`.
 

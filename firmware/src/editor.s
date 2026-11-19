@@ -8533,6 +8533,10 @@ fl_fch:
  mov (12,a1),d3
  and d1,d3
  beq 8f
+ mov (4,sp),d0                    /* #86: only changes made from this build of the film (fl_sw's test); a1 kept */
+ call nf_cur,[d2,d3,a2,a3],20
+ cmp 0,d0
+ beq 8f
  mov (4,sp),d0                    /* rgb-curves: its saved curves count too */
  call cv_jset,[d2,d3,a2,a3],20
  cmp 0,d0
@@ -11597,6 +11601,7 @@ cm_txt:
  LGS ss_s14
  mov (ss_ne),d0
  LGD
+ call nf_txt,[d2,d3],12           /* #86: new film sets (newfilms.s) */
  LGS ss_s12
  mov (ss_nm),d0
  LGD
@@ -13588,6 +13593,11 @@ lg_fc:
  mov (12,a1),d2
  and d1,d2
  beq 8f
+ mov d0,d2                        /* #86: only changes made from this build of the film (fl_fch); a1 kept */
+ call nf_cur,[d2,d3,a2,a3],20
+ cmp 0,d0
+ beq 8f
+ mov d2,d0
  mov d0,d1
  asl 6,d1
  mov d0,d2
@@ -18382,6 +18392,8 @@ ub_pfl:                           /* `call ub_pfl,[d2,d3,a2,a3],28` from sd_load
  mov (8,sp),a0
  mov (UB_C + UB_LK + 16),d0
  mov d0,(16,a0)
+ mov (8,sp),a1                    /* #86: which films changed (newfilms.s) */
+ call nf_blk,[d2,d3,a2,a3],20
  bra 40f
 20:
  mov (8,sp),a0
@@ -19094,7 +19106,8 @@ rc_go:                            /* `call rc_go,[d2,d3,a2,a3],24` from sx_set's
 01:
  call ss_pre,[d2,d3,a2,a3],24     /* p1: per-mode settings, before the films switch */
  call cm_go,[d2,d3,a2,a3],24      /* k2: the custom mode's films (film saved with Assign), a2 = P */
- call ss_post,[d2,d3,a2,a3],24    /* p1: the set's own rows; ss_mask = the COLORs still put back */
+ call nf_post,[d2,d3,a2,a3],28    /* p1: ss_post, the set's own rows; ss_mask = the COLORs still put back; #86: and
+                                     the COLORs on films a new set changed (newfilms.s) */
  clr d2
 1:
  mov 1,d0                         /* p1: only the COLORs ss_post left to put back */
@@ -20041,7 +20054,8 @@ cm_gnow:
  * entered (after Assign > Reset: the films as built, neutral rows). Video / S&Q (mode code 10): no film work (rc_go).
  * Record 'OM3S' in M's free tail at +0x3D000 (the films block is at +0x3A000, 'OM3C' at +0x3B000, other branches use
  * +0x3C000): +0 magic, +4 u16 1, +6 u16 len, +8 CRC-32 of 12.., +12 sets kept (bit n), +13 sets to build from the films
- * after Assign > Reset (bit n), +14 zero, +16 6 sets x 332 B {+0 looks[4], +4 slots[256], +260 the camera's 18
+ * after Assign > Reset (bit n), +14 zero, +16 6 sets x 332 B {+0 looks[4] (#86: + 0x40 NF_MK when a new film set
+ * changed that look's film since the set kept it, newfilms.s), +4 slots[256], +260 the camera's 18
  * settings x 4 when the set was made (Assign, or its first entry; only for the Reset check below), +332 the set's own
  * film changes (an EDITS image: every film's and COLOR k's own saved changes; owner 2026-11-15: Assign copies every
  * setting, and nothing done in another mode, edits or a film reset, changes a custom mode's copy)}. */
@@ -21218,8 +21232,8 @@ el_card:
  mov 1,d0
  movbu d0,(ub_src)
  mov (8,sp),a2
- mov (4,sp),d0
- mov d0,(LPTR,a2)                 /* one store: a reader has the old films or the new */
+ mov (4,sp),a1
+ call nf_take,[d2,d3,a2,a3],20    /* #86: one store of LPTR, and the COLORs on changed films made again (newfilms.s) */
  call ub_put,[d2,d3,a2,a3],20
  bra 9f
 8:
@@ -21629,3 +21643,5 @@ bl_v:                             /* the value */
  .include "shading.s"             /* gentler Shading s1 (#22): our own vignette on stills (ext13) */
 
  .include "fwver.s"               /* our version on the camera's Firmware Version screen (ext13) */
+
+ .include "newfilms.s"            /* #86: a new film set made again in every mode (ext13) */

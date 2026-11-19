@@ -186,6 +186,15 @@ LIVE_TURN_M_TO_C1_AND_BACK = f'{LIVE_TURN_START} {live_turn(MODE_DIAL_C1)} {live
 # clear once the mode is real (#54). om-emu's camera draws no label at a turn, so the byte stands for the picture.
 LIVE_TURN_HOLDS_THE_LABEL = (f'{LIVE_TURN_START} {live_turn(MODE_DIAL_C1, True)} {live_turn(MODE_DIAL_M, True)} '
                              'poweroff')
+# #86: a new film set (LOOKS.BIN the camera never had) replaces the films in every mode. Each COLOR on a film the set
+# changed is made from the new film (its rows and the camera's 18 settings), so no film shows a '*' (before: the new
+# film's name over the old film's rows and settings, with a '*'). A custom mode on Reset is made again at each entry.
+# The films that did not change keep their changes.
+NO_FILM_CHANGES = r'^Films with changes \(a \* in the camera\): none$'
+NEW_SET_LINE = lambda changed: (rf'^New film sets taken this power-on: 1, films changed in the last {changed} of 20, '
+                                r'COLORs made from the new films [1-9]')
+CUSTOM_MODE_MADE_AGAIN = r'^New film sets taken this power-on: 0, .*COLORs made from the new films 1, '
+NEW_SET_IN_C1 = f'{LIVE_TURN_START} {live_turn(MODE_DIAL_C1)} poweroff'
 # Debug log dl9 (v0.30): a switch at the dial's code prints "(dial position N)", a first look adds its note.
 SWITCH_AT_DIAL_CODE = r'after event \d+: [^(]*\(dial position \d+\) -> (?!.*, first look after the films loaded)'
 # Without the fix the switch writes C1's films into M's set, and C1 then differs from its own values ("*").
@@ -394,6 +403,18 @@ def edits_file():
     return struct.pack('<III', EDITS_MAGIC, EDITS_LEN, zlib.crc32(rest)) + rest
 
 
+def other_set(looks, names, order, prefix=''):
+    """#86: a LOOKS.BIN the camera never had, from the newest release's: film j gets record order[j] and its name
+    (prefix + that name, 15 letters at most); the CRC (+8, over 12..) fixed. Every record stays a valid film."""
+    b = bytearray(looks)
+    for j, src in enumerate(order):
+        b[32 + 64 * j:96 + 64 * j] = looks[32 + 64 * src:96 + 64 * src]
+        name = (prefix + names[src]).encode('latin1')[:15]
+        b[1312 + 16 * j:1328 + 16 * j] = name + bytes(16 - len(name))
+    struct.pack_into('<I', b, 8, zlib.crc32(bytes(b[12:])))
+    return bytes(b)
+
+
 # v0.30 test 9: CURVES.BIN (each film's built-in curves and mix, docs/FORMATS.md), made from the newest release's
 # LOOKS.BIN. Film 1 (COLOR 1, look 2: PICK_FILM_2) gets values; B changes them; BAD has a wrong CRC.
 FIXTURES = {
@@ -402,6 +423,10 @@ FIXTURES = {
     'CURVES_BAD': lambda looks, names: (lambda b: b[:40] + bytes([b[40] ^ 1]) + b[41:])(FIXTURES['CURVES_A'](looks, names)),
     'BUNDLES_HUE': lambda looks, names: fwbuild.make_file({0: {'hue': [3] + [0] * 11, 'light': [0] * 12}}),
     'EDITS_EMPTY': lambda looks, names: edits_file(),
+    # #86: set B, every film another (the 20 records in reverse order, names "B ..."); set ONE, only films 19 and 20
+    # changed (their records swapped, names kept)
+    'LOOKS_B': lambda looks, names: other_set(looks, names, range(19, -1, -1), 'B '),
+    'LOOKS_ONE': lambda looks, names: other_set(looks, names, [*range(18), 19, 18]),
 }
 # From the shooting screen: the RGB row (the third in Picture Mode), the rear dial once on Red's first point, out.
 OPEN_RGB = 'ok wait ok wait down wait down wait'
@@ -440,6 +465,11 @@ SHADING_TO_M3 = f'{OPEN_SHADING}' + ' left wait' * 3 + ' expect:val:912=-3 menu 
 # border-dial-direction (2026-11-18): a dial click on the Border row steps it the way it steps the camera's own
 # Contrast row (the 9th, COLOR 1's setting 908). From Contrast nine rows down to Border.
 CONTRAST_COLOR_1 = 908
+# #86: FILM 2 picked on COLOR 1, then its Contrast (the camera's own row) one step up, saved at the half-press. Set ONE
+# leaves FILM 2 as it is, so the change and its '*' stay.
+CONTRAST_ON_FILM_2 = (f's1 wait wait {PICK_FILM_2} s1 wait wait ok wait ok wait' + ' down wait' * 8 +
+                      ' main+1 wait menu wait wait s1 wait wait poweroff')
+FILM_2_CHANGED = r'^Films with changes \(a \* in the camera\): 2$'
 DIAL_AS_CONTRAST = (f's1 wait wait ok wait ok wait' + ' down wait' * 8 +
                     f' main+1 wait expect:val:{CONTRAST_COLOR_1}=1 sub+1 wait sub+1 wait expect:val:{CONTRAST_COLOR_1}=-1' +
                     ' down wait' * 9 + ' right wait right wait expect:p:82=02 main+1 wait expect:p:82=03'
@@ -652,6 +682,37 @@ TESTS = {
     'live-dial-turn-holds-the-label': [
         Boot(BOOT1_ASSIGN_C1),
         Boot(LIVE_TURN_HOLDS_THE_LABEL, expect=[P_FILM_LINE], mode_dial=MODE_DIAL_M),
+    ],
+    # #86: set B taken in P, then a turn to C1 (assigned on the first set, Save Settings: Reset): C1's film is made from
+    # set B's, no '*'; the next power-on's turn makes it again (the camera brings C1's own settings back each time).
+    'new-film-set-made-again-in-a-custom-mode': [
+        Boot(BOOT1_ASSIGN_C1),
+        Boot(NEW_SET_IN_C1, expect=[GROUP_C1_LINE, NO_FILM_CHANGES, NEW_SET_LINE(20)], card={'LOOKS.BIN': 'LOOKS_B'}),
+        Boot(NEW_SET_IN_C1, expect=[GROUP_C1_LINE, NO_FILM_CHANGES, CUSTOM_MODE_MADE_AGAIN]),
+    ],
+    # #86: set B taken in P: P keeps its selection (COLOR 2, FILM 6) with set B's films, no '*', also after a power-off.
+    'new-film-set-made-again-in-p': [
+        Boot(BOOT1_ASSIGN_C1),
+        Boot('wait wait s1 wait wait s1 wait wait poweroff', expect=[P_FILM_LINE, NO_FILM_CHANGES, NEW_SET_LINE(20)],
+             card={'LOOKS.BIN': 'LOOKS_B'}),
+        Boot('wait wait s1 wait wait poweroff', expect=[P_FILM_LINE, NO_FILM_CHANGES]),
+    ],
+    # #86: set B taken in video, then off before any photo look: the marks are in the camera's memory already, so the
+    # next power-on in P and the turn to C1 make their films from set B (no '*').
+    'new-film-set-taken-in-video-made-again-in-photo': [
+        Boot(BOOT1_ASSIGN_C1),
+        Boot('wait wait s1 wait wait s1 wait wait poweroff', card={'LOOKS.BIN': 'LOOKS_B'},
+             photo_switch=PHOTO_SWITCH_VIDEO),
+        Boot(NEW_SET_IN_C1, expect=[GROUP_C1_LINE, NO_FILM_CHANGES, r'^New film sets taken this power-on: 0, '
+                                    r'films changed in the last 0 of 20, COLORs made from the new films 3, ']),
+    ],
+    # #86, what stays: a set that changes only films 19 and 20 leaves FILM 2 on COLOR 1 with its Contrast change.
+    'new-film-set-keeps-changes-to-films-it-left': [
+        Boot(CONTRAST_ON_FILM_2, expect=[FILM_2_LINE]),   # (the log asks one COLOR again per write: its '*' comes later)
+        Boot('wait wait s1 wait wait s1 wait wait poweroff',
+             expect=[FILM_2_LINE, FILM_2_CHANGED, r'^New film sets taken this power-on: 1, films changed in the last 2 of 20, '
+                                     r'COLORs made from the new films 0'],
+             card={'LOOKS.BIN': 'LOOKS_ONE'}),
     ],
     # borders: the Border row steps -5..+5 (2026-11-18: - black, + white; right / left, no step past either end) into
     # COLOR 1's slot +50, and the value is kept over a power-off (saved at the half-press).

@@ -65,7 +65,8 @@ You can also have an AI assistant build a look from a photo you like with [these
 ### Can I share films?
 
 Yes. Send a `LOOKS.BIN`, or use **Share** in LookLab to send a link. Copying a `LOOKS.BIN` onto a card
-replaces all the films on that camera (from v0.29 when the camera never had that set; it keeps the selection and Extras).
+replaces all the films on that camera, in every mode including the custom modes (from v0.29 when the camera never had
+that set; it keeps the selection and Extras).
 
 From v0.27 a JPEG taken on a FILM carries the film too: whoever has the photo can open it in LookLab
 (**Open...**) and get the film. Sites can read it with the [developer kit](../devkit/photo-code/).
@@ -102,6 +103,12 @@ Turning to it brings that copy back, and nothing you do in another mode (an edit
 P / A / S / M share one set of their own. Changes made inside a custom mode follow its Save Settings: Reset (the
 default) forgets them when you leave the mode or switch off, Hold keeps them. Assign › Reset puts a custom mode back to
 the films as built. Assign your custom modes once after updating to v0.29.5.
+
+The camera holds one set of 20 films for all modes, so a custom mode keeps which films it uses, not a set of its own.
+A new `LOOKS.BIN` replaces the films in every mode, custom modes included: each mode stays on the same film numbers,
+picture mode and Save Settings, a film the new set changed comes in as built, and your changes to the films that stayed
+the same are kept. To give custom modes different films, put them all in one set of 20 (LookLab) and assign each
+custom mode the ones it uses.
 
 ### Do I still need to half-press after switching on?
 

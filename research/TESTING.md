@@ -84,6 +84,10 @@ The gate and the digest have unit tests that need no firmware:
 | `live-dial-turn-back-keeps-the-mode-choice` | A live turn from M to C1 and back brings M back on its own film and picture mode |
 | `live-dial-turn-to-b-switches-the-films` | A live turn from C1 to B switches to the P / A / S / M / B films, though B has no mode code of its own (#54) |
 | `live-dial-turn-holds-the-label` | During a live turn's wait for the mode code, the shooting screen's label holds no picture, and the hold clears once the mode is real (#54) |
+| `new-film-set-made-again-in-a-custom-mode` | A new film set taken in P: C1 (assigned on the old set, Save Settings: Reset) shows the new set's film with no '*' at the next turn, and again at the turn after a power-off (#86) |
+| `new-film-set-made-again-in-p` | A new film set taken in P: P keeps its selection, its COLORs are made from the new films with no '*', also after a power-off (#86) |
+| `new-film-set-taken-in-video-made-again-in-photo` | A new film set taken in video, then off: the next power-on in P and the turn to C1 make their films from the new set, no '*' (#86) |
+| `new-film-set-keeps-changes-to-films-it-left` | A new set that changes only films 19 and 20: FILM 2 on COLOR 1 keeps its Contrast change and its '*' (#86, what stays) |
 | `video-boot-after-photo-boot` | A video boot after a photo boot does no film or custom-mode work (#53) |
 | `debug-log-written-at-releases-only` | Three half-presses: the debug log is written at the three releases only, not at the half-presses (v0.30.3; the burst rule needs photos: camera-only) |
 | `noise-filter-row-follows-the-camera-setting` | A COLOR profile without a film, its Noise Filter on Camera: the Noise Filter row has no '*' with the camera's own Noise Filter on Standard or on Off, and gets one when Standard is chosen while the camera is on Off (v0.30 test 13) |
