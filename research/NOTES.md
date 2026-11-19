@@ -7508,6 +7508,22 @@ above. Research lab (`experiment/screen-info`); nothing built for the camera.
 - Effort (guess): after the screen-info hook exists, 1 build and 2-3 camera rounds; alone, the counter on the screen
   is the larger half. Status: analysis + one emulator check (the number field); nothing on the camera.
 
+## Screen info build s3 on v0.40-beta (2026-11-18; emulator only, camera test pending)
+- Owner (testing v0.40-beta): unticking AF Mode also hid subject tracking; wants "as many as possible without it
+  becoming too overwhelming". Three rows split (the mask bits of s2 keep their meaning, the new items take bits 14..16):
+  AF Mode (var 38 +36) / **Subject Detection** (string 4390, var 38 +3); Exposure Comp. (var 32 +5 / +6 / +80) /
+  **Exposure Level Meter** (string 4195, var 32 +84 / +88); Record Mode (var 38 +49 / +50) / **Image Aspect** (string
+  70, var 38 +48). 17 rows per page, shown in a logical order (build.py SI_ROWS); ids SIB + 32 * page + k (SI_N 96).
+- Not split: Remaining Files (shots left / movie time left): no camera string for movie time left alone.
+- .ext12 is full on v0.40-beta (262040 of 262144 B with s3): the row lists si_ord0..2 moved to .ext11's tail.
+- Emulator (om-emu-new, P mode): each split row hides only its own part (Exposure Comp. the "0.0", Exposure Level Meter
+  the scale, AF Mode "S-AF", Record Mode "LF" / "4K 30p L-8"). Subject Detection and Image Aspect: nothing drawn for
+  them with om-emu's settings (detection off, 4:3), camera only.
+- Test `screen-info-meter-row-keeps-the-value` (pass; caught without the change, on the v0.40 tour build). Suite on
+  daccda0: 105 pass, 0 known, 0 FAIL.
+- Test build `test-builds/2026-11-18-screen-info-s3` (private folder): eb3e50c9ef1556a83be4abc64e36719619b7984bf573f2e5e636d0bb642348aa,
+  go-back v0.40-beta f5771793…8c73.
+
 ## Screen info build s2 on v0.40-alpha (2026-11-17; camera-tested: works)
 Resumed (owner via cad, 2026-11-17: "Carry on"). `try/v0.40-alpha` (492c890) merged into `feature/screen-info`.
 - **Merge changes:** GetValue now goes through `cv_get` (falls through to `sl_get`, whose id check stays); GetDefault
