@@ -17,8 +17,8 @@ Photos without a film (COLOR 1–4 with the user's own settings, CRT, ART, MONO,
   changes made on the camera and the camera's WB (read at the half-press before the shot, `ex_live`; the film as built
   when there was none).
 - One nibble per byte (`value & 15`), two to a byte (32 bytes), base64url (`A-Z a-z 0-9 - _`), no padding.
-- Signed fields read back as -8..7; unsigned ones (WB on, Art Effect, NR, VigFix, Grain, split-toning colours,
-  Halation, the split-toning half steps) as 0..15.
+- Signed fields read back as -8..7; unsigned ones (WB on, NR, VigFix, Grain, split-toning colours, Halation, the
+  split-toning half steps) as 0..15.
 - v0.28 bytes (spare in v0.27, so a v0.27 reader skips them): **57** Halation 0..5, **58** Tone Balance -5..5,
   **59 / 60** Custom WB Kelvin and **61 / 62** the WB mode, each pair a value v = lo + 11 hi (lo, hi -5..5): Kelvin =
   2000 + 100 (v + 60) when the mode is Custom WB, the mode = its place in the camera's list (0 Auto, 1 Sunny, 2 Shade,
@@ -28,6 +28,9 @@ Photos without a film (COLOR 1–4 with the user's own settings, CRT, ART, MONO,
   the half step is in **byte 63** (bit 0 Shadows, bit 1 Highlights), strength on the v0.28 scale = 2 x byte + bit. An
   older reader rounds it down by half a step. (In LOOKS.BIN v0.28 stores these strengths as a different code; the
   camera converts it for the photo code.)
+- **v0.40: byte 48 is the Border**, -5..5 (minus = a black border, plus = white, 0 = none), read signed. It was the
+  Art Effect byte, which v0.25 removed, so every older code has 0 there. **Byte 51** stays the grain level 0..3: v0.40's
+  Film Grain 1..5 is written as 1-2 Low, 3 Medium, 4-5 High; Grain Size is not in the code.
 - **Compatibility rule:** new settings go into spare bytes with 0 = off. An older LookLab then still opens a
   newer code (it skips what it doesn't know), and a newer one reads an older code's spare bytes as "off". Only a change
   that cannot follow that rule gets a new version (`om3.2.`). **v0.28 used the last spare byte (63)**: the next new

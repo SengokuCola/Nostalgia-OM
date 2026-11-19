@@ -85,10 +85,10 @@ table marks it unsigned.
 | 45 | Midtones | −7…7 | |
 | 46 | Highlights | −7…7 | |
 | 47 | Glow / Clarity | −5…5 | Negative = Glow 1–5, positive = Clarity 1–5 |
-| 48 | Art Effect (unsigned) | 0 Off, 1 Star Light, 2 Pin Hole, 4 White Edge, 5 Frame | |
+| 48 | Border | −5…5 | v0.40: negative = a black border, positive = white, 0 = none. The Art Effect's old byte (gone since v0.25), so 0 in older photos |
 | 49 | Noise reduction (unsigned) | 0 Camera setting, 1 Standard, 2 Low, 3 Off, 4 High | |
 | 50 | Lens shading correction (unsigned) | 0 Camera (on), 1 Off | |
-| 51 | Grain (unsigned) | 0 Off, 1 Low, 2 Medium, 3 High | |
+| 51 | Grain (unsigned) | 0 Off, 1 Low, 2 Medium, 3 High | v0.40's Film Grain 1–5 is written as 1–2 Low, 3 Medium, 4–5 High; Grain Size is not in the code |
 | 52 | Sharpness | −5…2 | −5 = Off |
 | 53 | Split toning: shadow colour (unsigned) | 0–11 | Colour wheel order |
 | 54 | Split toning: shadow strength | 0…5 | In v0.26 steps; a v0.26 / v0.27 photo may have −5…−1 = the opposite colour. v0.28's 0–10 = 2 × this + byte 63 bit 0 |

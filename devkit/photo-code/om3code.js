@@ -24,8 +24,8 @@ export const WB_MODES = ['Auto', 'Sunny', 'Shade', 'Cloudy', 'Incandescent', 'Fl
   'One-touch 1', 'One-touch 2', 'One-touch 3', 'One-touch 4', 'Custom WB'];
 
 /** Bytes read as 0..15. Every other byte is signed (-8..7). v0.27 had 57..63 spare; v0.28 uses them all (57 Halation,
- *  58 Tone Balance, 59..62 the WB, 63 split toning's half steps). */
-const UNSIGNED = new Set([36, 48, 49, 50, 51, 53, 55, 57, 63]);
+ *  58 Tone Balance, 59..62 the WB, 63 split toning's half steps). v0.40: byte 48 is the Border (-5..5), signed. */
+const UNSIGNED = new Set([36, 49, 50, 51, 53, 55, 57, 63]);
 
 /** Find a code in text (a UserComment, a pasted string) or in a photo's bytes. Returns the 43 characters, or null. */
 export function findCode(input) {
@@ -69,10 +69,11 @@ export function decode(code) {
     sharpness: b[52] <= -5 ? 'Off' : b[52] || b[42],      // -4..2 (b[42]: older firmware's -2..2, 0 from v0.22 on)
     glow: fx < 0 ? -fx : 0,              // 0..5
     clarity: fx > 0 ? fx : 0,            // 0..5
-    artEffect: ART_EFFECTS[b[48]] ?? 'Off',
+    artEffect: 'Off',                    // always Off: photo codes start at v0.27, and v0.25 removed the Art Effects
+    border: b[48],                       // -5..5 (v0.40): minus = a black border, plus = white, 0 = none
     noiseReduction: NOISE_REDUCTION[b[49]] ?? 'Camera setting',
     lensShadingCorrection: b[50] === 0,  // true = the camera's correction (normal); false = turned off
-    grain: GRAIN[b[51]] ?? 'Off',
+    grain: GRAIN[b[51]] ?? 'Off',        // v0.40's Film Grain 1..5 is written as 1-2 Low, 3 Medium, 4-5 High
     splitToning: sh.strength || hl.strength ? { shadows: sh, highlights: hl } : null,   // strength 0..10 (as the camera from v0.28)
     toneBalance: b[58],                  // -5..5 (v0.28): - the shadow colour reaches further, + the highlight colour
     halation: b[57],                     // 0..5 (v0.28)
@@ -110,7 +111,7 @@ export function describe(r) {
   if (r.grain !== 'Off') lines.push(`Grain ${r.grain}`);
   if (r.noiseReduction !== 'Camera setting') lines.push(`Noise reduction ${r.noiseReduction}`);
   if (!r.lensShadingCorrection) lines.push('Lens shading correction off');
-  if (r.artEffect !== 'Off') lines.push(`Art effect ${r.artEffect}`);
+  if (r.border) lines.push(`Border ${r.border < 0 ? 'black' : 'white'} ${Math.abs(r.border)}`);
   return lines;
 }
 

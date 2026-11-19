@@ -11,11 +11,14 @@ bytes 57 Halation 0..5, 58 Tone Balance -5..5, 59 / 60 Custom WB Kelvin and 61 /
 v = lo + 11 hi: Kelvin = 2000 + 100 (v + 60) for Custom WB, mode = the camera's 13-mode list, 0 Auto). Split toning
 stays in v0.26 steps (bytes 54 / 56: 0..5, or -5..-1 = the opposite colour in a v0.26 / v0.27 photo) so older readers
 keep working; v0.28's half steps are in byte 63 (bit 0 Shadows, bit 1 Highlights): strength 0..10 = 2 v + bit.
+v0.40: byte 48 is the Border -5..5 (minus black, plus white, 0 none), read signed. It was the Art Effect byte, gone
+since v0.25, so every older code has 0 there. Byte 51 stays the grain level 0..3: v0.40's Film Grain 1..5 is written as
+1-2 Low, 3 Medium, 4-5 High (the camera's gs_lv); Grain Size is not in the code.
 """
 import base64
 
 PREFIX = 'om3.1.'
-UNSIGNED = {36, 48, 49, 50, 51, 53, 55, 57, 63}
+UNSIGNED = {36, 49, 50, 51, 53, 55, 57, 63}   # v0.40: 48 (the Border) is signed
 WB_MODES = ['Auto', 'Sunny', 'Shade', 'Cloudy', 'Incandescent', 'Fluorescent', 'Underwater', 'Flash',
             'One-touch 1', 'One-touch 2', 'One-touch 3', 'One-touch 4', 'Custom WB']
 
@@ -55,4 +58,4 @@ def film_wb(rec: bytes):
 if __name__ == '__main__':
     import sys
     r = decode(sys.argv[1])
-    print(list(r)); print('halation', r[57], 'tone balance', r[58] - 256 if r[58] > 127 else r[58], 'split', split_steps(r), 'WB', film_wb(r))
+    print(list(r)); print('border', r[48] - 256 if r[48] > 127 else r[48], 'halation', r[57], 'tone balance', r[58] - 256 if r[58] > 127 else r[58], 'split', split_steps(r), 'WB', film_wb(r))

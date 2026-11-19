@@ -24,8 +24,9 @@ Record (64 bytes): `+0` hue[12], `+12` light[12], `+24` saturation[12] (all −5
 `+36` WB shift on (0/1), `+37` A/B, `+38` G/M, `+39` Blacks, `+40` Whites (−5..5; v0.28: −7..7, the same step), `+41` Contrast (−2..2),
 `+42` Sharpness (−2..2; 0 from v0.22, see `+52`), `+43` Shading (−5..5), `+44` Shadows, `+45` Midtones, `+46` Highlights (−7..7),
 v0.20: `+47` Glow (−5..−1) / Clarity (1..5), `+48` Art Effect (0 Off, 1 Star Light, 2 Pin Hole, 3 none, 4 White Edge,
-5 Frame: the Caduceus ids), `+49` NR (0 Camera, 1 Standard, 2 Low, 3 Off), v0.21: `+50` VigFix (0 Camera: the lens
-shading correction as set, 1 Off), `+51` Grain (0 Off, 1 Low, 2 Med, 3 High), v0.22: `+52` Sharp (−5..+2, the
+5 Frame: the Caduceus ids; v0.25 removed them; v0.40: the Border, −5..5, minus black, plus white, 0 none), `+49` NR (0 Camera, 1 Standard, 2 Low, 3 Off), v0.21: `+50` VigFix (0 Camera: the lens
+shading correction as set, 1 Off), `+51` Grain (0 Off, 1 Low, 2 Med, 3 High; v0.40 reads them as Film Grain 2 / 3 / 5 at Grain Size Medium, and keeps
+strength and size in the curves record), v0.22: `+52` Sharp (−5..+2, the
 camera's own sharpness numbers, 0 its normal, −5 Off; LookLab's v0.22 export leaves `+42` at 0), v0.26: `+53` Shadows
 colour (0..11, the wheel's colours clockwise from Yellow), `+54` its strength, `+55` Highlights colour, `+56` its
 strength (−5..5; v0.26: minus = the opposite colour. From v0.28 a code for 0..10 in half the v0.26 step: v ≥ 0 means
