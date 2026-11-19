@@ -8757,3 +8757,11 @@ screen gets 3200 K A3 M2 at the half-press that takes the set; FILM 15 Shade G3;
   +-1/3 cycle / px on both axes with bright side lobes beyond (the 3 x 3 box); v0.40 Medium 5 a square outline. The
   new grain: round spectra, Coarse falling off smoothly with no lines or side lobes, Medium round; Fine flat in both
   (single-pixel noise). The dots in the grain-off spectra (both) are the camera's JPEG 8 x 8 blocks.
+
+## v0.40.1 release (2026-11-19; owner: "release! The! Kracken! (aka, release 40.1")
+- `release/v0.40.1` from `try/fix88-grain4` (4b0c363). Firmware: only `firmware/VERSION` changes ("v0.40.1").
+  E1479999.BIN 0df560d2…fd41; `patch.py --release v0.40.1` rebuilds it byte for byte. Camera-tested as the combined
+  test build (4f7393a5…3ecd, 2026-11-19); the release name alone is new.
+- LookLab: the grain preview's tile uses g4's round filters (`preview.ts` `G4_TAPS`; at preview size the averaged grain
+  is about 7 % (Coarse) to 14 % (Medium) stronger than with the box, as the camera's now is); the WB Compensation help
+  text says the film sets the camera's own compensation. vitest 76 pass.

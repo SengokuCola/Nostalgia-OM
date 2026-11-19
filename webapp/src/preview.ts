@@ -494,9 +494,10 @@ function om3Border(img: Float32Array, w: number, h: number, level: number, crop:
   }
 }
 
-/** OM-3 Film Grain (firmware v0.40 better grain g3: editor.s tg_fill, research/grain/tile_model.py). The camera adds a
- *  colour grain tile in its development: Y = a w x w box sum of uniform random bytes, sigma 16 (8-bit), w = Grain Size
- *  (1 Fine, 2 Medium, 3 Coarse); Cb / Cr the same at half width and height, box (w + 1) / 2; times the strength's gain,
+/** OM-3 Film Grain (firmware v0.40.1 better grain g4: editor.s tg_fill, research/grain/tile_model.py G4_SIZE). The camera
+ *  adds a colour grain tile in its development: Y = uniform random bytes through a small round filter both ways, sigma
+ *  16 (8-bit): Fine single pixels, Medium 1-3-1, Coarse 1-3-3-1 (v0.40: a w x w box); Cb / Cr at half width and height,
+ *  Fine and Medium single pixels, Coarse 1-3-1; times the strength's gain,
  *  Y 400 / 650 / 1024 / 1280 / 1536 of 1024 for 1..5, Cb / Cr 0.4375 of it. LOOKS.BIN's Low / Med / High are 2 / 3 / 5
  *  at Medium. Calibration card 2 (2026-11-18): the camera's grain at 2 / 3 / 5 measured 10.6 / 15.9 / 23.8 (Y, full
  *  size), the model 10.2 / 16 / 24, about the same in every tone. The preview shows the photo as it looks shrunk to the
@@ -505,24 +506,25 @@ function om3Border(img: Float32Array, w: number, h: number, level: number, crop:
 export const GRAIN_STRENGTH = [0, 2, 3, 5];
 const GRAIN_GAIN = [0, 400, 650, 1024, 1280, 1536];
 const GT_W = 1536, GT_H = 768;                     // the tile: 1536 x 1536 camera pixels, rows repeating every 768
+const G4_TAPS: Record<number, [number[], number[]]> = { 1: [[1], [1]], 2: [[1, 3, 1], [1]], 3: [[1, 3, 3, 1], [1, 3, 1]] };   // Y, Cb / Cr
 const grainTiles = new Map<number, Float32Array[]>();
 function grainTile(size: number): Float32Array[] {
   const hit = grainTiles.get(size);
   if (hit) return hit;
   let st = 0x9e3779b9 ^ size;
   const rnd = () => { st ^= st << 13; st >>>= 0; st ^= st >>> 17; st ^= st << 5; st >>>= 0; return st & 255; };
-  const plane = (W: number, H: number, b: number, lo: number, hi: number) => {
-    const u = new Float32Array(W * H), row = new Float32Array(W * H), out = new Float32Array(W * H);
+  const plane = (W: number, H: number, h: number[], lo: number, hi: number) => {
+    const u = new Float32Array(W * H), row = new Float32Array(W * H), out = new Float32Array(W * H), n = h.length;
     for (let i = 0; i < u.length; i++) u[i] = rnd();
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { let a = 0; for (let k = 0; k < b; k++) a += u[y * W + ((x + k) % W)]; row[y * W + x] = a; }
-    const kt = 16 / (73.9 * b);                    // tg_kt: sigma 16
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { let a = 0; for (let k = 0; k < n; k++) a += h[k] * u[y * W + ((x + k) % W)]; row[y * W + x] = a; }
+    const s1 = h.reduce((a, b) => a + b, 0), s2 = h.reduce((a, b) => a + b * b, 0), kt = 16 / (73.9 * s2);   // tg_g4k: sigma 16
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-      let a = 0; for (let k = 0; k < b; k++) a += row[((y + k) % H) * W + x];
-      out[y * W + x] = Math.max(lo, Math.min(hi, kt * (a - 127.5 * b * b))) / 255;
+      let a = 0; for (let k = 0; k < n; k++) a += h[k] * row[((y + k) % H) * W + x];
+      out[y * W + x] = Math.max(lo, Math.min(hi, kt * (a - 127.5 * s1 * s1))) / 255;
     }
     return out;
   };
-  const wc = (size + 1) >> 1, t = [plane(GT_W, GT_H, size, -48, 207), plane(GT_W / 2, GT_H / 2, wc, -128, 127), plane(GT_W / 2, GT_H / 2, wc, -128, 127)];
+  const [hy, hc] = G4_TAPS[size], t = [plane(GT_W, GT_H, hy, -48, 207), plane(GT_W / 2, GT_H / 2, hc, -128, 127), plane(GT_W / 2, GT_H / 2, hc, -128, 127)];
   grainTiles.set(size, t);
   return t;
 }

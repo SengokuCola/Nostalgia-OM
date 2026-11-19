@@ -394,6 +394,20 @@ Stock: OLY_E_147_1100_0000_0000_3.BIN sha 8c133084…696d, main 5e8d376e…7d59.
 - The looks are only as good as the preview model (`src/preview.ts`) is of the camera; check a film on the camera
   before trusting it for anything critical.
 
+## v0.40.1 release (release/v0.40.1 = try/fix88-grain4 4b0c363: main b4b3161 + fix/88-film-wb 1182a7b + feature/better-grain-g4 42e7626; 2026-11-19)
+
+- Firmware: the combined test build's sources (E1479999.BIN 4f7393a5…3ecd, camera-tested 2026-11-19) with
+  `firmware/VERSION` "v0.40.1". E1479999.BIN 0df560d2…fd41; `patch.py --release v0.40.1` makes it byte for byte.
+- Grain g4 (editor.s `tg_fill` and friends, ext12 / ext13; model `research/grain/tile_model.py` G4_SIZE): round
+  separable filters (Fine 1, Medium 1-3-1, Coarse 1-3-3-1; Cb / Cr at half size, Coarse 1-3-1) instead of the w x w
+  box, and rows 128..767 from 40 x 128 px blocks of the 128-row band (some upside down, joins crossfaded) instead of
+  full-width strips. Same tile format and levels. Loader end word 0x60fbf000 (GX4-proven reserve).
+- #88 (editor.s `fw_*`, ext13): a film's A-B / G-M is written as the camera's stills WB fine-tune for the film's WB
+  mode (table 0x615d1944) when the film is picked (`fw_apply` -> `fw_ft`), kept back into the film when it is left
+  (`fw_keep` -> `fw_kft`), synced at each half-press (`fw_sync`, the first one of a power-on writes) and when
+  Picture Mode opens (`fw_pm`); `wb_get` no longer adds it. A new film set re-applies the on-screen film's WB (`fw_nf`).
+- LookLab: the grain preview's tile uses the g4 filters; the WB Compensation help text. Extras as v0.40.
+
 ## v0.40 release (release/v0.40 = try/v0.40-beta v0.40-beta3 ad6c7a5 + main + feature/looklab-camera-match + feature/tour-v040; 2026-11-19)
 
 - Firmware: v0.40-beta3's sources with `firmware/VERSION` "v0.40" (the only firmware change; the Firmware Version page
