@@ -8751,3 +8751,9 @@ screen gets 3200 K A3 M2 at the half-press that takes the set; FILM 15 Shade G3;
   there kept by the film, and the films' WB after power-off / on as TEST-STEPS 1-5 describe. Not reported separately:
   live view's colour per film, video's WB, the optional new film set (SETS/WB-TEST), photos comparing the shift's
   strength with v0.40, in-camera RAW Data Edit.
+- **Fourier transform of the camera photos (owner asked, 2026-11-19; analysis):** Y high-pass (minus a Gaussian 8),
+  Hann 256 x 256, power normalised and averaged over the 24 chart patches of each photo; picture
+  `camera-results/grain-fourier-v040-vs-g4-camera.jpg` (private package folder). v0.40 Coarse 5: dark lines at
+  +-1/3 cycle / px on both axes with bright side lobes beyond (the 3 x 3 box); v0.40 Medium 5 a square outline. The
+  new grain: round spectra, Coarse falling off smoothly with no lines or side lobes, Medium round; Fine flat in both
+  (single-pixel noise). The dots in the grain-off spectra (both) are the camera's JPEG 8 x 8 blocks.
