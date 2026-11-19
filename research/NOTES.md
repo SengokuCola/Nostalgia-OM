@@ -8614,7 +8614,8 @@ the camera's own picture modes keep what the film left; (5) video left alone.
 **Tests (emu_test.py):** `film-wb-mode-and-kelvin-set-on-pick`, `film-wb-shift-set-in-the-camera-fine-tune`,
 `film-wb-shift-counts-once`, `wb-reads-add-no-film-shift` (replaces `wb-shift-reads-follow-the-look`),
 `film-keeps-a-wb-shift-changed-in-the-panel`, `picture-mode-row-shows-the-panel-wb-shift`,
-`picture-mode-row-wb-shift-sets-the-camera`, `new-film-set-sets-the-film-wb`. `--without` v0.40: six caught; the
+`picture-mode-row-wb-shift-sets-the-camera`, `new-film-set-sets-the-film-wb`. Full suite on 1ab6f1b's firmware: 119 of
+119 pass (exit 0). `--without` v0.40: six caught; the
 mode-on-pick and counts-once guards pass on v0.40 too (v0.40 had both right). Driver: `expect:cap:FN:KEY=V`
 (a capture WB read), `getv:IDS`, `pbytes:OFF:LEN`, `a1` in TRACE lines.
 
