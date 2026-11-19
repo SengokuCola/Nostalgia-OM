@@ -624,7 +624,8 @@ def log_written_off_the_shutter_task(hits):
 # background write is timed in the writer's task.
 SHOT_TIMING_LINE = (r'^Shot timing \(ms\): our code at shutter events last \d+, longest \d+ \(event \d+\); '
                     r'log file writes last \d+, longest \d+; photos with our passes \(Halation, Border, CPU grain\) '
-                    r'0, last 0, longest 0$')
+                    r'0, last 0, longest 0; Halation\'s last photo: pass A 0, map 0, pass C 0, pauses for the camera 0 '
+                    r'\(0 ms\)$')
 SHOT_TIMING = ('lg_write', 'lg_ptm', 'lg_wkw', 'lg_ums')
 
 
@@ -2112,8 +2113,49 @@ def run_cropsave(emu, build, out, card0):
     return CROPSAVE, errors
 
 
+# glow-shots-2: hl_run gives its CPU back between lock groups (hl_yld) only while the shutter button is half-pressed
+# (hl_hp, set by lg_pr through the uncached alias), at most HL_YMAX sleeps a photo. Called directly: button up, button
+# held, the cap reached; the sleep itself (sdl_dly_tsk) is camera-only, so the call stops at it (hl_ydl). Then a boot:
+# a release clears hl_hp (poked to 1 first). Halation's bytes with the new calls: halation-matches-the-model.
+HLYIELD = 'halation-pauses-only-while-half-pressed'
+HL_YMAX = 800
+
+
+def run_hlyield(emu, build, out, card0):
+    d = out / HLYIELD
+    d.mkdir(parents=True, exist_ok=True)
+    sym = elf_symbols(build / 'p.elf')
+    hp, yn, ydl = sym['hl_hp'] + 0x40000000, sym['hl_yn'], sym['hl_ydl']
+    def case(name, pressed, sleeps):
+        return {'name': name, 'pc': 'B', 'stop': ['B+7', f'{ydl:#x}'], 'max': 20000,
+                'mem': [['B', 'dd'], ['B+1', f"={sym['hl_yld']:#x}-B"], ['B+5', 'f014'],    # call hl_yld,[d2,d3,a2,a3],20
+                        [f'{hp:#x}', f'{pressed:02x}'], [f'{yn:#x}', sleeps.to_bytes(4, 'little').hex()]],
+                'read': [[f'{yn:#x}', 4]], 'restore': [[f'{hp:#x}', '00'], [f'{yn:#x}', '00000000']]}
+    spec = [case('button-up', 0, 0), case('half-pressed', 1, 0), case('cap-reached', 1, HL_YMAX)]
+    res = run_ncall(emu, build, d, card0, 's1 wait wait ncall', spec)
+    if isinstance(res, str):
+        return HLYIELD, [res]
+    errors = []
+    want = {'button-up': (False, 0), 'half-pressed': (True, 1), 'cap-reached': (False, HL_YMAX)}
+    for name, (sleeps, n) in want.items():
+        r = res[name]
+        pc, got = int(r['regs']['pc'], 16), int.from_bytes(bytes.fromhex(r['mem'][0]), 'little')
+        if r['steps'] >= 20000:
+            errors.append(f'{name}: hl_yld did not return (out.json)')
+        elif (pc == ydl) != sleeps:
+            errors.append(f'{name}: ' + ('no sleep' if sleeps else 'slept') + ' (out.json)')
+        elif sleeps and int(r['regs']['d0'], 16) != 1:
+            errors.append(f"{name}: sleep of {r['regs']['d0']} ticks, not 1 (out.json)")
+        if got != n:
+            errors.append(f'{name}: {got} sleeps counted, not {n} (out.json)')
+    name, more = run_test(HLYIELD, [
+        Boot(f'poke:{hp:x}=01 s1 wait wait expect:mem:{hp:x}=00 poweroff'),
+    ], emu, build, card0, out)
+    return HLYIELD, errors + more
+
+
 # Tests that call our code directly through run_ncall: name -> runner(emu, build, out, card0).
-DIRECT = {WB: run_wb, HL: run_hl, CROPEL: run_cropel, LIVE: run_livelook, CROPSAVE: run_cropsave}
+DIRECT = {WB: run_wb, HL: run_hl, CROPEL: run_cropel, LIVE: run_livelook, CROPSAVE: run_cropsave, HLYIELD: run_hlyield}
 
 
 def newest_looks():

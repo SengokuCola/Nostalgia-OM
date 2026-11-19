@@ -10956,6 +10956,12 @@ lg_pr:                            /* jmp from pr_ed, pr_hook's frame: as `call e
  movbu (18,sp),d0                 /* v0.30.3: the shutter handler's event word (16,sp) {0x0100 half-press, 0x0101 its
                                    * release} (om-emu trace at 0x60415216, 2026-11-17): byte 18 is 1 at the release */
  movbu d0,(lg_rel)
+ cmp 0,d0                         /* glow-shots-2: hl_hp 1 at a half-press, 0 at its release (hl_yld reads it) */
+ mov 1,d0
+ beq 1f
+ clr d0
+1:
+ movbu d0,(hl_hp + 0x40000000)
  clr d0                           /* L1: the first shutter event releases the hooks held since the early load */
  movbu d0,(el_hold)
  call lg_pre,[d2,d3,a2,a3],36
@@ -11374,7 +11380,143 @@ pt_us:                            /* the last one's passes (us) */
  .long 0
 pt_mx:                            /* the longest (us) */
  .long 0
-lg_tid:                         /* #85: the log writer task's id (0 not made yet, -1 could not be made) */
+
+/* ---- glow-shots-2 (2026-11-19; cad: "glow is faster, but halation still seems very slow"). glow-shots-1 on the camera:
+ * our passes 1361 / 1742 ms a photo (Halation alone, indoors), and in Single the presses during them took no shot,
+ * while Glow (the camera's own passes on the image processor, no CPU of ours) shot freely and the shutter handler ran
+ * at once (our code at shutter events 0 ms). hl_run runs in the capture job's task with the lock (interrupts and
+ * dispatch off) held for most of its 1.4-1.7 s, so the camera's own tasks on that CPU barely run; the guess
+ * (analysis): live view / AF work there, and Single (S-AF) waits for them. So:
+ *   - hl_yld at the end of each of hl_run's lock groups (passes A and C, lock given back): while the shutter button
+ *     is half-pressed (hl_hp), sleep one tick (sdl_dly_tsk 1: the OS's delay, as the log writer and the SDLOAD worker
+ *     call it; it does nothing with dispatch off) so the camera's tasks get this CPU; at most HL_YMAX a photo (a long
+ *     half-press slows the pass by about the sleeps' time, well under the 10 s an E-P7 watchdog allowed).
+ *   - hl_tk: the times of pass A (reading the frame), the map (blur, curve) and pass C (drawing) for the log.
+ * The picture is the same byte for byte (only when the pass runs changes). research/NOTES.md, "glow-shots-2". */
+ .set HL_YMAX, 800                /* sleeps a photo at most */
+/* hl_yld: `call hl_yld,[d2,d3,a2,a3],20`, no lock held (capture job's task): the sleep above; counts hl_yn, hl_yus. */
+hl_yld:
+ movbu (hl_hp + 0x40000000),d0    /* the uncached alias (written by lg_pr on another CPU) */
+ cmp 0,d0
+ beq 9f
+ mov (hl_yn),d0
+ cmp HL_YMAX,d0
+ bcc 9f
+ inc d0
+ mov d0,(hl_yn)
+ mov (USCLK),d2
+ mov 1,d0
+hl_ydl:                           /* the sleep (tests stop here) */
+ call sdl_dly_tsk,[d2,a2,a3],16
+ mov (USCLK),d1
+ sub d1,d2                        /* start - end: the counter counts down */
+ and 0x7fffffff,d2
+ mov (hl_yus),d0
+ add d2,d0
+ mov d0,(hl_yus)
+9:
+ ret [d2,d3,a2,a3],20
+
+/* hl_tk: `call hl_tk,[d2,d3],12`, d0 = 0 before pass A, 1 after it, 2 before pass C, 3 at the end: USCLK -> hl_tv[d0]
+ * (and the later slots, for a frame that stops early). At 0 the photo's sleeps are reset; at 3 its times (ms) ->
+ * hl_ma (pass A), hl_mb (the map), hl_mc (pass C: 0 when the frame stopped before it), its sleeps -> hl_lyn / hl_lym,
+ * hl_tn + 1. Uses d0, d1, a0, a1, MDR. */
+hl_tk:
+ mov d0,d2
+ mov (USCLK),d1
+ mov hl_tv,a0
+ mov d2,d0
+ asl2 d0
+ add d0,a0
+ mov d2,d0
+1:
+ mov d1,(a0)
+ inc4 a0
+ inc d0
+ cmp 4,d0
+ bcs 1b
+ cmp 0,d2
+ bne 2f
+ clr d0
+ mov d0,(hl_yn)
+ mov d0,(hl_yus)
+ movbu d0,(hl_c2)
+ bra 9f
+2:
+ cmp 2,d2
+ bne 3f
+ mov 1,d0
+ movbu d0,(hl_c2)
+ bra 9f
+3:
+ cmp 3,d2
+ bne 9f
+ mov (hl_tv),d0                   /* pass A: tv0 - tv1 */
+ mov (hl_tv + 4),d1
+ sub d1,d0
+ call lg_ums,[],0
+ mov d0,(hl_ma)
+ movbu (hl_c2),d0
+ cmp 0,d0
+ bne 4f
+ mov (hl_tv + 4),d0               /* stopped before pass C: the map is tv1 - tv3, pass C 0 */
+ mov (hl_tv + 12),d1
+ sub d1,d0
+ call lg_ums,[],0
+ mov d0,(hl_mb)
+ clr d0
+ mov d0,(hl_mc)
+ bra 5f
+4:
+ mov (hl_tv + 4),d0
+ mov (hl_tv + 8),d1
+ sub d1,d0
+ call lg_ums,[],0
+ mov d0,(hl_mb)
+ mov (hl_tv + 8),d0
+ mov (hl_tv + 12),d1
+ sub d1,d0
+ call lg_ums,[],0
+ mov d0,(hl_mc)
+5:
+ mov (hl_yn),d0
+ mov d0,(hl_lyn)
+ mov (hl_yus),d0
+ call lg_ums,[],0
+ mov d0,(hl_lym)
+ mov (hl_tn),d0
+ inc d0
+ mov d0,(hl_tn)
+9:
+ ret [d2,d3],12
+ .balign 4
+hl_tv:                            /* USCLK at hl_run's four points (hl_tk) */
+ .long 0, 0, 0, 0
+hl_yn:                            /* this photo's sleeps (hl_yld) */
+ .long 0
+hl_yus:                           /* their time (us) */
+ .long 0
+hl_ma:                            /* the last photo: pass A (ms) */
+ .long 0
+hl_mb:                            /* the map (ms) */
+ .long 0
+hl_mc:                            /* pass C (ms) */
+ .long 0
+hl_lyn:                           /* its sleeps */
+ .long 0
+hl_lym:                           /* their time (ms) */
+ .long 0
+hl_tn:                            /* photos timed */
+ .long 0
+hl_c2:                            /* pass C reached on this photo */
+ .byte 0
+ .balign 64
+hl_hp:                            /* 1 while the shutter button is half-pressed (lg_pr): written and read through the
+                                   * uncached alias only, alone in its 64-byte line (no cached neighbour's write-back
+                                   * can carry an old copy over it) */
+ .byte 0
+ .balign 64
+lg_tid:                       /* #85: the log writer task's id (0 not made yet, -1 could not be made) */
  .long 0
 lg_wbf:                            /* its buffer (malloc, lg_bend - lg_buf B) */
  .long 0
@@ -12304,6 +12446,22 @@ lg_sum:
  mov (pt_mx),d0
  call lg_ums,[],0
  LGD
+ LGS gs2_t1                       /* glow-shots-2: Halation's last photo, per pass */
+ mov (hl_ma),d0
+ LGD
+ LGS gs2_t2
+ mov (hl_mb),d0
+ LGD
+ LGS gs2_t3
+ mov (hl_mc),d0
+ LGD
+ LGS gs2_t4
+ mov (hl_lyn),d0
+ LGD
+ LGS gs2_t6
+ mov (hl_lym),d0
+ LGD
+ LGS gs2_t5
  LGS lg_y0                        /* now: mode, exposure, WB, picture, screen */
  call lg_new,[],0
  movbu (14,a3),d0
@@ -14253,6 +14411,18 @@ gs1_t5:
  .asciz "; photos with our passes (Halation, Border, CPU grain) "
 gs1_t6:
  .asciz ", last "
+gs2_t1:                           /* glow-shots-2 */
+ .asciz "; Halation's last photo: pass A "
+gs2_t2:
+ .asciz ", map "
+gs2_t3:
+ .asciz ", pass C "
+gs2_t4:
+ .asciz ", pauses for the camera "
+gs2_t5:
+ .asciz " ms)"
+gs2_t6:
+ .asciz " ("
 lg_t4:
  .asciz "\r\n\r\nSTART-UP (this power-on)\r\nSettings block: "
 lg_found:
@@ -17126,6 +17296,8 @@ hl_run:
  add -1,d1
  bne 3b
  call FLUSH,[d2,d3],16            /* no stale lines in the window's cached view */
+ clr d0                           /* glow-shots-2: pass A starts */
+ call hl_tk,[d2,d3],12
 
  /* ---- A. the grids: every 2nd row, Y0 of every pair (hl_pa); K sampled rows per lock */
  mov (28,sp),d0                   /* K = max(1, HL_LOCKN / (HL_PA_PAIR pairs + HL_PA_CELL GW + 40)) */
@@ -17234,11 +17406,14 @@ hl_run:
  add 2,d0
  mov d0,(52,sp)
 19:
+ call hl_yld,[d2,d3,a2,a3],20     /* glow-shots-2: the CPU to the camera while the button is half-pressed */
  mov (52,sp),d0
  mov (16,sp),d1
  cmp d1,d0
  bcs 10b
 
+ mov 1,d0                         /* glow-shots-2: pass A done */
+ call hl_tk,[d2,d3],12
  /* ---- w: each cell's mean B = 4 Q / samples (a full cell: Q >> 8), w = min(255, HL_WMUL (255 - B)), in place of Q */
  mov (80,sp),a2
  clr d0
@@ -17452,6 +17627,8 @@ hl_run:
  add 2,a0
  add -1,d3
  bne 46b
+ mov 2,d0                         /* glow-shots-2: the map done (d2 kept) */
+ call hl_tk,[d2,d3],12
  cmp 2,d2
  bcs 90f                          /* no g >= 2 anywhere: nothing changes (h7; was: all g = 0) */
 
@@ -17590,6 +17767,7 @@ hl_run:
  inc d0
  mov d0,(52,sp)
 67:
+ call hl_yld,[d2,d3,a2,a3],20     /* glow-shots-2: as after pass A's groups */
  mov (52,sp),d0
  mov (92,sp),d1
  cmp d1,d0
@@ -17600,6 +17778,8 @@ hl_run:
  mov d0,(52,sp)
  jmp 50b
 90:
+ mov 3,d0                         /* glow-shots-2: the end */
+ call hl_tk,[d2,d3],12
  mov (104,sp),a0
  call free,[],4
  mov (80,sp),a0

@@ -8326,3 +8326,50 @@ Test driver tools/emulator/focus_stacking.mjs runs this routine with controlled 
 - **Camera test (TEST-STEPS):** Single drive, Glow on, quick presses; the same with Halation; then once with
   `DEBUG.TXT` off to compare. If shots still wait with `DEBUG.TXT` off, the camera's own handling of the slow
   development holds them (no code of ours runs at that point): the timing line then says how long our pass takes.
+
+## glow-shots-2: Halation gives its CPU back while the shutter is half-pressed (2026-11-19; emulator + analysis, camera test pending)
+- **glow-shots-1 on the camera (owner, 2026-11-19): "glow is faster, but halation still seems very slow. I thought we
+  had fixed its speeds."** Log (`card-backups/2026-11-19-glow-shots-1-tested`): our code at shutter events last 0,
+  longest 69 ms (event 1, the first loads); log file writes last 184, longest 211 ms; photos with our passes 32 (Halation
+  alone: Film Grain Off, no Border / Shading), last 1361, longest 1742 ms. 86 photos, RAW+JPEG, Single (drive 0, some
+  events 30), S-AF (AF mode [0]), A 1/160..1/200 f/1.8 Auto ISO, indoors. In the event list the photo count rises only
+  every 4-8 events: presses during a Halation photo took no shot, while the shutter handler ran at once and the
+  exposure kept changing between them (live view metering ran).
+- So #85's part is done (Glow, the camera's own passes on the image processor, shoots freely). What is left is our
+  pass: 1.4-1.7 s a photo on the camera.
+- **Where the time goes (analysis, the Shading s2 rates: ~2.8 ns an instruction, ~27 ns a byte through the bus
+  window):** pass A reads every 2nd row of the whole frame (Y0 of every pair, but the cache pulls whole lines): ~20 MB
+  on 20 MP, ~0.55 s, plus ~25 M instructions (~0.07 s), on every Halation photo whatever the scene. The blur and the
+  curve are small (cells only). Pass C reads and writes only the pixels that change, so the rest (~0.7-1.1 s here)
+  is the glowing area. The window is a 128 MB per-CPU window (`hl_open`: one WINMAP per photo, as a rule), so the
+  cost is the bus, not the mapping. This build measures the three parts.
+- **Why the next shot waits (analysis):** `hl_run` runs in the capture job's task with the firmware's lock (interrupts
+  and dispatch off) held for nearly all of its 1.4-1.7 s, in groups of up to ~120 K estimated instructions (~1.5 ms with
+  the window traffic), with only a few instructions unlocked between them. Live view's requests are built on the same
+  CPU as the stills' (CPU 2, gl2c, 2026-11-06). In Single with S-AF the camera fires only after the AF confirms; a
+  burst keeps its first focus. Glow alone leaves the CPU free. Guess: our pass starves the camera's live view / AF
+  work on that CPU, so the presses during it take no shot.
+- **The camera's OS (static, decoded 1.1):** delay = `sdl_dly_tsk` 0x60031581 (returns E_CTX -25 with dispatch off);
+  change priority = 0x600309ca (d0 = task id, 0 = this task; d1 = priority, 0 = its initial one; the debug shell's
+  `chgpri` calls it; it writes the base priority at TCB + 10; E_CTX with dispatch off, E_ILUSE-like refusal for a task
+  holding a ceiling mutex). Task ids carry the CPU in bits 12+. Not used: lowering the camera's own capture task with
+  no map of the other tasks' priorities could leave the photo waiting behind a busy low task.
+- **glow-shots-2 (editor.s; the picture unchanged byte for byte):**
+  - `hl_yld` after each lock group of passes A and C (lock given back): while the shutter button is half-pressed
+    (`hl_hp`: lg_pr sets it 1 at a half-press, 0 at its release, through the uncached alias, alone in a 64-byte line,
+    since the capture job runs on another CPU), `sdl_dly_tsk(1)`: one tick (1 ms) for the camera's tasks on that CPU.
+    At most 800 a photo (`HL_YMAX`), so a long half-press slows a 20 MP photo by ~1-2 s at most (the E-P7 had a 10 s
+    watchdog on long passes). With the button up nothing changes.
+  - `hl_tk` at four points of `hl_run` (before pass A, after it, before pass C, the end): the debug log's shot timing
+    line now ends "; Halation's last photo: pass A a, map b, pass C c, pauses for the camera n (s ms)" (pass C 0 when
+    the frame stops before it: daylight, or no g >= 2).
+  - Space: ext12 262,040 -> 262,088 of 262,144 (six calls in hl_run); the rest in ext13 (72,512 of 81,920). No hook,
+    nothing at start-up.
+- **om-emu:** `halation-matches-the-model` passes (the 10 frames bit-exact, through the new calls with the button up).
+  New `halation-pauses-only-while-half-pressed` (calls `hl_yld` directly: button up returns, held reaches the sleep
+  with 1 tick and counts it, at 800 it returns; then a boot: a release clears `hl_hp`): pass; glow-shots-1's build
+  `caught`. `debug-log-times-the-shutter-events-and-writes` expects the longer line. The sleep itself, the camera's
+  tasks and the shots are camera-only.
+- **If shots still wait (camera):** try once in MF: if MF shoots freely, it is the AF; if not, the camera holds Single
+  until the development ends, and the remaining lever is the pass's own time (pass A's ~0.55 s floor; options that
+  change the look a little, such as reading every 4th row, are the owner's call).
