@@ -8228,3 +8228,45 @@ Test driver tools/emulator/focus_stacking.mjs runs this routine with controlled 
   firmware-version-build-name-fits-after-a-lens (caught on the first package). Second package `f5771793…8c73`
   (patch.py --release v0.40-beta rebuilds it), suite **104 of 104**. **Camera-tested 2026-11-18** (owner: ".40 beta
   looks good. lets push the beta to github"). Published as a GitHub pre-release from try/v0.40-beta, as v0.40-alpha.
+
+## #85: the debug log's card write off the shutter's task, fix85-1 (2026-11-19; emulator only, camera test pending)
+- **Report (#85, crombach, v0.40-alpha and v0.40-beta; SanDisk V30, RAW+JPEG, FILM 4):** in Single / Silent Single a
+  quick second shot fires only after the card has written the last photo (or after another long delay); Sequential /
+  Silent Sequential are fine; with `DEBUG.TXT` off the card single shots fire as fast as he presses. The owner reproduced
+  it 2026-11-19 with a fast card; nerdyjem could not (V90 cards, FILM 8, 4:3, RAW+LSF). crombach also finds the log
+  bloated and asks for a more concise format (not done here: the report's content is the owner's call).
+- **Cause (analysis: code + om-emu's file system):** since v0.30.3 `lg_write` builds the 9216 B report and writes
+  `CADLOG.TXT` (fopen "w", fwrite, fclose) at each release (`lg_due`), in the HLS_EVENT task (pr_hook -> lg_pr, the
+  shutter handler's own, before `trig_resume`). The camera's file calls are requests to its file task, served in order
+  (om-emu runs the firmware's own storage stack: fileif, FILECLBK), so with the last photo still being written our
+  fopen waits behind it, and the next shutter event waits for lg_write. A burst's release writes nothing (lg_due's
+  burst rule), which fits "Sequential is fine".
+- **Fix (fix85-1, ext13):** `lg_write` still notes every event and builds the report at a due release (unchanged, no
+  card work), then sets `lg_rdy`. A task of ours, CADLOG (`lg_wk`), writes the file: made once by `lg_mkw` at the first
+  logged event of a power-on with `DEBUG.TXT` (HLS_EVENT task, after the first half-press: nothing at start-up), with
+  the SDLOAD worker's create / start / delay calls (sd1..sd3, camera-run 2026-11-09), priority 56, a 4 KB stack
+  (`sdl_heap_alloc`) and its own 9216 B buffer (`malloc`). Every 100 ms (`sdl_dly_tsk`): when a report waits, the
+  shutter button is up (`lg_rel`) and no shutter event came since its last poll, it takes the report under LOCK
+  (`lg_bb`: lg_write building; `lg_bc`: the writer copying; lg_write skips a build that meets a copy, the event stays
+  in the ring), copies `lg_buf` by words and writes `CADLOG.TXT` from its copy. `hl_ok` checks the HLS task id, so the
+  writer checks only the medium words (MS_A / MS_B / MS_C = 0xF000). If the task cannot be made, `lg_tid` -1 and
+  lg_write writes as before. The header line now ends "..., written in the background" (or "written in the shutter's
+  task" for that fallback). `lg_wd` counts the writer's writes (not printed).
+- **DEBUG.TXT off:** unchanged (lg_on 2 returns before any of it: no task, no malloc). ext13 70,656 -> 71,232 of
+  81,920; the loader's end word stays 0x60fbe000. No hook or patch site added.
+- **om-emu:** the lab refuses to start a task entry it does not model, so the runner passes `lg_wk` as
+  `OM_WORKER_ENTRY` to every boot and `session_ed1.mjs` adds it to the application's task entries (as
+  `session_ed1_worker.mjs` did for SDLOAD). The writer runs as task 169: `CADLOG.TXT` opened 3 times by it, never by
+  HLS_EVENT (164), never inside lg_write; the firmware's power-off runs normally with the writer alive.
+- **Test `debug-log-card-write-off-the-shutter-task`** (WTID task ids at each hit): pass; `--without` v0.40-beta2
+  (`70e0d8c8…e2fb`): caught (CADLOG.TXT opened inside lg_write, in task 164). `debug-log-off-writes-no-log` also checks
+  that `lg_mkw` never runs; `debug-log-written-at-releases-only` expects the new header ending.
+- **Camera-only:** the shot timing on a busy card (om-emu takes no photos, its card is never busy); the task made on the
+  camera (the 9 KB malloc, the 4 KB stack: enough for fopen / fwrite / fclose is analysis); file writes from a task
+  other than HLS_EVENT (om-emu: they work through the firmware's own file stack); a power-off while the writer writes
+  (the same window as before, now ~100 ms after the release).
+- Build "v0.40-dev fix85-1 (#85: debug log written off the shot)", E1479999.BIN `9031a5c6…13e2`, GUIDES.BIN
+  `7efc6a42…99cc`; package `test-builds/2026-11-19-fix85-1` (go back: v0.40-beta2).
+- Suite, first full run (106 tests): 93 pass, 13 FAIL, all "driver exit 1, no ncall result": the direct-call tests
+  start om-emu through `run_ncall`, which did not pass the writer's entry yet (om-emu refused to start the task at their
+  half-press). The runner now passes it there too (`writer_env`); those 13 then pass on the same build.

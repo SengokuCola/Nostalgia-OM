@@ -1133,6 +1133,14 @@ def boot_key(boot):
             boot.env, boot.tids)
 
 
+@functools.lru_cache(maxsize=None)
+def writer_env(build):
+    """#85: the debug log's writer task (lg_wk), made at the first logged event with DEBUG.TXT on the card. om-emu
+    refuses to start a task entry it does not model, so session_ed1.mjs allows OM_WORKER_ENTRY's."""
+    entry = elf_symbols(build / 'p.elf').get('lg_wk')
+    return {'OM_WORKER_ENTRY': f'{entry:x}'} if entry is not None else {}
+
+
 def run_boot(emu, build, d, i, boot, card, syms, fixtures=None):
     """Boot i in d, from card, with d/nv.bin as the camera's settings -> (next card, log lines or None, errors, a
     fatal error or None). syms caches the build's symbols for tokens that name them."""
@@ -1140,14 +1148,13 @@ def run_boot(emu, build, d, i, boot, card, syms, fixtures=None):
     if boot.card:
         card = put_card_files(emu, card, boot.card, fixtures, d / f'card{i}-in.omsd')
     tokens = boot.tokens
-    if not syms:
-        syms.update({k: f'{v:x}' for k, v in elf_symbols(build / 'p.elf').items()})
-    if '{' in tokens:
+    if '{' in tokens or boot.watch:
+        if not syms:
+            syms.update({k: f'{v:x}' for k, v in elf_symbols(build / 'p.elf').items()})
         tokens = tokens.format_map(syms)
     env = {**os.environ, 'OM_EMU_MODEL': MODEL, 'NV_FILE': str(d / 'nv.bin'), 'MODE0': str(boot.mode_dial),
            'PSET0': str(boot.photo_switch)}
-    if 'lg_wk' in syms:                            # #85: the debug log's writer task, which om-emu must be told to start
-        env['OM_WORKER_ENTRY'] = syms['lg_wk']
+    env.update(writer_env(build))
     if boot.watch:
         env.update(WATCH=','.join(syms[n] for n in boot.watch), WSTR='1', WBOOT='1')
     if boot.tids:
@@ -1354,7 +1361,8 @@ def look_model(table, ks, kh, balance, curves):
 def run_ncall(emu, build, d, card0, tokens, spec):
     """One boot of the driver in d: tokens ending in ncall, which runs spec's calls -> {name: result}, or an error."""
     (d / 'spec.json').write_text(json.dumps(spec))
-    env = {**os.environ, 'OM_EMU_MODEL': MODEL, 'NCALL': str(d / 'spec.json'), 'NOUT': str(d / 'out.json')}
+    env = {**os.environ, 'OM_EMU_MODEL': MODEL, 'NCALL': str(d / 'spec.json'), 'NOUT': str(d / 'out.json'),
+           **writer_env(build)}
     r = node(DRIVER, emu, build / 'main.bin', card0, d / 'boot.json', d / 'card.omsd', tokens, env=env)
     (d / 'boot.log').write_text(r.stdout + r.stderr)
     if r.returncode or not (d / 'out.json').exists():
