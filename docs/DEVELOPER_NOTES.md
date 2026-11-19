@@ -394,7 +394,7 @@ Stock: OLY_E_147_1100_0000_0000_3.BIN sha 8c133084…696d, main 5e8d376e…7d59.
 - The looks are only as good as the preview model (`src/preview.ts`) is of the camera; check a film on the camera
   before trusting it for anything critical.
 
-## v0.40-beta (try/v0.40-beta = try/v0.41-dev 2a86f1e; every part camera-tested 2026-11-18; the package under the owner's test)
+## v0.40-beta (try/v0.40-beta = try/v0.41-dev 2a86f1e; every part camera-tested 2026-11-18, then the package (f5771793…8c73); GitHub pre-release)
 
 - Base: v0.40-alpha + `try/v0.41-dev`: grain g3 (the tile from a 128-row band, ~0.27 s), screen info s2 (`screeninfo.s`,
   `hook_si`, M + 0x3C000 'OM3I'), the Border inside the crop at every ratio (`cr_bdt` by Image Aspect id) and 32 px past

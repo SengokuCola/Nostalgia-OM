@@ -2,7 +2,7 @@
 
 **Crops back at switch-on, looks that show in live view as you adjust them, black borders, and your own choice of
 shooting-screen info.** A test version (a GitHub pre-release): v0.30.3 stays the current version. Every part was
-camera-tested on its own (2026-11-18); this package is being tested as a whole.
+camera-tested on its own, and this package as a whole (2026-11-18).
 
 **New since v0.40-alpha**
 - **Crops come back at switch-on** ([#83](https://github.com/androidfanman/caduceus-om3/issues/83), reported by

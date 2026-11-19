@@ -8202,3 +8202,13 @@ Test driver tools/emulator/focus_stacking.mjs runs this routine with controlled 
   entries above (hooks.json not changed: the owner's OK first). Package `test-builds/2026-11-18-framelines-1`
   (private folder), go-back test 9 `ac702af7…3065`, with an emulator before / after picture. Camera test pending.
 - **framelines-1 camera-tested 2026-11-18** (owner: "that works!!!!"): the aspect frame lines at the crop's edges.
+
+## v0.40-beta: the release (2026-11-18; camera-tested, GitHub pre-release)
+- try/v0.40-beta = try/v0.41-dev 2a86f1e (v0.40b, live look, #83, the version screen, the frame lines) + VERSION
+  "v0.40-beta (crops at switch-on, live looks, black borders)" + releases/v0.40-beta + docs. The first package
+  (741c17da…fee1; suite 103 of 103) showed no line of ours on the Firmware Version page with a lens on (owner: "our
+  firmware isnt listed in the firmware section on the menu anymore"): 10 letters where 9 fit beside a Lens line. Fix
+  3e01717: the page shows VERSION's first word without its "v" ("0.40-beta"); build.py asserts 9 letters at most; test
+  firmware-version-build-name-fits-after-a-lens (caught on the first package). Second package `f5771793…8c73`
+  (patch.py --release v0.40-beta rebuilds it), suite **104 of 104**. **Camera-tested 2026-11-18** (owner: ".40 beta
+  looks good. lets push the beta to github"). Published as a GitHub pre-release from try/v0.40-beta, as v0.40-alpha.
