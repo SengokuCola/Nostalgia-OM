@@ -211,7 +211,7 @@ VIDEO_BOOT_LINES = [r'^Films put back after a shooting-mode change: 0 \(camera s
 # itself (it held the shutter up). Three clicks = six shutter events; the first half-press loads the films (not logged),
 # so five are logged: three releases, three writes (before: five).
 DEBUG_LOG_RELEASES_ONLY = (r'^Written at shutter button event 5 \(a half-press and its release count one each\); '
-                           r'log writes this power-on: 3$')
+                           r'log writes this power-on: 3, written in the background$')
 # Noise Filter's row '*' (v0.30 test 13, owner 2026-11-16): a COLOR profile without a film, its Noise Filter on Camera
 # (slot +51 = 0), shows the camera's own Noise Filter, and its row has no '*', whatever that setting is. Before the fix
 # the row compared with Standard, so with the camera on Off the row was starred while the profile was not. The
@@ -392,6 +392,7 @@ class Boot:
                                                # or None to remove the file
     watch: tuple = ()                              # build symbols: each time the code reaches one is a hit
     hits: object = None                            # fn([(symbol, path at a0)] in run order) -> errors
+    tids: bool = False                             # hits get (symbol, path at a0, task id, the HLS_EVENT task's id)
     env: tuple = ()                                # (name, value) pairs added to the driver's environment
 
 EDITS_MAGIC, EDITS_LEN = 0x54334d4f, 16 + 24 * 68    # TWMAGIC, TW_LEN in firmware/src/editor.s
@@ -597,14 +598,17 @@ def no_card_file_reads(hits):
         [f'fopen {p}' for p in paths if p.endswith(('BUNDLES.BIN', 'EDITS.BIN'))]
 
 
-LOG_GATE = ('lg_write', 'hl_ok', 'lg_out')
+LOG_GATE = ('lg_write', 'hl_ok', 'lg_out', 'lg_mkw')
 
 
 def card_gate_first_event_only(hits):
-    """lg_write to lg_out hits: the card gate hl_ok in the first event's write only (it finds DEBUG.TXT absent)."""
-    gates, inside = [], False
+    """lg_write to lg_out hits: the card gate hl_ok in the first event's write only (it finds DEBUG.TXT absent);
+    #85: and the log writer task is never made (lg_mkw)."""
+    gates, inside, made = [], False, 0
     for n, _ in hits:
-        if n == 'lg_write':
+        if n == 'lg_mkw':
+            made += 1
+        elif n == 'lg_write':
             gates.append(0)
             inside = True
         elif n == 'lg_out':
@@ -613,7 +617,74 @@ def card_gate_first_event_only(hits):
             gates[-1] += 1
     if len(gates) < 2:
         return [f'lg_write ran {len(gates)} times, want 2 or more']
-    return [f'hl_ok in lg_write after the first event, per event: {gates}'] if any(gates[1:]) else []
+    return ([f'hl_ok in lg_write after the first event, per event: {gates}'] if any(gates[1:]) else []) + \
+        ([f'the log writer task was made {made} times with DEBUG.TXT off'] if made else [])
+
+
+# #85 (crombach): with DEBUG.TXT on, a quick second shot in Single waited for the card, because lg_write wrote CADLOG.TXT
+# in the shutter's task (HLS_EVENT). The fix writes it from a task of its own (lg_wk). Watched: our fopen wrapper (the
+# path at a0) and lg_write / lg_out, with each hit's task id. om-emu takes no photos and its card is never busy, so it
+# shows where the write runs, not the shot timing (camera-only, research/TESTING.md "Past regressions").
+LOG_WRITER = ('lg_write', 'lg_out', 'fopen')
+
+
+def log_written_off_the_shutter_task(hits):
+    """CADLOG.TXT opened at least once, never inside lg_write, never in the HLS_EVENT task; lg_write in that task."""
+    errors, inside, opens = [], False, 0
+    for n, s, tid, hls in hits:
+        if n == 'lg_write':
+            inside = True
+            if tid != hls:
+                errors.append(f'lg_write in task {tid}, not the HLS_EVENT task {hls}')
+        elif n == 'lg_out':
+            inside = False
+        elif (s or '').endswith('CADLOG.TXT'):
+            opens += 1
+            if inside:
+                errors.append('CADLOG.TXT opened inside lg_write (the shutter handler)')
+            if tid == hls:
+                errors.append(f'CADLOG.TXT opened in the HLS_EVENT task ({tid})')
+    return errors + ([] if opens else ['CADLOG.TXT never opened'])
+
+
+# glow-shots-1 (owner, 2026-11-19: "I cannot take more than one picture in a row if I have glow or halation on"): the
+# log's third line times our code at each shutter event (the shutter waits for it), the background CADLOG.TXT writes
+# and our passes on each photo. om-emu takes no photos and its counter barely moves, so the times themselves are
+# camera-only; here: the line is there, every logged event is timed in the HLS_EVENT task after lg_write, and every
+# background write is timed in the writer's task.
+SHOT_TIMING_LINE = (r'^Shot timing \(ms\): our code at shutter events last \d+, longest \d+ \(event \d+\); '
+                    r'log file writes last \d+, longest \d+; photos with our passes \(Halation, Border, CPU grain\) '
+                    r'0, last 0, longest 0; Halation\'s last photo: pass A 0, map 0, pass C 0, pauses for the camera 0 '
+                    r'\(0 ms\)$')
+SHOT_TIMING = ('lg_write', 'lg_ptm', 'lg_wkw', 'lg_ums')
+
+
+def shot_timing_measured(hits):
+    """Each lg_write followed by lg_ptm in the HLS_EVENT task before the next event; each writer fwrite (lg_wkw)
+    followed by one lg_ums in the writer's task."""
+    errors, events, timed, writes, wtimed, open_event = [], 0, 0, 0, 0, False
+    for n, _, tid, hls in hits:
+        if n == 'lg_write':
+            if open_event:
+                errors.append('a shutter event without lg_ptm')
+            events, open_event = events + 1, True
+        elif n == 'lg_ptm':
+            if tid != hls:
+                errors.append(f'lg_ptm in task {tid}, not the HLS_EVENT task {hls}')
+            if open_event:
+                timed += 1
+            open_event = False
+        elif n == 'lg_wkw':
+            writes += 1
+        elif n == 'lg_ums' and tid != hls:
+            wtimed += 1
+    if open_event:
+        errors.append('the last shutter event without lg_ptm')
+    if not events or timed != events:
+        errors.append(f'{events} shutter events, {timed} timed')
+    if not writes or wtimed != writes:
+        errors.append(f'{writes} background writes, {wtimed} timed')
+    return errors
 
 
 CK_WORDS = ['none', 'none (its film has some)', "its film's", 'changed']   # has values x 2 + differs from the built-in
@@ -911,6 +982,14 @@ TESTS = {
     'debug-log-written-at-releases-only': [
         Boot('s1 wait wait s1 wait wait s1 wait wait poweroff', expect=[DEBUG_LOG_RELEASES_ONLY]),
     ],
+    'debug-log-card-write-off-the-shutter-task': [
+        Boot('s1 wait wait s1 wait wait s1 wait wait poweroff', expect=[DEBUG_LOG_RELEASES_ONLY], watch=LOG_WRITER,
+             tids=True, hits=log_written_off_the_shutter_task),
+    ],
+    'debug-log-times-the-shutter-events-and-writes': [
+        Boot('s1 wait wait s1 wait wait s1 wait wait poweroff', expect=[DEBUG_LOG_RELEASES_ONLY, SHOT_TIMING_LINE],
+             watch=SHOT_TIMING, tids=True, hits=shot_timing_measured),
+    ],
     'debug-log-off-writes-no-log': [
         Boot('s1 wait wait s1 wait wait s1 wait wait poweroff', card={'DEBUG.TXT': None}, no_log=True, watch=LOG_GATE,
              hits=card_gate_first_event_only),
@@ -1155,7 +1234,16 @@ def elf_symbols(path):
 
 
 def boot_key(boot):
-    return boot.tokens, boot.mode_dial, boot.photo_switch, tuple(sorted(boot.card.items())), boot.watch, boot.hits, boot.env
+    return (boot.tokens, boot.mode_dial, boot.photo_switch, tuple(sorted(boot.card.items())), boot.watch, boot.hits,
+            boot.env, boot.tids)
+
+
+@functools.lru_cache(maxsize=None)
+def writer_env(build):
+    """#85: the debug log's writer task (lg_wk), made at the first logged event with DEBUG.TXT on the card. om-emu
+    refuses to start a task entry it does not model, so session_ed1.mjs allows OM_WORKER_ENTRY's."""
+    entry = elf_symbols(build / 'p.elf').get('lg_wk')
+    return {'OM_WORKER_ENTRY': f'{entry:x}'} if entry is not None else {}
 
 
 def run_boot(emu, build, d, i, boot, card, syms, fixtures=None):
@@ -1171,8 +1259,11 @@ def run_boot(emu, build, d, i, boot, card, syms, fixtures=None):
         tokens = tokens.format_map(syms)
     env = {**os.environ, 'OM_EMU_MODEL': MODEL, 'NV_FILE': str(d / 'nv.bin'), 'MODE0': str(boot.mode_dial),
            'PSET0': str(boot.photo_switch)}
+    env.update(writer_env(build))
     if boot.watch:
         env.update(WATCH=','.join(syms[n] for n in boot.watch), WSTR='1', WBOOT='1')
+    if boot.tids:
+        env.update(WTID='1')
     env.update(boot.env)
     try:
         r = node(DRIVER, emu, build / 'main.bin', card, d / f'boot{i}.json', nxt, tokens, env=env)
@@ -1188,7 +1279,8 @@ def run_boot(emu, build, d, i, boot, card, syms, fixtures=None):
         errors.append(f'boot {i}: the firmware did not power off (boot{i}.json)')
     if boot.hits:
         name = {int(syms[n], 16): n for n in boot.watch}
-        hits = [(name[int(h['pc'], 16)], h.get('s')) for h in json.loads((d / f'boot{i}.json').read_text())['hits']]
+        hits = [(name[int(h['pc'], 16)], h.get('s'), *((h.get('tid'), h.get('hls')) if boot.tids else ()))
+                for h in json.loads((d / f'boot{i}.json').read_text())['hits']]
         errors += [f'boot {i}: {e} (boot{i}.json)' for e in boot.hits(hits)]
     return nxt, read_log(emu, nxt, d / f'cadlog{i}.txt'), errors, None
 
@@ -1374,7 +1466,8 @@ def look_model(table, ks, kh, balance, curves):
 def run_ncall(emu, build, d, card0, tokens, spec):
     """One boot of the driver in d: tokens ending in ncall, which runs spec's calls -> {name: result}, or an error."""
     (d / 'spec.json').write_text(json.dumps(spec))
-    env = {**os.environ, 'OM_EMU_MODEL': MODEL, 'NCALL': str(d / 'spec.json'), 'NOUT': str(d / 'out.json')}
+    env = {**os.environ, 'OM_EMU_MODEL': MODEL, 'NCALL': str(d / 'spec.json'), 'NOUT': str(d / 'out.json'),
+           **writer_env(build)}
     r = node(DRIVER, emu, build / 'main.bin', card0, d / 'boot.json', d / 'card.omsd', tokens, env=env)
     (d / 'boot.log').write_text(r.stdout + r.stderr)
     if r.returncode or not (d / 'out.json').exists():
@@ -2081,8 +2174,49 @@ def run_cropsave(emu, build, out, card0):
     return CROPSAVE, errors
 
 
+# glow-shots-2: hl_run gives its CPU back between lock groups (hl_yld) only while the shutter button is half-pressed
+# (hl_hp, set by lg_pr through the uncached alias), at most HL_YMAX sleeps a photo. Called directly: button up, button
+# held, the cap reached; the sleep itself (sdl_dly_tsk) is camera-only, so the call stops at it (hl_ydl). Then a boot:
+# a release clears hl_hp (poked to 1 first). Halation's bytes with the new calls: halation-matches-the-model.
+HLYIELD = 'halation-pauses-only-while-half-pressed'
+HL_YMAX = 800
+
+
+def run_hlyield(emu, build, out, card0):
+    d = out / HLYIELD
+    d.mkdir(parents=True, exist_ok=True)
+    sym = elf_symbols(build / 'p.elf')
+    hp, yn, ydl = sym['hl_hp'] + 0x40000000, sym['hl_yn'], sym['hl_ydl']
+    def case(name, pressed, sleeps):
+        return {'name': name, 'pc': 'B', 'stop': ['B+7', f'{ydl:#x}'], 'max': 20000,
+                'mem': [['B', 'dd'], ['B+1', f"={sym['hl_yld']:#x}-B"], ['B+5', 'f014'],    # call hl_yld,[d2,d3,a2,a3],20
+                        [f'{hp:#x}', f'{pressed:02x}'], [f'{yn:#x}', sleeps.to_bytes(4, 'little').hex()]],
+                'read': [[f'{yn:#x}', 4]], 'restore': [[f'{hp:#x}', '00'], [f'{yn:#x}', '00000000']]}
+    spec = [case('button-up', 0, 0), case('half-pressed', 1, 0), case('cap-reached', 1, HL_YMAX)]
+    res = run_ncall(emu, build, d, card0, 's1 wait wait ncall', spec)
+    if isinstance(res, str):
+        return HLYIELD, [res]
+    errors = []
+    want = {'button-up': (False, 0), 'half-pressed': (True, 1), 'cap-reached': (False, HL_YMAX)}
+    for name, (sleeps, n) in want.items():
+        r = res[name]
+        pc, got = int(r['regs']['pc'], 16), int.from_bytes(bytes.fromhex(r['mem'][0]), 'little')
+        if r['steps'] >= 20000:
+            errors.append(f'{name}: hl_yld did not return (out.json)')
+        elif (pc == ydl) != sleeps:
+            errors.append(f'{name}: ' + ('no sleep' if sleeps else 'slept') + ' (out.json)')
+        elif sleeps and int(r['regs']['d0'], 16) != 1:
+            errors.append(f"{name}: sleep of {r['regs']['d0']} ticks, not 1 (out.json)")
+        if got != n:
+            errors.append(f'{name}: {got} sleeps counted, not {n} (out.json)')
+    name, more = run_test(HLYIELD, [
+        Boot(f'poke:{hp:x}=01 s1 wait wait expect:mem:{hp:x}=00 poweroff'),
+    ], emu, build, card0, out)
+    return HLYIELD, errors + more
+
+
 # Tests that call our code directly through run_ncall: name -> runner(emu, build, out, card0).
-DIRECT = {WB: run_wb, HL: run_hl, CROPEL: run_cropel, LIVE: run_livelook, CROPSAVE: run_cropsave}
+DIRECT = {WB: run_wb, HL: run_hl, CROPEL: run_cropel, LIVE: run_livelook, CROPSAVE: run_cropsave, HLYIELD: run_hlyield}
 
 
 def newest_looks():

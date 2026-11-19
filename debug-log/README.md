@@ -19,9 +19,9 @@ update didn't install. See [Install, step 4](https://androidfanman.github.io/cad
 
 ## What's in the log
 
-The camera rewrites `CADLOG.TXT` at every half-press and every release of the shutter button (each counts as one
-event), so the log always shows the moment of the last one. It only reads the camera's settings: it never changes
-them. Since v0.30 it has these parts:
+The camera notes every half-press and every release of the shutter button (each counts as one event) and rewrites
+`CADLOG.TXT` in the background a moment after you let go of the button, so the log shows the last release and saving
+it never holds up a shot (#85). It only reads the camera's settings: it never changes them. Since v0.30 it has these parts:
 
 | Part | What it says |
 |---|---|

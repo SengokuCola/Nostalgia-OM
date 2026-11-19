@@ -10955,9 +10955,17 @@ fl_stw:
  .set KCM_W, 40
  .set KBT_W, 42                   /* lg_cv[CI_BTN .. CI_DIAL + 15] */
 lg_pr:                            /* jmp from pr_ed, pr_hook's frame: as `call ed_trig; jmp trig_resume` there */
+ mov (USCLK),d0                   /* glow-shots-1: when our code at this shutter event starts (lg_ptm) */
+ mov d0,(lg_pt0)
  movbu (18,sp),d0                 /* v0.30.3: the shutter handler's event word (16,sp) {0x0100 half-press, 0x0101 its
                                    * release} (om-emu trace at 0x60415216, 2026-11-17): byte 18 is 1 at the release */
  movbu d0,(lg_rel)
+ cmp 0,d0                         /* glow-shots-2: hl_hp 1 at a half-press, 0 at its release (hl_yld reads it) */
+ mov 1,d0
+ beq 1f
+ clr d0
+1:
+ movbu d0,(hl_hp + 0x40000000)
  clr d0                           /* L1: the first shutter event releases the hooks held since the early load */
  movbu d0,(el_hold)
  call lg_pre,[d2,d3,a2,a3],36
@@ -10969,8 +10977,9 @@ lg_pr:                            /* jmp from pr_ed, pr_hook's frame: as `call e
  call cm_hp,[d2,d3,a2,a3],24      /* k4: in P / A / S / M, their films and choice now (kept in M) */
  call lg_write,[d2,d3,a2,a3],40
  call ex_live,[d2,d3,a2,a3],48    /* v0.28 pc1: the film's settings now, for the next photo's code */
+ call lg_ptm,[d2,d3],12           /* glow-shots-1: how long the shutter waited for our code at this event */
  jmp trig_resume
-lg_pre:                           /* edits waiting before ed_trig (it saves them and clears DIRTY) */
+lg_pre:                         /* edits waiting before ed_trig (it saves them and clears DIRTY) */
  clr d0
  movbu d0,(lg_dty)
  PVAL 1f
@@ -11000,6 +11009,7 @@ lg_write:                         /* frame 40: (0) call slot, (4) handle */
  mov 1,d0
  movbu d0,(lg_on)
  call lg_chk,[d2,d3,a2,a3],40     /* dl6: the card files' presence and header checksums, once */
+ call lg_mkw,[d2,d3,a2,a3],32     /* #85: the log writer task (lg_wk), once: CADLOG.TXT is written from there */
 2:
  mov (lg_n),d2                    /* the event (lg_ring) */
  inc d2
@@ -11066,6 +11076,26 @@ lg_write:                         /* frame 40: (0) call slot, (4) handle */
  bne 18f
  jmp lg_out                       /* noted in memory only; the next write has it */
 18:
+ mov (lg_tid),d0                  /* #85: with the log writer, not while it copies lg_buf (lg_bc); else lg_bb = 1. */
+ cmp 0,d0                         /* (8,sp) LOCK's token, (12,sp) lg_bc: d2 / d3 / a2 / a3 stay as the build had them */
+ ble 19f
+ clr d0
+ call LOCK,[d2],8
+ mov d0,(8,sp)
+ movbu (lg_bc),d0
+ mov d0,(12,sp)
+ cmp 0,d0
+ bne 1f
+ mov 1,d0
+ movbu d0,(lg_bb)
+1:
+ mov (8,sp),d0
+ call UNLOCK,[d2],8
+ mov (12,sp),d0
+ cmp 0,d0
+ beq 19f
+ jmp lg_out                       /* noted in memory only; the next release's report has it */
+19:
  mov (lg_w),d0
  inc d0
  mov d0,(lg_w)
@@ -11126,7 +11156,16 @@ lg_write:                         /* frame 40: (0) call slot, (4) handle */
  movbu d0,(a1)
  mov 10,d0
  movbu d0,(1,a1)
- mov lg_plog,a0                   /* CADLOG.TXT */
+ mov (lg_tid),d0                  /* #85: the log writer task writes it (lg_wk), not this task (the shutter's) */
+ cmp 0,d0
+ ble 20f
+ mov 1,d0
+ movbu d0,(lg_rdy)
+ clr d0
+ movbu d0,(lg_bb)
+ jmp lg_out
+20:
+ mov lg_plog,a0                   /* CADLOG.TXT (no log writer task: here, as before #85) */
  mov lg_mw,a1
  call fopen,[],4
  cmp 0,a0
@@ -11141,6 +11180,359 @@ lg_write:                         /* frame 40: (0) call slot, (4) handle */
  call fclose,[d2,a2,a3],16
 lg_out:
  ret [d2,d3,a2,a3],40
+
+/* ---- #85 (crombach, v0.40-alpha / beta): with DEBUG.TXT on, a quick second shot in Single / Silent Single waited for
+ * the card. lg_write wrote CADLOG.TXT at each release in the shutter's own task (HLS_EVENT); the camera's file calls go
+ * to its file task in order, so on a card still busy with the last photo the write, and the next shot with it, waited.
+ * Now lg_write still notes every event and builds the report at a release (lg_due, as before; no card work), and a
+ * task of ours, CADLOG (lg_wk), copies the report and writes the file. Made once, at the first event of a power-on
+ * with DEBUG.TXT (after the first half-press: nothing at start-up); with DEBUG.TXT off nothing changes (no task).
+ * If it cannot be made (lg_tid -1) lg_write writes as before. research/NOTES.md, "#85". */
+ .set LG_POLL, 100                /* the writer's poll: sdl_dly_tsk ticks (ms), as the SDLOAD worker's */
+ .set LG_WPRI, 56                 /* its priority (the SDLOAD worker's, camera-run in sd1..sd3) */
+ .set LG_WSTK, 4096               /* its stack (heap, as SDLOAD's 2048; fopen / fwrite / fclose call the file task) */
+
+/* lg_mkw: `call lg_mkw,[d2,d3,a2,a3],32` from lg_write (HLS_EVENT task), once: the writer's buffer (malloc, as sd_load
+ * and the code block) and stack (sdl_heap_alloc, as sdl_create_worker), the task (the stock create wrapper and start)
+ * -> lg_tid (> 0), else lg_tid -1. Frame: (0) call slot, (4) priority, (8) stack size, (12) stack: task_create's. */
+lg_mkw:
+ mov -1,d0
+ mov d0,(lg_tid)
+ mov lg_bend - lg_buf,d0
+ call malloc,[],4
+ cmp 0,a0
+ beq 9f
+ mov a0,(lg_wbf)
+ mov LG_WSTK,d0
+ mov sdl_heap_tag,a0
+ mov 260,d1
+ call sdl_heap_alloc,[],4
+ cmp 0,a0
+ beq 9f
+ mov LG_WPRI,d0
+ mov d0,(4,sp)
+ mov LG_WSTK,d0
+ mov d0,(8,sp)
+ mov a0,(12,sp)
+ mov lg_wkn,a0
+ clr d0
+ mov d0,d1
+ mov lg_wk,a1
+ call sdl_task_create,[d2,d3,a2,a3],56
+ cmp 0,d0
+ ble 9f
+ exth d0
+ mov d0,d2
+ call sdl_task_start,[d2,d3,a2],16
+ cmp 0,d0
+ blt 9f
+ mov d2,(lg_tid)
+9:
+ ret [d2,d3,a2,a3],32
+
+/* lg_wk: task CADLOG's entry. Every LG_POLL ms: when a report waits (lg_rdy), the shutter button is up (lg_rel) and
+ * no shutter event came since the last poll, it takes the report under LOCK (not while lg_write builds it: lg_bb;
+ * lg_bc while it copies), copies lg_buf to its own buffer (lg_wbf) by words and writes CADLOG.TXT from there (the
+ * card's medium word checked first, as hl_ok). It never ends (the camera's power-off ends it). d3: lg_n at the last
+ * poll; (4,sp) the file handle. */
+lg_wk:
+ add -8,sp                        /* (0,sp) belongs to CALL: it writes the return address there */
+ clr d3
+1:
+ mov LG_POLL,d0
+ call sdl_dly_tsk,[d2,a2,a3],16
+ mov (lg_n),d0
+ mov d0,d1
+ sub d3,d1
+ mov d0,d3
+ cmp 0,d1
+ bne 1b                           /* a shutter event since the last poll */
+ movbu (lg_rel),d0
+ cmp 0,d0
+ beq 1b                           /* the shutter button held (a half-press) */
+ movbu (lg_rdy),d0
+ cmp 0,d0
+ beq 1b
+ clr d0
+ call LOCK,[d2],8
+ mov 0,a3
+ movbu (lg_bb),d1
+ cmp 0,d1
+ bne 2f
+ movbu (lg_rdy),d1
+ cmp 0,d1
+ beq 2f
+ mov 1,d1
+ movbu d1,(lg_bc)
+ clr d1
+ movbu d1,(lg_rdy)
+ mov 1,a3
+2:
+ call UNLOCK,[d2],8               /* d0: LOCK's token */
+ cmp 0,a3
+ beq 1b
+ mov lg_buf,a0
+ mov (lg_wbf),a1
+ mov lg_bend - lg_buf,d1
+ lsr 2,d1
+3:
+ mov (a0),d0
+ mov d0,(a1)
+ inc4 a0
+ inc4 a1
+ add -1,d1
+ bne 3b
+ clr d0
+ movbu d0,(lg_bc)
+ mov 61440,d1                     /* the card mounted (hl_ok's medium words) */
+ mov (MS_A),d0
+ cmp d1,d0
+ beq 4f
+ mov (MS_B),d0
+ cmp d1,d0
+ beq 4f
+ mov (MS_C),d0
+ cmp d1,d0
+ bne 1b
+4:
+ mov (USCLK),d0                   /* glow-shots-1: the write's time, its wait behind the camera's own card work included */
+ mov d0,(lg_wt0)
+ mov lg_plog,a0                   /* CADLOG.TXT */
+ mov lg_mw,a1
+ call fopen,[],4
+ cmp 0,a0
+ beq 1b
+ mov a0,(4,sp)
+ mov (4,sp),a1
+ mov lg_bend - lg_buf,d1
+ mov 1,d0
+ mov (lg_wbf),a0
+lg_wkw:                           /* the writer's fwrite (tests watch it) */
+ call fwrite,[d2,d3,a2,a3],24
+ mov (4,sp),a0
+ call fclose,[d2,a2,a3],16
+ mov (lg_wt0),d0                  /* glow-shots-1: -> lg_wms (this write), lg_wmx (the longest) */
+ mov (USCLK),d1
+ sub d1,d0
+ call lg_ums,[],0
+ mov d0,(lg_wms)
+ mov (lg_wmx),d1
+ cmp d1,d0
+ bls 5f
+ mov d0,(lg_wmx)
+5:
+ mov (lg_wd),d0
+ inc d0
+ mov d0,(lg_wd)
+ bra 1b
+lg_wkn:
+ .asciz "CADLOG"
+ .balign 4
+
+/* ---- glow-shots-1 (2026-11-19, owner: "I cannot take more than one picture in a row if I have glow or halation on"):
+ * the debug log's third line gets the shot timing, so a camera test shows where a quick second shot waits. USCLK is
+ * the camera's microsecond counter (it counts down; camera-read since the start-up timing of 2026-11-14 and grain g1b).
+ *   - our code at each shutter event (lg_pr to trig_resume, the shutter waits for it): last and longest, and the
+ *     longest's event number; a report shows the times up to the event before it (its own is still running);
+ *   - the log writer's CADLOG.TXT writes (fopen to fclose: the wait behind the camera's own card work included);
+ *   - photos where xb_gs ran a pass of ours on the finished picture (Halation, CPU grain, gentler Shading, Border):
+ *     count, last and longest (xblock.s writes pt_n / pt_us / pt_mx; several CPUs may develop stills at once, so a
+ *     count can miss one: a diagnostic only). research/NOTES.md, "Glow / Halation: the next shot waits". */
+/* lg_ums: `call lg_ums,[],0`, d0 = start - end of USCLK -> d0 = ms (to 65 s, as tg_ms); uses d1, MDR. */
+lg_ums:
+ and 0x7fffffff,d0
+ lsr 4,d0
+ mov 1049,d1
+ mul d1,d0                        /* (us / 16) x 1049 / 65536 = us / 999.6 */
+ lsr 16,d0
+ ret [],0
+
+/* lg_ptm: `call lg_ptm,[d2,d3],12` at the end of lg_pr (HLS_EVENT task): this event's time in our code -> lg_pms,
+ * the longest -> lg_pmx and its event (lg_n) -> lg_pme. Uses d0, d1, MDR. */
+lg_ptm:
+ mov (lg_pt0),d0
+ mov (USCLK),d1
+ sub d1,d0
+ call lg_ums,[],0
+ mov d0,(lg_pms)
+ mov (lg_pmx),d1
+ cmp d1,d0
+ bls 9f
+ mov d0,(lg_pmx)
+ mov (lg_n),d0
+ mov d0,(lg_pme)
+9:
+ ret [d2,d3],12
+ .balign 4
+lg_pt0:                           /* glow-shots-1: USCLK at lg_pr's start */
+ .long 0
+lg_pms:                           /* the last finished shutter event's time in our code (ms) */
+ .long 0
+lg_pmx:                           /* the longest (ms) */
+ .long 0
+lg_pme:                           /* its event (lg_n) */
+ .long 0
+lg_wt0:                           /* USCLK before the writer's fopen */
+ .long 0
+lg_wms:                           /* the writer's last CADLOG.TXT write (ms) */
+ .long 0
+lg_wmx:                           /* the longest (ms) */
+ .long 0
+pt_n:                             /* photos with a pass of ours in xb_gs (xblock.s) */
+ .long 0
+pt_us:                            /* the last one's passes (us) */
+ .long 0
+pt_mx:                            /* the longest (us) */
+ .long 0
+
+/* ---- glow-shots-2 (2026-11-19; cad: "glow is faster, but halation still seems very slow"). glow-shots-1 on the camera:
+ * our passes 1361 / 1742 ms a photo (Halation alone, indoors), and in Single the presses during them took no shot,
+ * while Glow (the camera's own passes on the image processor, no CPU of ours) shot freely and the shutter handler ran
+ * at once (our code at shutter events 0 ms). hl_run runs in the capture job's task with the lock (interrupts and
+ * dispatch off) held for most of its 1.4-1.7 s, so the camera's own tasks on that CPU barely run; the guess
+ * (analysis): live view / AF work there, and Single (S-AF) waits for them. So:
+ *   - hl_yld at the end of each of hl_run's lock groups (passes A and C, lock given back): while the shutter button
+ *     is half-pressed (hl_hp), sleep one tick (sdl_dly_tsk 1: the OS's delay, as the log writer and the SDLOAD worker
+ *     call it; it does nothing with dispatch off) so the camera's tasks get this CPU; at most HL_YMAX a photo (a long
+ *     half-press slows the pass by about the sleeps' time, well under the 10 s an E-P7 watchdog allowed).
+ *   - hl_tk: the times of pass A (reading the frame), the map (blur, curve) and pass C (drawing) for the log.
+ * The picture is the same byte for byte (only when the pass runs changes). research/NOTES.md, "glow-shots-2". */
+ .set HL_YMAX, 800                /* sleeps a photo at most */
+/* hl_yld: `call hl_yld,[d2,d3,a2,a3],20`, no lock held (capture job's task): the sleep above; counts hl_yn, hl_yus. */
+hl_yld:
+ movbu (hl_hp + 0x40000000),d0    /* the uncached alias (written by lg_pr on another CPU) */
+ cmp 0,d0
+ beq 9f
+ mov (hl_yn),d0
+ cmp HL_YMAX,d0
+ bcc 9f
+ inc d0
+ mov d0,(hl_yn)
+ mov (USCLK),d2
+ mov 1,d0
+hl_ydl:                           /* the sleep (tests stop here) */
+ call sdl_dly_tsk,[d2,a2,a3],16
+ mov (USCLK),d1
+ sub d1,d2                        /* start - end: the counter counts down */
+ and 0x7fffffff,d2
+ mov (hl_yus),d0
+ add d2,d0
+ mov d0,(hl_yus)
+9:
+ ret [d2,d3,a2,a3],20
+
+/* hl_tk: `call hl_tk,[d2,d3],12`, d0 = 0 before pass A, 1 after it, 2 before pass C, 3 at the end: USCLK -> hl_tv[d0]
+ * (and the later slots, for a frame that stops early). At 0 the photo's sleeps are reset; at 3 its times (ms) ->
+ * hl_ma (pass A), hl_mb (the map), hl_mc (pass C: 0 when the frame stopped before it), its sleeps -> hl_lyn / hl_lym,
+ * hl_tn + 1. Uses d0, d1, a0, a1, MDR. */
+hl_tk:
+ mov d0,d2
+ mov (USCLK),d1
+ mov hl_tv,a0
+ mov d2,d0
+ asl2 d0
+ add d0,a0
+ mov d2,d0
+1:
+ mov d1,(a0)
+ inc4 a0
+ inc d0
+ cmp 4,d0
+ bcs 1b
+ cmp 0,d2
+ bne 2f
+ clr d0
+ mov d0,(hl_yn)
+ mov d0,(hl_yus)
+ movbu d0,(hl_c2)
+ bra 9f
+2:
+ cmp 2,d2
+ bne 3f
+ mov 1,d0
+ movbu d0,(hl_c2)
+ bra 9f
+3:
+ cmp 3,d2
+ bne 9f
+ mov (hl_tv),d0                   /* pass A: tv0 - tv1 */
+ mov (hl_tv + 4),d1
+ sub d1,d0
+ call lg_ums,[],0
+ mov d0,(hl_ma)
+ movbu (hl_c2),d0
+ cmp 0,d0
+ bne 4f
+ mov (hl_tv + 4),d0               /* stopped before pass C: the map is tv1 - tv3, pass C 0 */
+ mov (hl_tv + 12),d1
+ sub d1,d0
+ call lg_ums,[],0
+ mov d0,(hl_mb)
+ clr d0
+ mov d0,(hl_mc)
+ bra 5f
+4:
+ mov (hl_tv + 4),d0
+ mov (hl_tv + 8),d1
+ sub d1,d0
+ call lg_ums,[],0
+ mov d0,(hl_mb)
+ mov (hl_tv + 8),d0
+ mov (hl_tv + 12),d1
+ sub d1,d0
+ call lg_ums,[],0
+ mov d0,(hl_mc)
+5:
+ mov (hl_yn),d0
+ mov d0,(hl_lyn)
+ mov (hl_yus),d0
+ call lg_ums,[],0
+ mov d0,(hl_lym)
+ mov (hl_tn),d0
+ inc d0
+ mov d0,(hl_tn)
+9:
+ ret [d2,d3],12
+ .balign 4
+hl_tv:                            /* USCLK at hl_run's four points (hl_tk) */
+ .long 0, 0, 0, 0
+hl_yn:                            /* this photo's sleeps (hl_yld) */
+ .long 0
+hl_yus:                           /* their time (us) */
+ .long 0
+hl_ma:                            /* the last photo: pass A (ms) */
+ .long 0
+hl_mb:                            /* the map (ms) */
+ .long 0
+hl_mc:                            /* pass C (ms) */
+ .long 0
+hl_lyn:                           /* its sleeps */
+ .long 0
+hl_lym:                           /* their time (ms) */
+ .long 0
+hl_tn:                            /* photos timed */
+ .long 0
+hl_c2:                            /* pass C reached on this photo */
+ .byte 0
+ .balign 64
+hl_hp:                            /* 1 while the shutter button is half-pressed (lg_pr): written and read through the
+                                   * uncached alias only, alone in its 64-byte line (no cached neighbour's write-back
+                                   * can carry an old copy over it) */
+ .byte 0
+ .balign 64
+lg_tid:                       /* #85: the log writer task's id (0 not made yet, -1 could not be made) */
+ .long 0
+lg_wbf:                            /* its buffer (malloc, lg_bend - lg_buf B) */
+ .long 0
+lg_wd:                            /* CADLOG.TXT writes it made this power-on */
+ .long 0
+lg_rdy:                           /* a report in lg_buf it has not taken yet (lg_write sets it, lg_wk clears it) */
+ .byte 0
+lg_bb:                            /* lg_write building lg_buf */
+ .byte 0
+lg_bc:                            /* lg_wk copying lg_buf */
+ .byte 0
+ .balign 4
 
 /* lg_top: `call lg_top,[d2,d3,a2,a3],24`: START-UP and the card files. */
 lg_top:
@@ -11987,6 +12379,13 @@ lg_sum:
  LGS lg_t3
  mov (lg_w),d0
  LGD
+ mov (lg_tid),d0                  /* #85: who writes the file */
+ mov lg_t3b,a0
+ cmp 0,d0
+ bgt 175f
+ mov lg_t3c,a0
+175:
+ call lg_s,[],0
  LGS tg_l1                        /* better grain g1: our grain tiles */
  mov (tg_n),d0
  LGD
@@ -12026,6 +12425,48 @@ lg_sum:
  LGS vg_l5
  mov (vg_ms),d0
  LGD
+ LGS gs1_t1                        /* glow-shots-1: shot timing (ms) */
+ mov (lg_pms),d0
+ LGD
+ LGS gs1_t2
+ mov (lg_pmx),d0
+ LGD
+ LGS gs1_t3
+ mov (lg_pme),d0
+ LGD
+ LGS gs1_t4
+ mov (lg_wms),d0
+ LGD
+ LGS gs1_t2
+ mov (lg_wmx),d0
+ LGD
+ LGS gs1_t5
+ mov (pt_n),d0
+ LGD
+ LGS gs1_t6
+ mov (pt_us),d0
+ call lg_ums,[],0
+ LGD
+ LGS gs1_t2
+ mov (pt_mx),d0
+ call lg_ums,[],0
+ LGD
+ LGS gs2_t1                       /* glow-shots-2: Halation's last photo, per pass */
+ mov (hl_ma),d0
+ LGD
+ LGS gs2_t2
+ mov (hl_mb),d0
+ LGD
+ LGS gs2_t3
+ mov (hl_mc),d0
+ LGD
+ LGS gs2_t4
+ mov (hl_lyn),d0
+ LGD
+ LGS gs2_t6
+ mov (hl_lym),d0
+ LGD
+ LGS gs2_t5
  LGS lg_y0                        /* now: mode, exposure, WB, picture, screen */
  call lg_new,[],0
  movbu (14,a3),d0
@@ -13964,6 +14405,34 @@ lg_t2:
  .asciz "\r\nWritten at shutter button event "
 lg_t3:
  .asciz " (a half-press and its release count one each); log writes this power-on: "
+lg_t3b:
+ .asciz ", written in the background"
+lg_t3c:
+ .asciz ", written in the shutter's task"
+gs1_t1:                            /* glow-shots-1: shot timing (lg_sum) */
+ .asciz "\r\nShot timing (ms): our code at shutter events last "
+gs1_t2:
+ .asciz ", longest "
+gs1_t3:
+ .asciz " (event "
+gs1_t4:
+ .asciz "); log file writes last "
+gs1_t5:
+ .asciz "; photos with our passes (Halation, Border, CPU grain) "
+gs1_t6:
+ .asciz ", last "
+gs2_t1:                           /* glow-shots-2 */
+ .asciz "; Halation's last photo: pass A "
+gs2_t2:
+ .asciz ", map "
+gs2_t3:
+ .asciz ", pass C "
+gs2_t4:
+ .asciz ", pauses for the camera "
+gs2_t5:
+ .asciz " ms)"
+gs2_t6:
+ .asciz " ("
 lg_t4:
  .asciz "\r\n\r\nSTART-UP (this power-on)\r\nSettings block: "
 lg_found:
@@ -16686,11 +17155,8 @@ dg_bend:
  *   A. every 2nd row, every pair's Y0: e = Y0 - T (if > 0) summed into u16 64 x 64 px cells (E), and Y0 >> 2 summed
  *      into a second grid (Q); the cell's mean B = 4 Q / samples
  *   B. E: [1 2 1] / 4 (rounded, edges repeated), HL_BLUR times across, HL_BLUR times down; a broad copy HL_BLUR2 times
- *      (h4), mixed: v0 = (tight (256 - HL_MIX) + broad HL_MIX + 128) >> 8
- *   map: u by table (hl_lo / hl_hi); n = cells with u(v0) >= HL_COVU: none at n >= HL_COVHI % of the cells, full
- *      strength up to HL_COVLO %, faded between (sc). h8 (owner, v0.30.3 test 1: "the halation at 5 kinda just ends"):
- *      the broad copy blurred HL_BLUR3 times more (wide), v = v0 + ((wide HL_WIDE + 128) >> 8): a long, even tail
- *      (the bright-frame count n stays on v0). g = (((u(v) gmax) >> 8) sc) >> 8; w = min(255, HL_WMUL (255 - B))
+ *   map: u by table (hl_lo / hl_hi); n = cells with u >= HL_COVU: none at n >= HL_COVHI % of the cells, full strength
+ *      up to HL_COVLO %, faded between (sc); g = (((u gmax) >> 8) sc) >> 8; w = min(255, HL_WMUL (255 - B))
  *   C. per row g and w lerped between the two nearest cell rows, then per pair between cell centres:
  *      Y += ((255 - Y) g HL_KY) >> 16 per pixel; with c = (g w) >> 8: Cb / Cr += (c HL_KCB / HL_KCR) >> 8 (floor,
  *      clamped). h2 (camera h1: the fast grain is in the image before this pass): the chroma weight w comes from the
@@ -16837,6 +17303,8 @@ hl_run:
  add -1,d1
  bne 3b
  call FLUSH,[d2,d3],16            /* no stale lines in the window's cached view */
+ clr d0                           /* glow-shots-2: pass A starts */
+ call hl_tk,[d2,d3],12
 
  /* ---- A. the grids: every 2nd row, Y0 of every pair (hl_pa); K sampled rows per lock */
  mov (28,sp),d0                   /* K = max(1, HL_LOCKN / (HL_PA_PAIR pairs + HL_PA_CELL GW + 40)) */
@@ -16945,11 +17413,14 @@ hl_run:
  add 2,d0
  mov d0,(52,sp)
 19:
+ call hl_yld,[d2,d3,a2,a3],20     /* glow-shots-2: the CPU to the camera while the button is half-pressed */
  mov (52,sp),d0
  mov (16,sp),d1
  cmp d1,d0
  bcs 10b
 
+ mov 1,d0                         /* glow-shots-2: pass A done */
+ call hl_tk,[d2,d3],12
  /* ---- w: each cell's mean B = 4 Q / samples (a full cell: Q >> 8), w = min(255, HL_WMUL (255 - B)), in place of Q */
  mov (80,sp),a2
  clr d0
@@ -17053,7 +17524,7 @@ hl_run:
  add -1,d3
  bne 31b
 
- /* ---- the bright-frame count n: cells whose h4 mix gives u >= HL_COVU (h8: counted as before, u not kept) */
+ /* ---- the curve (u in place of E) and the bright-frame count n */
  mov (40,sp),a0
  mov (72,sp),d3
  clr d2
@@ -17073,7 +17544,8 @@ hl_run:
  mov hl_hi,a1
 42:
  add d0,a1
- movbu (a1),d0                    /* u of the h4 mix */
+ movbu (a1),d0                    /* u */
+ movhu d0,(a0)
  cmp HL_COVU,d0
  bcs 44f
  inc d2
@@ -17110,43 +17582,6 @@ hl_run:
  call hl_div,[d2,d3,a2,a3],20
 45:
  mov d0,(64,sp)
- /* ---- h8: the wide layer = the broad one blurred HL_BLUR3 more times (in place); the curve, u in place of E, from
-  * v = the h4 mix + ((wide HL_WIDE + 128) >> 8) (up to ~70 K: 32-bit, the hl_hi index clamped as before) */
- mov (104,sp),a0
- mov HL_BLUR3,d0
- mov (12,sp),d1                   /* GW | GH << 16 */
- call hl_blur,[d2,d3,a2,a3],44
- mov (40,sp),a0
- mov (104,sp),a2
- mov (72,sp),d3
-47:
- movhu (a2),d0
- mov HL_WIDE,d1
- mul d1,d0
- add 128,d0
- lsr 8,d0
- movhu (a0),d1
- add d1,d0                        /* v */
- cmp 1024,d0
- bcc 48f
- lsr 2,d0
- mov hl_lo,a1
- bra 49f
-48:
- lsr 8,d0
- cmp 255,d0
- bls 1f
- mov 255,d0
-1:
- mov hl_hi,a1
-49:
- add d0,a1
- movbu (a1),d0                    /* u */
- movhu d0,(a0)
- add 2,a0
- add 2,a2
- add -1,d3
- bne 47b
  mov (40,sp),a0                   /* g = (((u gmax) >> 8) sc) >> 8 */
  mov (72,sp),d3
  clr d2                           /* OR of g */
@@ -17163,6 +17598,8 @@ hl_run:
  add 2,a0
  add -1,d3
  bne 46b
+ mov 2,d0                         /* glow-shots-2: the map done (d2 kept) */
+ call hl_tk,[d2,d3],12
  cmp 2,d2
  bcs 90f                          /* no g >= 2 anywhere: nothing changes (h7; was: all g = 0) */
 
@@ -17301,6 +17738,7 @@ hl_run:
  inc d0
  mov d0,(52,sp)
 67:
+ call hl_yld,[d2,d3,a2,a3],20     /* glow-shots-2: as after pass A's groups */
  mov (52,sp),d0
  mov (92,sp),d1
  cmp d1,d0
@@ -17311,6 +17749,8 @@ hl_run:
  mov d0,(52,sp)
  jmp 50b
 90:
+ mov 3,d0                         /* glow-shots-2: the end */
+ call hl_tk,[d2,d3],12
  mov (104,sp),a0
  call free,[],4
  mov (80,sp),a0

@@ -12,6 +12,10 @@ const { Player } = await import(EMU + '/src/lab/player.mjs');
 const { PLAYER_PARSER } = await import(EMU + '/scenarios/session_replay.mjs');
 const { cardFromImage, cardImage } = await import(EMU + '/src/lab/sdcard.mjs');
 const STATE = 0x62b4dd16, POOL = 0xa2852000, HMAX = 0xae81;
+// OM_WORKER_ENTRY=HEX: a task of ours (#85: the debug log's writer, lg_wk) the firmware makes and starts; the lab refuses
+// to start a task entry it does not model, so it joins the application's allowed entries (decoded address), as in
+// session_ed1_worker.mjs
+if (process.env.OM_WORKER_ENTRY) { const ca = await import(EMU + '/src/lab/camapp.mjs'); ca.CA_TASK_ENTRIES.push((parseInt(process.env.OM_WORKER_ENTRY, 16) - 0x10021020) >>> 0); }
 let c0 = cardFromImage(new Uint8Array(fs.readFileSync(CARD)));
 const card = { open: () => c0, save: (x) => { c0 = x; } };
 const rom = expandImage(new Uint8Array(fs.readFileSync(IMAGE)));
