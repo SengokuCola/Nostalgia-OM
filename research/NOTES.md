@@ -8746,3 +8746,8 @@ screen gets 3200 K A3 M2 at the half-press that takes the set; FILM 15 Shade G3;
     Auto WB chose more blue (WB_RBLevels 380 / 818 against 438 / 636, afternoon light); both record WB compensation
     0 0 (exiftool WhiteBalanceBracket), so not the grain (analysis).
 - **WB (#88): no photos and no log line for it in this run;** the owner's report on the panel steps is pending.
+- **Camera result, #88 (owner's OM-3, 2026-11-19, the owner's report on the WB steps: "All looked right";
+  camera-tested by eye, no photos or log for it):** the film's WB compensation in the super control panel, a change
+  there kept by the film, and the films' WB after power-off / on as TEST-STEPS 1-5 describe. Not reported separately:
+  live view's colour per film, video's WB, the optional new film set (SETS/WB-TEST), photos comparing the shift's
+  strength with v0.40, in-camera RAW Data Edit.
