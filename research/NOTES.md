@@ -8529,3 +8529,14 @@ Assign C4, Set B, Assign C5: C4 showed Set B's films, and Set A again is ignored
 - **Border** -5..+5 as before (LOOKS.BIN +48). The photo code writes +48 as a signed nibble (photocode.py: value & 15),
   so LookLab now reads byte 48 signed (a black border was read as 11..15). firmware/photocode.py's UNSIGNED, docs/
   PHOTO_CODE.md and the devkit reader still list 48 as unsigned (left for cad).
+
+## v0.40 release (2026-11-19; owner: "lets post the .40 beta 3 as an official release, .40. update looklab, and the tour, and github")
+- `release/v0.40` = try/v0.40-beta (v0.40-beta3, ad6c7a5) + main (the owner's roadmap pages, install guide and tour
+  fixes since v0.30.3; ROADMAP.md and FILM_SIMULATION_ROADMAP.md taken from main, then updated for the release) +
+  `feature/looklab-camera-match` (dc46267, owner-approved 2026-11-18) + `feature/tour-v040` (c7abe94, pictures
+  approved 2026-11-18).
+- Firmware: only `firmware/VERSION` changes ("v0.40"). E1479999.BIN 1e039ee2…1c37; `patch.py --release v0.40`
+  rebuilds it byte for byte. The firmware is camera-tested as v0.40-beta3 / fixes-1 (2026-11-19); the release name
+  alone is new (as for earlier releases).
+- LookLab's Halation preview back to h7 (BLUR3 / WIDE removed), as the firmware since beta3; vitest 76 pass.
+- Tour pictures remade with `research/showcase/make.sh` on the release build (WHEEL_IMG = a v0.30.3 build).

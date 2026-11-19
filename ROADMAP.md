@@ -22,28 +22,15 @@ Feature parity with Caduceus for the E-P7: [docs/PARITY.md](docs/PARITY.md).
 | **White balance per film** | Each film remembers its own WB. | **Done (v0.28)** |
 | **One control panel for all Caduceus cameras** ([#71](https://github.com/androidfanman/caduceus-om3/issues/71)) | One shared panel with each camera as a profile, proposed by cakelesscoder (Caduceus for the E-P7). | In progress |
 
-## Coming in v0.40
-
-On top of the v0.40-alpha test version (crop modes, a white Border and our own grain). Camera-tested, not yet released.
-
-| Feature | What it means | Status |
-|---|---|---|
-| **Borders at every ratio, white or black** ([#80](https://github.com/androidfanman/caduceus-om3/issues/80), [#81](https://github.com/androidfanman/caduceus-om3/issues/81)) | The Border row runs −5 to +5 (minus is black), all round at every aspect ratio. | Coming in v0.40 |
-| **Crops kept after a restart** ([#83](https://github.com/androidfanman/caduceus-om3/issues/83)) | XPan, 21:9 and 5:4 no longer fall back to 16:9. | Coming in v0.40 |
-| **Faster grain** | Our own film grain saves faster. | Coming in v0.40 |
-| **Screen Info** | Choose what shows on the shooting screen (rear screen). | Coming in v0.40 |
-| **Live view follows your look** | Look changes show in live view at once. | Coming in v0.40 |
-| **Our version in the camera's menu** | The Caduceus version on the Firmware Version page. | Coming in v0.40 |
-| **Faster looks** ([#82](https://github.com/androidfanman/caduceus-om3/pull/82), by crombach) | Looks save faster; two Picture Mode bugs fixed. | Coming in v0.40 |
-| **LookLab matched to the camera** | The preview follows the camera more closely. | Coming in v0.40 |
-
 ## Bugs being looked at
 
 | Bug | What happens | Status |
 |---|---|---|
+| **Quick single shots held up** ([#85](https://github.com/androidfanman/caduceus-om3/issues/85)) | With `DEBUG.TXT` on (or Halation on), a quick second press in Single waited for the card. | Fixed in v0.40 (reporter to confirm) |
+| **Custom modes and a new film set** ([#86](https://github.com/androidfanman/caduceus-om3/issues/86)) | A new `LOOKS.BIN` showed the new names with a "*" over the old films' colours. | Fixed in v0.40 |
 | **Video crash** ([#74](https://github.com/androidfanman/caduceus-om3/issues/74)) | Video crashed once on the video dial; no debug log. | Closed (2026-11-18), fixed in v0.40 |
 | **Photos not saved with Film Grain** ([#50](https://github.com/androidfanman/caduceus-om3/issues/50)) | One user's camera takes the photo but saves nothing; never reproduced here. | Marked fixed for v0.40 (reporter to confirm) |
-| **Reboot when switching films fast** ([#72](https://github.com/androidfanman/caduceus-om3/issues/72)) | Holding the arrow in the film list restarted the camera. | Fixed in v0.40 (and the test versions) |
+| **Reboot when switching films fast** ([#72](https://github.com/androidfanman/caduceus-om3/issues/72)) | Holding the arrow in the film list restarted the camera. | Fixed in v0.40 |
 | **Debug log slows the shutter** | With `DEBUG.TXT` on, the shutter fired late. | Fixed in v0.30.3 |
 | **Black review, frozen live view** ([#65](https://github.com/androidfanman/caduceus-om3/issues/65)) | A Glow photo gave a black review, then live view froze. | Fixed in v0.30.2 |
 | **Menu flash in Picture Mode** ([#66](https://github.com/androidfanman/caduceus-om3/issues/66)) | One-frame flash leaving the B/W or WB row. | Fixed in v0.30.1 |
@@ -63,7 +50,7 @@ On top of the v0.40-alpha test version (crop modes, a white Border and our own g
 
 | Feature | What it means | Status |
 |---|---|---|
-| **Focus stacking with more lenses** ([#79](https://github.com/androidfanman/caduceus-om3/pull/79), by Bensonson) | Focus stacking with more autofocus lenses. [Details](docs/FOCUS_STACKING.md). | Coming in v0.40 |
+| **Focus stacking with more lenses** ([#79](https://github.com/androidfanman/caduceus-om3/pull/79), by Bensonson) | Focus stacking with more autofocus lenses. [Details](docs/FOCUS_STACKING.md). | **Done (v0.40)** |
 | **Panasonic lenses work properly** ([#29](https://github.com/androidfanman/caduceus-om3/issues/29)) | The aperture ring on Panasonic lenses sets the aperture. | Requested |
 | **Sync image stabilisation with Panasonic lenses** ([#47](https://github.com/androidfanman/caduceus-om3/issues/47)) | Camera and lens stabilisation working together. | Requested |
 
@@ -90,8 +77,8 @@ On top of the v0.40-alpha test version (crop modes, a white Border and our own g
 
 | Feature | Released |
 |---|---|
-| **Crop modes XPan, 21:9 and 5:4**, a white Border per film, our own grain with Grain Size, safer start-up, Picture Mode open 30 s ([#76](https://github.com/androidfanman/caduceus-om3/pull/76), by crombach) | v0.40-alpha (test version, 2026-11-17) |
-| **Fast-switching reboot fixed** ([#72](https://github.com/androidfanman/caduceus-om3/issues/72)); the colour wheel's label names the page ([#70](https://github.com/androidfanman/caduceus-om3/pull/70)); our looks stay out of video ([#73](https://github.com/androidfanman/caduceus-om3/pull/73)), both by crombach | v0.30.4-alpha (test version, 2026-11-17) |
+| **Crop modes XPan, 21:9 and 5:4** (crops back at switch-on, [#83](https://github.com/androidfanman/caduceus-om3/issues/83)), a **black or white Border** per film at every ratio, **our own grain** with Grain Size, **looks in live view** as you adjust them, **your own choice of screen info**, our version on the Firmware Version screen, Picture Mode open 30 s ([#76](https://github.com/androidfanman/caduceus-om3/pull/76), by crombach), faster looks ([#82](https://github.com/androidfanman/caduceus-om3/pull/82), by crombach), faster Halation, focus stacking with more lenses ([#79](https://github.com/androidfanman/caduceus-om3/pull/79), by Bensonson), LookLab matched to the camera | v0.40 (2026-11-19) |
+| **Fast-switching reboot fixed** ([#72](https://github.com/androidfanman/caduceus-om3/issues/72)); the colour wheel's label names the page ([#70](https://github.com/androidfanman/caduceus-om3/pull/70)); our looks stay out of video ([#73](https://github.com/androidfanman/caduceus-om3/pull/73)), both by crombach | v0.40 (2026-11-19) |
 | **Faster Halation** with a smoother fade; faster dial clicks and saves ([#69](https://github.com/androidfanman/caduceus-om3/pull/69), by crombach) | v0.30.3 (2026-11-17) |
 | **Color Mix and RGB curves**, the 20 films regraded, a new Picture Mode order, films ready at switch-on ([#56](https://github.com/androidfanman/caduceus-om3/pull/56), by crombach) | v0.30 (2026-11-16) |
 | **Custom modes keep their own copy** of everything | v0.29.5 (2026-11-15) |

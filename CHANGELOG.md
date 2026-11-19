@@ -8,6 +8,7 @@ What changed in each version of Caduceus for OM-3, newest first. To install or u
 
 | Version | Released | What's new |
 |---|---|---|
+| [v0.40](#v040) | 2026-11-19 | Crop modes XPan, 21:9 and 5:4; a black or white Border per film at every ratio; our own film grain (1–5, Grain Size); looks in live view as you adjust them; your own choice of screen info; faster looks and Halation; quick single shots (#85); new film sets in custom modes (#86); focus stacking with more lenses; LookLab knows all of it |
 | [v0.40-beta3](#v040-beta3-test-version) | 2026-11-19 (test version) | Quick single shots with the debug log (#85) or Halation on; a new film set replaces the films cleanly in custom modes too (#86) |
 | [v0.40-beta2](#v040-beta2-test-version) | 2026-11-18 (test version) | Three more screen-info rows: Subject Detection, Exposure Level Meter and Image Aspect, each hidden on its own |
 | [v0.40-beta](#v040-beta-test-version) | 2026-11-18 (test version) | Crops back at switch-on (#83) with the frame lines at their edges; looks shown in live view as you adjust them; black borders (Border −5..+5) and the border at every ratio; your own choice of screen info; faster grain; our version on the Firmware Version screen; faster looks and two fixes (#82); focus stacking with more lenses (#79) |
@@ -45,6 +46,28 @@ What changed in each version of Caduceus for OM-3, newest first. To install or u
 
 Versions are named v0.N from v0.18 on. Earlier builds were called "test N" while they were tried on the camera; the
 same number is used here (test 17 = v0.17).
+
+## v0.40
+2026-11-19. Everything from the v0.40 test versions below (alpha, beta, beta2, beta3) and v0.30.4-alpha, camera-tested
+in each of them; the firmware is v0.40-beta3's under its release name (the Firmware Version screen shows "0.40").
+- **Crop modes: XPan (65:24), 21:9 and 5:4**, saved at that shape (RAW keeps the whole sensor), with live view, the
+  frame lines, grid, focus target and histogram to match; back as soon as the camera starts (#83). Idea from Caduceus
+  for the E-P7 (cakelesscoder).
+- **Borders:** a Border row per film, −5 (black) to +5 (white), all round at every aspect ratio, JPEG only.
+- **Our own film grain:** Off and 1 to 5 with a Grain Size row (Fine, Medium, Coarse).
+- **Looks in live view as you adjust them:** split toning, Split Tone Balance, RGB curves and B/W.
+- **Your own choice of shooting-screen info:** 17 tick rows in Information 1, 2 and 3 (rear screen).
+- **Faster:** looks and film switching (#82, by crombach), Halation (the shorter fade from before v0.30.3, about a third
+  faster, and it pauses while you half-press), grain.
+- **Picture Mode open 30 s** (#75, #76, by crombach); **focus stacking with more lenses** (#79, by Bensonson); the
+  Caduceus version on the Firmware Version screen; the color wheel's label names the page (#64, #70, by crombach).
+- **Fixed:** switching films fast rebooted the camera (#72); quick single shots waited for the card with the debug log
+  on (#85); a new film set left the old colours in custom modes (#86); our looks reached video and S&Q (#68, #73, by
+  crombach); a flash between the WB table and Highlight & Shadow (#82).
+- **LookLab:** crop previews, the black and white Border, Film Grain 1–5 with Grain Size, the Halation fade as on the
+  camera, a preview matched to the camera (calibration cards on the OM-3), and a "?" help box beside every setting.
+- **The tour** shows the crop modes, the Border, our grain, screen info and the Firmware Version screen.
+  Details: [release notes](releases/v0.40/NOTES.md).
 
 ## v0.40-beta3 (test version)
 A test version (a GitHub pre-release; v0.30.3 stays the current version): v0.40-beta2 plus three fixes. Camera-tested

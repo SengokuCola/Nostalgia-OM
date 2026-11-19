@@ -394,6 +394,19 @@ Stock: OLY_E_147_1100_0000_0000_3.BIN sha 8c133084…696d, main 5e8d376e…7d59.
 - The looks are only as good as the preview model (`src/preview.ts`) is of the camera; check a film on the camera
   before trusting it for anything critical.
 
+## v0.40 release (release/v0.40 = try/v0.40-beta v0.40-beta3 ad6c7a5 + main + feature/looklab-camera-match + feature/tour-v040; 2026-11-19)
+
+- Firmware: v0.40-beta3's sources with `firmware/VERSION` "v0.40" (the only firmware change; the Firmware Version page
+  shows "Caduceus : 0.40"). E1479999.BIN 1e039ee2…1c37; `patch.py --release v0.40` makes it byte for byte.
+  v0.40-beta3 (6b004005…f6e1) was camera-tested as fixes-1 (2026-11-19).
+- v0.40-beta2 (d0bfd03): screen info s3, 17 rows (Subject Detection, Exposure Level Meter, Image Aspect on their own).
+- v0.40-beta3 (ad6c7a5): #85 (lg_write no longer writes CADLOG in the shutter task: task CADLOG polls every 100 ms and
+  writes when the button is up), Halation h8 -> h7 with a yield while half-pressed (hl_yld, cap 800), #86 (newfilms.s,
+  ext13: a new set is made fresh in every mode, at the first half-press). Details: `research/NOTES.md`.
+- LookLab: `feature/looklab-camera-match` (calibration cards, crop previews, Film Grain 1..5 + Grain Size, Border read
+  signed, "?" help), and the Halation preview back to h7 (no wide layer) as the firmware.
+- Extras: CURVES.BIN as v0.30, LOOKS.BIN / DEBUG.TXT as v0.29+, the photo code kit as v0.40-beta2 (Border signed).
+
 ## v0.40-beta (try/v0.40-beta = try/v0.41-dev 2a86f1e; every part camera-tested 2026-11-18, then the package (f5771793…8c73); GitHub pre-release)
 
 - Base: v0.40-alpha + `try/v0.41-dev`: grain g3 (the tile from a 128-row band, ~0.27 s), screen info s2 (`screeninfo.s`,

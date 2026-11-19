@@ -1,6 +1,6 @@
 # Using Caduceus for OM-3
 
-This page is for **v0.30.3**, the latest version (and the v0.30.4-alpha and v0.40-alpha test versions). Not installed yet? Start with [Install](INSTALL.md).
+This page is for **v0.40**, the latest version. Not installed yet? Start with [Install](INSTALL.md).
 
 > [!NOTE]
 > Caduceus works on the **COLOR** profiles (COLOR 1–4) and your **films** (FILM 1–20). The Monochrome profiles keep
