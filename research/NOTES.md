@@ -8451,3 +8451,9 @@ Assign C4, Set B, Assign C5: C4 showed Set B's films, and Set A again is ignored
 - Build "v0.40-dev fixes-1 (#85 + #86 + Halation h7)": E1479999.BIN `02c56b35…2bd8`, GUIDES.BIN `940d439e…5030`;
   ext12 262,016 of 262,144, ext13 73,664 of 81,920. Full suite (with --stock): **112 of 112 pass**.
 - Still to do before a release: LookLab's Halation preview (`webapp/src/preview.ts`) still draws h8's tail: back to h7.
+- **Camera-tested 2026-11-19 (fixes-1, 02c56b35…):** Set A taken at the first half-press (films the camera never had),
+  C4 assigned on it (films 5 6). Set B taken (18 of 20 films changed; 2 COLORs made from the new films, 2 looks
+  marked); P and the new custom mode (C3, owner's pick of slot) on FILM 5 "B Superia 400". Owner: in C4, COLOR 1 showed
+  "B Superia 400" with no "*" (v0.40-beta2: the B name with a "*" and Set A's colours). Back-to-standard taken: COLOR 1
+  "ColorPlus 200", FILM 6 Ektar 100 kept the owner's change ("Films with changes: 6"). Logs clean ("nothing unusual").
+  #86 fixed on the camera; #85 and Halation h7 rode along (no shots held up).
