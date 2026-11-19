@@ -8320,6 +8320,9 @@ Test driver tools/emulator/focus_stacking.mjs runs this routine with controlled 
   moves); it takes no photos: the times, the photo passes and the shots are camera-only (TESTING.md "Past
   regressions").
 - Sizes: ext13 71,232 -> 71,760 of 81,920; GUIDES.BIN 13,844 -> 13,904 B (cap 16,448). ext11 / ext12 unchanged.
+- Build "v0.40-dev glow-shots-1 (#85 fix + shot timing in the log)" (020242c, rebuilt from the commit: the same),
+  E1479999.BIN `bafe6994…9940`, GUIDES.BIN `a4fce6c8…6e44`; full suite (with --stock) **107 of 107 pass**.
+  Package `test-builds/2026-11-19-glow-shots-1` (go back: v0.40-beta2 `70e0d8c8…e2fb`).
 - **Camera test (TEST-STEPS):** Single drive, Glow on, quick presses; the same with Halation; then once with
   `DEBUG.TXT` off to compare. If shots still wait with `DEBUG.TXT` off, the camera's own handling of the slow
   development holds them (no code of ours runs at that point): the timing line then says how long our pass takes.
