@@ -202,7 +202,7 @@ VIDEO_BOOT_LINES = [r'^Films put back after a shooting-mode change: 0 \(camera s
 # itself (it held the shutter up). Three clicks = six shutter events; the first half-press loads the films (not logged),
 # so five are logged: three releases, three writes (before: five).
 DEBUG_LOG_RELEASES_ONLY = (r'^Written at shutter button event 5 \(a half-press and its release count one each\); '
-                           r'log writes this power-on: 3$')
+                           r'log writes this power-on: 3, written in the background$')
 # Noise Filter's row '*' (v0.30 test 13, owner 2026-11-16): a COLOR profile without a film, its Noise Filter on Camera
 # (slot +51 = 0), shows the camera's own Noise Filter, and its row has no '*', whatever that setting is. Before the fix
 # the row compared with Standard, so with the camera on Off the row was starred while the profile was not. The
@@ -383,6 +383,7 @@ class Boot:
                                                # or None to remove the file
     watch: tuple = ()                              # build symbols: each time the code reaches one is a hit
     hits: object = None                            # fn([(symbol, path at a0)] in run order) -> errors
+    tids: bool = False                             # hits get (symbol, path at a0, task id, the HLS_EVENT task's id)
     env: tuple = ()                                # (name, value) pairs added to the driver's environment
 
 EDITS_MAGIC, EDITS_LEN = 0x54334d4f, 16 + 24 * 68    # TWMAGIC, TW_LEN in firmware/src/editor.s
@@ -567,14 +568,17 @@ def no_card_file_reads(hits):
         [f'fopen {p}' for p in paths if p.endswith(('BUNDLES.BIN', 'EDITS.BIN'))]
 
 
-LOG_GATE = ('lg_write', 'hl_ok', 'lg_out')
+LOG_GATE = ('lg_write', 'hl_ok', 'lg_out', 'lg_mkw')
 
 
 def card_gate_first_event_only(hits):
-    """lg_write to lg_out hits: the card gate hl_ok in the first event's write only (it finds DEBUG.TXT absent)."""
-    gates, inside = [], False
+    """lg_write to lg_out hits: the card gate hl_ok in the first event's write only (it finds DEBUG.TXT absent);
+    #85: and the log writer task is never made (lg_mkw)."""
+    gates, inside, made = [], False, 0
     for n, _ in hits:
-        if n == 'lg_write':
+        if n == 'lg_mkw':
+            made += 1
+        elif n == 'lg_write':
             gates.append(0)
             inside = True
         elif n == 'lg_out':
@@ -583,7 +587,34 @@ def card_gate_first_event_only(hits):
             gates[-1] += 1
     if len(gates) < 2:
         return [f'lg_write ran {len(gates)} times, want 2 or more']
-    return [f'hl_ok in lg_write after the first event, per event: {gates}'] if any(gates[1:]) else []
+    return ([f'hl_ok in lg_write after the first event, per event: {gates}'] if any(gates[1:]) else []) + \
+        ([f'the log writer task was made {made} times with DEBUG.TXT off'] if made else [])
+
+
+# #85 (crombach): with DEBUG.TXT on, a quick second shot in Single waited for the card, because lg_write wrote CADLOG.TXT
+# in the shutter's task (HLS_EVENT). The fix writes it from a task of its own (lg_wk). Watched: our fopen wrapper (the
+# path at a0) and lg_write / lg_out, with each hit's task id. om-emu takes no photos and its card is never busy, so it
+# shows where the write runs, not the shot timing (camera-only, research/TESTING.md "Past regressions").
+LOG_WRITER = ('lg_write', 'lg_out', 'fopen')
+
+
+def log_written_off_the_shutter_task(hits):
+    """CADLOG.TXT opened at least once, never inside lg_write, never in the HLS_EVENT task; lg_write in that task."""
+    errors, inside, opens = [], False, 0
+    for n, s, tid, hls in hits:
+        if n == 'lg_write':
+            inside = True
+            if tid != hls:
+                errors.append(f'lg_write in task {tid}, not the HLS_EVENT task {hls}')
+        elif n == 'lg_out':
+            inside = False
+        elif (s or '').endswith('CADLOG.TXT'):
+            opens += 1
+            if inside:
+                errors.append('CADLOG.TXT opened inside lg_write (the shutter handler)')
+            if tid == hls:
+                errors.append(f'CADLOG.TXT opened in the HLS_EVENT task ({tid})')
+    return errors + ([] if opens else ['CADLOG.TXT never opened'])
 
 
 CK_WORDS = ['none', 'none (its film has some)', "its film's", 'changed']   # has values x 2 + differs from the built-in
@@ -850,6 +881,10 @@ TESTS = {
     'debug-log-written-at-releases-only': [
         Boot('s1 wait wait s1 wait wait s1 wait wait poweroff', expect=[DEBUG_LOG_RELEASES_ONLY]),
     ],
+    'debug-log-card-write-off-the-shutter-task': [
+        Boot('s1 wait wait s1 wait wait s1 wait wait poweroff', expect=[DEBUG_LOG_RELEASES_ONLY], watch=LOG_WRITER,
+             tids=True, hits=log_written_off_the_shutter_task),
+    ],
     'debug-log-off-writes-no-log': [
         Boot('s1 wait wait s1 wait wait s1 wait wait poweroff', card={'DEBUG.TXT': None}, no_log=True, watch=LOG_GATE,
              hits=card_gate_first_event_only),
@@ -1094,7 +1129,8 @@ def elf_symbols(path):
 
 
 def boot_key(boot):
-    return boot.tokens, boot.mode_dial, boot.photo_switch, tuple(sorted(boot.card.items())), boot.watch, boot.hits, boot.env
+    return (boot.tokens, boot.mode_dial, boot.photo_switch, tuple(sorted(boot.card.items())), boot.watch, boot.hits,
+            boot.env, boot.tids)
 
 
 def run_boot(emu, build, d, i, boot, card, syms, fixtures=None):
@@ -1104,14 +1140,18 @@ def run_boot(emu, build, d, i, boot, card, syms, fixtures=None):
     if boot.card:
         card = put_card_files(emu, card, boot.card, fixtures, d / f'card{i}-in.omsd')
     tokens = boot.tokens
-    if '{' in tokens or boot.watch:
-        if not syms:
-            syms.update({k: f'{v:x}' for k, v in elf_symbols(build / 'p.elf').items()})
+    if not syms:
+        syms.update({k: f'{v:x}' for k, v in elf_symbols(build / 'p.elf').items()})
+    if '{' in tokens:
         tokens = tokens.format_map(syms)
     env = {**os.environ, 'OM_EMU_MODEL': MODEL, 'NV_FILE': str(d / 'nv.bin'), 'MODE0': str(boot.mode_dial),
            'PSET0': str(boot.photo_switch)}
+    if 'lg_wk' in syms:                            # #85: the debug log's writer task, which om-emu must be told to start
+        env['OM_WORKER_ENTRY'] = syms['lg_wk']
     if boot.watch:
         env.update(WATCH=','.join(syms[n] for n in boot.watch), WSTR='1', WBOOT='1')
+    if boot.tids:
+        env.update(WTID='1')
     env.update(boot.env)
     try:
         r = node(DRIVER, emu, build / 'main.bin', card, d / f'boot{i}.json', nxt, tokens, env=env)
@@ -1127,7 +1167,8 @@ def run_boot(emu, build, d, i, boot, card, syms, fixtures=None):
         errors.append(f'boot {i}: the firmware did not power off (boot{i}.json)')
     if boot.hits:
         name = {int(syms[n], 16): n for n in boot.watch}
-        hits = [(name[int(h['pc'], 16)], h.get('s')) for h in json.loads((d / f'boot{i}.json').read_text())['hits']]
+        hits = [(name[int(h['pc'], 16)], h.get('s'), *((h.get('tid'), h.get('hls')) if boot.tids else ()))
+                for h in json.loads((d / f'boot{i}.json').read_text())['hits']]
         errors += [f'boot {i}: {e} (boot{i}.json)' for e in boot.hits(hits)]
     return nxt, read_log(emu, nxt, d / f'cadlog{i}.txt'), errors, None
 

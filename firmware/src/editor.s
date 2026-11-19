@@ -10996,6 +10996,7 @@ lg_write:                         /* frame 40: (0) call slot, (4) handle */
  mov 1,d0
  movbu d0,(lg_on)
  call lg_chk,[d2,d3,a2,a3],40     /* dl6: the card files' presence and header checksums, once */
+ call lg_mkw,[d2,d3,a2,a3],32     /* #85: the log writer task (lg_wk), once: CADLOG.TXT is written from there */
 2:
  mov (lg_n),d2                    /* the event (lg_ring) */
  inc d2
@@ -11062,6 +11063,26 @@ lg_write:                         /* frame 40: (0) call slot, (4) handle */
  bne 18f
  jmp lg_out                       /* noted in memory only; the next write has it */
 18:
+ mov (lg_tid),d0                  /* #85: with the log writer, not while it copies lg_buf (lg_bc); else lg_bb = 1. */
+ cmp 0,d0                         /* (8,sp) LOCK's token, (12,sp) lg_bc: d2 / d3 / a2 / a3 stay as the build had them */
+ ble 19f
+ clr d0
+ call LOCK,[d2],8
+ mov d0,(8,sp)
+ movbu (lg_bc),d0
+ mov d0,(12,sp)
+ cmp 0,d0
+ bne 1f
+ mov 1,d0
+ movbu d0,(lg_bb)
+1:
+ mov (8,sp),d0
+ call UNLOCK,[d2],8
+ mov (12,sp),d0
+ cmp 0,d0
+ beq 19f
+ jmp lg_out                       /* noted in memory only; the next release's report has it */
+19:
  mov (lg_w),d0
  inc d0
  mov d0,(lg_w)
@@ -11122,7 +11143,16 @@ lg_write:                         /* frame 40: (0) call slot, (4) handle */
  movbu d0,(a1)
  mov 10,d0
  movbu d0,(1,a1)
- mov lg_plog,a0                   /* CADLOG.TXT */
+ mov (lg_tid),d0                  /* #85: the log writer task writes it (lg_wk), not this task (the shutter's) */
+ cmp 0,d0
+ ble 20f
+ mov 1,d0
+ movbu d0,(lg_rdy)
+ clr d0
+ movbu d0,(lg_bb)
+ jmp lg_out
+20:
+ mov lg_plog,a0                   /* CADLOG.TXT (no log writer task: here, as before #85) */
  mov lg_mw,a1
  call fopen,[],4
  cmp 0,a0
@@ -11137,6 +11167,155 @@ lg_write:                         /* frame 40: (0) call slot, (4) handle */
  call fclose,[d2,a2,a3],16
 lg_out:
  ret [d2,d3,a2,a3],40
+
+/* ---- #85 (crombach, v0.40-alpha / beta): with DEBUG.TXT on, a quick second shot in Single / Silent Single waited for
+ * the card. lg_write wrote CADLOG.TXT at each release in the shutter's own task (HLS_EVENT); the camera's file calls go
+ * to its file task in order, so on a card still busy with the last photo the write, and the next shot with it, waited.
+ * Now lg_write still notes every event and builds the report at a release (lg_due, as before; no card work), and a
+ * task of ours, CADLOG (lg_wk), copies the report and writes the file. Made once, at the first event of a power-on
+ * with DEBUG.TXT (after the first half-press: nothing at start-up); with DEBUG.TXT off nothing changes (no task).
+ * If it cannot be made (lg_tid -1) lg_write writes as before. research/NOTES.md, "#85". */
+ .set LG_POLL, 100                /* the writer's poll: sdl_dly_tsk ticks (ms), as the SDLOAD worker's */
+ .set LG_WPRI, 56                 /* its priority (the SDLOAD worker's, camera-run in sd1..sd3) */
+ .set LG_WSTK, 4096               /* its stack (heap, as SDLOAD's 2048; fopen / fwrite / fclose call the file task) */
+
+/* lg_mkw: `call lg_mkw,[d2,d3,a2,a3],32` from lg_write (HLS_EVENT task), once: the writer's buffer (malloc, as sd_load
+ * and the code block) and stack (sdl_heap_alloc, as sdl_create_worker), the task (the stock create wrapper and start)
+ * -> lg_tid (> 0), else lg_tid -1. Frame: (0) call slot, (4) priority, (8) stack size, (12) stack: task_create's. */
+lg_mkw:
+ mov -1,d0
+ mov d0,(lg_tid)
+ mov lg_bend - lg_buf,d0
+ call malloc,[],4
+ cmp 0,a0
+ beq 9f
+ mov a0,(lg_wbf)
+ mov LG_WSTK,d0
+ mov sdl_heap_tag,a0
+ mov 260,d1
+ call sdl_heap_alloc,[],4
+ cmp 0,a0
+ beq 9f
+ mov LG_WPRI,d0
+ mov d0,(4,sp)
+ mov LG_WSTK,d0
+ mov d0,(8,sp)
+ mov a0,(12,sp)
+ mov lg_wkn,a0
+ clr d0
+ mov d0,d1
+ mov lg_wk,a1
+ call sdl_task_create,[d2,d3,a2,a3],56
+ cmp 0,d0
+ ble 9f
+ exth d0
+ mov d0,d2
+ call sdl_task_start,[d2,d3,a2],16
+ cmp 0,d0
+ blt 9f
+ mov d2,(lg_tid)
+9:
+ ret [d2,d3,a2,a3],32
+
+/* lg_wk: task CADLOG's entry. Every LG_POLL ms: when a report waits (lg_rdy), the shutter button is up (lg_rel) and
+ * no shutter event came since the last poll, it takes the report under LOCK (not while lg_write builds it: lg_bb;
+ * lg_bc while it copies), copies lg_buf to its own buffer (lg_wbf) by words and writes CADLOG.TXT from there (the
+ * card's medium word checked first, as hl_ok). It never ends (the camera's power-off ends it). d3: lg_n at the last
+ * poll; (4,sp) the file handle. */
+lg_wk:
+ add -8,sp                        /* (0,sp) belongs to CALL: it writes the return address there */
+ clr d3
+1:
+ mov LG_POLL,d0
+ call sdl_dly_tsk,[d2,a2,a3],16
+ mov (lg_n),d0
+ mov d0,d1
+ sub d3,d1
+ mov d0,d3
+ cmp 0,d1
+ bne 1b                           /* a shutter event since the last poll */
+ movbu (lg_rel),d0
+ cmp 0,d0
+ beq 1b                           /* the shutter button held (a half-press) */
+ movbu (lg_rdy),d0
+ cmp 0,d0
+ beq 1b
+ clr d0
+ call LOCK,[d2],8
+ mov 0,a3
+ movbu (lg_bb),d1
+ cmp 0,d1
+ bne 2f
+ movbu (lg_rdy),d1
+ cmp 0,d1
+ beq 2f
+ mov 1,d1
+ movbu d1,(lg_bc)
+ clr d1
+ movbu d1,(lg_rdy)
+ mov 1,a3
+2:
+ call UNLOCK,[d2],8               /* d0: LOCK's token */
+ cmp 0,a3
+ beq 1b
+ mov lg_buf,a0
+ mov (lg_wbf),a1
+ mov lg_bend - lg_buf,d1
+ lsr 2,d1
+3:
+ mov (a0),d0
+ mov d0,(a1)
+ inc4 a0
+ inc4 a1
+ add -1,d1
+ bne 3b
+ clr d0
+ movbu d0,(lg_bc)
+ mov 61440,d1                     /* the card mounted (hl_ok's medium words) */
+ mov (MS_A),d0
+ cmp d1,d0
+ beq 4f
+ mov (MS_B),d0
+ cmp d1,d0
+ beq 4f
+ mov (MS_C),d0
+ cmp d1,d0
+ bne 1b
+4:
+ mov lg_plog,a0                   /* CADLOG.TXT */
+ mov lg_mw,a1
+ call fopen,[],4
+ cmp 0,a0
+ beq 1b
+ mov a0,(4,sp)
+ mov (4,sp),a1
+ mov lg_bend - lg_buf,d1
+ mov 1,d0
+ mov (lg_wbf),a0
+lg_wkw:                           /* the writer's fwrite (tests watch it) */
+ call fwrite,[d2,d3,a2,a3],24
+ mov (4,sp),a0
+ call fclose,[d2,a2,a3],16
+ mov (lg_wd),d0
+ inc d0
+ mov d0,(lg_wd)
+ bra 1b
+lg_wkn:
+ .asciz "CADLOG"
+ .balign 4
+lg_tid:                           /* #85: the log writer task's id (0 not made yet, -1 could not be made) */
+ .long 0
+lg_wbf:                            /* its buffer (malloc, lg_bend - lg_buf B) */
+ .long 0
+lg_wd:                            /* CADLOG.TXT writes it made this power-on */
+ .long 0
+lg_rdy:                           /* a report in lg_buf it has not taken yet (lg_write sets it, lg_wk clears it) */
+ .byte 0
+lg_bb:                            /* lg_write building lg_buf */
+ .byte 0
+lg_bc:                            /* lg_wk copying lg_buf */
+ .byte 0
+ .balign 4
 
 /* lg_top: `call lg_top,[d2,d3,a2,a3],24`: START-UP and the card files. */
 lg_top:
@@ -11982,6 +12161,13 @@ lg_sum:
  LGS lg_t3
  mov (lg_w),d0
  LGD
+ mov (lg_tid),d0                  /* #85: who writes the file */
+ mov lg_t3b,a0
+ cmp 0,d0
+ bgt 175f
+ mov lg_t3c,a0
+175:
+ call lg_s,[],0
  LGS tg_l1                        /* better grain g1: our grain tiles */
  mov (tg_n),d0
  LGD
@@ -13954,6 +14140,10 @@ lg_t2:
  .asciz "\r\nWritten at shutter button event "
 lg_t3:
  .asciz " (a half-press and its release count one each); log writes this power-on: "
+lg_t3b:
+ .asciz ", written in the background"
+lg_t3c:
+ .asciz ", written in the shutter's task"
 lg_t4:
  .asciz "\r\n\r\nSTART-UP (this power-on)\r\nSettings block: "
 lg_found:

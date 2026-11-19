@@ -86,6 +86,7 @@ The gate and the digest have unit tests that need no firmware:
 | `live-dial-turn-holds-the-label` | During a live turn's wait for the mode code, the shooting screen's label holds no picture, and the hold clears once the mode is real (#54) |
 | `video-boot-after-photo-boot` | A video boot after a photo boot does no film or custom-mode work (#53) |
 | `debug-log-written-at-releases-only` | Three half-presses: the debug log is written at the three releases only, not at the half-presses (v0.30.3; the burst rule needs photos: camera-only) |
+| `debug-log-card-write-off-the-shutter-task` | Three half-presses with `DEBUG.TXT`: `CADLOG.TXT` is opened by the log's own writer task, never inside `lg_write` and never in the shutter's task (HLS_EVENT), and the log still says three writes (#85; the shot timing on a busy card is camera-only) |
 | `noise-filter-row-follows-the-camera-setting` | A COLOR profile without a film, its Noise Filter on Camera: the Noise Filter row has no '*' with the camera's own Noise Filter on Standard or on Off, and gets one when Standard is chosen while the camera is on Off (v0.30 test 13) |
 | `curves-file-kept-in-camera` | v0.30 `CURVES.BIN`: taken at the first half-press, a film picked shows its values, kept over a boot with no file, the same file again changes nothing |
 | `curves-file-new-values-follow-edits-stay` | A new `CURVES.BIN` reaches a film you never changed; a curve changed on the RGB page stays when another file comes |
@@ -136,7 +137,11 @@ from the newest release's `LOOKS.BIN` (`card/mkcurves.py`).
 A `Boot` can count what the code does, for a change that leaves the log as it was. `watch=('fopen',)` names build
 symbols, and `hits=fn` gets each time the code reached one, in run order, as `(symbol, string at a0)`, from power-on
 on (`WATCH`, `WSTR` and `WBOOT` in `session_ed1.mjs`). `fn` returns the errors. `debug-log-off-writes-no-log` counts
-`hl_ok` inside `lg_write`, and `card-edits-and-bundles-unused-with-films-in-camera` names the files `fopen` opens. An
+`hl_ok` inside `lg_write` (and that the log's writer task is never made), and
+`card-edits-and-bundles-unused-with-films-in-camera` names the files `fopen` opens. With `tids=True` each hit is
+`(symbol, string at a0, task id, the HLS_EVENT task's id)` (`WTID`): `debug-log-card-write-off-the-shutter-task` checks
+which task opens `CADLOG.TXT`. A task of ours that the firmware starts (#85's `lg_wk`) must be allowed in om-emu: the
+runner passes its entry as `OM_WORKER_ENTRY` to every boot, and `session_ed1.mjs` adds it to the application's tasks. An
 `ncall` call takes `count`, addresses whose hits during the call come back in its result's `count`. The WB and
 Hue / Lightness tests count the getter calls that way.
 
@@ -376,6 +381,7 @@ emulator test as proposed here would have failed. "Maybe" means it depends on a 
 | v0.28–v0.30.1, #65 (#27) | With Image Review on, a Glow or Halation photo gives a black review picture, then the Creative Dial to a standard picture mode freezes live view | No | None, om-emu develops no photos (the review picture is one of the shot's small extra developments) |
 | v0.41-dev test 3 (2026-11-18) | A black Border (-1..-5) left the photo without a border: the capture's route check (xb_cap) sent only a Border above 0 through the Soft Focus passes where xb_gs draws it | No | None, om-emu takes no photos (xb_cap runs at a capture); `border-matches-the-model` covers the drawing itself |
 | v0.41-dev test 4 (2026-11-18) | At 16:9, 3:2, 1:1, 3:4, 5:4, XPan and 21:9 the camera's 1600 px preview inside the JPEG (camera playback, phones) showed a 1 px line of picture at its cut edges: the camera cuts the preview a few px wider than the photo, past the border | Yes for the drawing (`border-matches-the-model` with the margin past a crop's cut sides; test 4's build `caught`); No for the preview itself (om-emu makes no JPEGs) | `border-matches-the-model` |
+| v0.27..v0.40-beta2, #85 | With `DEBUG.TXT` on the card, a quick second shot in Single / Silent Single fired only once the card had written the last photo (worst on slow cards): the shutter's task (HLS_EVENT) wrote `CADLOG.TXT` at each release and waited for the camera's file task | No for the shot timing (om-emu takes no photos and its card is never busy); Yes for the cause, where the write runs | `debug-log-card-write-off-the-shutter-task` (v0.40-beta2's build `caught`) |
 | v0.40-alpha .. v0.40b, #83 | After a power-off in XPan or 21:9 the camera started in 16:9 (5:4: in 4:3) until the first half-press: the crop came back only at the first shutter event | Yes | `crop-xpan-back-at-start-up` (Image Aspect before any half-press); `crop-start-up-restore-photo-only` (cr_el's gates, the half-press fallback) |
 | test 8 = crop83-2 (2026-11-18), #83 | XPan not kept through one power cycle: the camera saved M without a callback while on ("save patches 2"), cr_sin left the live Image Aspect at the crop's base, and the power-off save sealed no tag | Yes, with the camera's own save of M called mid-session | `crop-kept-over-a-save-of-m-while-on` (crop83-2's build `caught`) |
 | crop83-1 (2026-11-18), #83 | The crop put back at start-up was undone later in the same power-on (log: "then 3, set to 6, after 6, now 3"); the next start showed 16:9 | No for the cause (om-emu's start-up is over before the GUI's first state change and it runs no live view); Yes for the put-back, with the base poked back | `crop-kept-when-the-camera-puts-the-base-back` (crop83-1's build `caught`); `crop-xpan-21-9-5-4-kept-over-power-cycles`, `crop-user-pick-after-start-up-kept` |
