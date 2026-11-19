@@ -75,11 +75,12 @@ If it says **Stopped** instead of Done, nothing was written: see [If something g
 1. Put the camera's SD card in your computer.
 2. Copy the **`DCOLYMP`** folder from `SD card files` to the **top of the card**, next to the `DCIM` folder (not
    inside it).
-3. **Get the films.** The 20 film sims are a separate file, `LOOKS.BIN`. Download it from the
-   [latest release](https://github.com/androidfanman/caduceus-om3/releases/latest) (under *Assets*), or make your own in
-   the [LookLab](https://androidfanman.github.io/caduceus-om3/looklab/). Make a folder **`OM3MOD`** at the top of the card
-   (it may be there already) and put `LOOKS.BIN` in it. The camera copies the films into its own memory at the first
-   half-press; after that the card needs nothing of ours.
+3. **Get the films.** The 20 film sims come as two files in the
+   [latest release](https://github.com/androidfanman/caduceus-om3/releases/latest) (under *Assets*): **`LOOKS.BIN`** (the
+   films) and **`CURVES.BIN`** (their Color Mix and RGB curves, from v0.30). Download both. Make a folder **`OM3MOD`** at
+   the top of the card (it may be there already) and put both files in it. The camera copies them into its own memory at
+   the first half-press; after that the card needs nothing of ours. (You can also make your own films in the
+   [LookLab](https://androidfanman.github.io/caduceus-om3/looklab/); `CURVES.BIN` is for the 20 standard films.)
 4. Eject the card properly before you take it out.
 
 The card should now look like this:
@@ -88,6 +89,7 @@ The card should now look like this:
 DCIM/
 DCOLYMP/E1479999.BIN
 OM3MOD/LOOKS.BIN
+OM3MOD/CURVES.BIN
 ```
 
 <!-- picture: the SD card's folders in Finder / Explorer -->

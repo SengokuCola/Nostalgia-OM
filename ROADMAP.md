@@ -5,104 +5,108 @@
 What's planned for Caduceus for OM-3. Nothing here is promised or dated: features land when they work on a real camera.
 Ideas and requests are welcome in [Issues](https://github.com/androidfanman/caduceus-om3/issues).
 
-The order (owner, 2026-11-09): first finish the colour profiles, then video. v0.27 (2026-11-11) added the button customisation (arrow keys, Creative Dial modes) and the film recipe in the photo's EXIF. The lens, focus and button requests
-below are planned too; their place in that order isn't set yet.
+The order (owner, 2026-11-09): colour profiles first, then video. The colour profiles are now complete; video is next.
+The lens and button requests below are planned too; their place in that order isn't set yet.
 
+Feature parity with Caduceus for the E-P7: [docs/PARITY.md](docs/PARITY.md).
 
-Feature parity with Caduceus for the E-P7 (what both have, what lines up, what to do): [docs/PARITY.md](docs/PARITY.md).
-## Next: finishing the colour profiles
-
-The goal is for Color Profile mode to be the best JPEG maker of any camera. With v0.28 (halation, finer split toning,
-WB per film, the Blacks / Whites grid) the colour profiles are complete for now; custom crop modes, photo borders and our own grain are in the v0.40-alpha test version (2026-11-17).
+## Colour profiles
 
 | Feature | What it means | Status |
 |---|---|---|
-| **Films in the camera (any card works)** ([#35](https://github.com/androidfanman/caduceus-om3/issues/35)) | The films, the changes made on the camera and the Extras settings kept in the camera's own settings memory; the guide pictures, the Glow / grain code, labels and tone pictures built into the firmware. A card brings in only films the camera never had; nothing is copied back to the card. Research and design by iancw ([#36](https://github.com/androidfanman/caduceus-om3/pull/36)). Camera-tested. | **Done (v0.29)** |
-| **Films from your own LUTs and Lightroom presets** (LookLab) | Pick a `.cube` LUT or a Lightroom preset (`.xmp`, `.lrtemplate`) and LookLab finds the camera settings that come closest, shown side by side with a match score; Log-video LUTs are flagged. An approximation; the file stays in the browser. Live 2026-11-13; tested with made-up grades, real LUTs and presets being tried by the owner. | Testing |
-| **Halation** | The red glow around bright lights of cinema film (CineStill and others): its own Picture Mode row (0–5), with or without Glow. Method after Caduceus for the E-P7. Camera-tested (soft fade, works with grain and bursts); LookLab slider and preview. | **Done (v0.28)** |
-| **Quick film switching** ([#30](https://github.com/androidfanman/caduceus-om3/issues/30)) | One button to get straight to COLOR 1–4 / FILM 1–20 (and MONO / ART) and pick with the front dial, as on the E-P7: a button function that opens the Picture Mode list directly, then, if possible, a toggle (button or Fn lever) that turns the front dial into a profile dial. Owner: a must. The films in your own order on the camera ([#32](https://github.com/androidfanman/caduceus-om3/issues/32)) is not planned (owner, 2026-11-13). The Creative Dial part ([#21](https://github.com/androidfanman/caduceus-om3/issues/21)) shipped in v0.27. | Tabled (owner, 2026-11-11) |
-| **Gentler Shading** ([#22](https://github.com/androidfanman/caduceus-om3/issues/22)) | Shading is much too strong in both directions; the wish: −5 / +5 like today's −2 / +2, with even steps between. The camera's own strength stayed out of reach (two camera probes, 2026-11-12), so on our COLOR looks' photos our own vignette replaces it (owner's choice, 2026-11-18): the photo only, not the shooting screen, about a second more per photo with Shading on. Test build s1 (2026-11-18): emulator only. Notes: `research/NOTES.md`. | Test build s1 (camera test pending) |
-| **Our version in the camera's menu** | The firmware screen shows OM's version and, below it, the Caduceus version. | In v0.40-beta (test version) |
-| **Colour chart with changeable light** (LookLab) | A drawn colour chart to judge a film in sun at different times of day, shade, lamp light and at different camera WB / Kelvin. Built and tried on 2026-11-09, then taken out: it needs a clearer design first. Notes and the kept code: [docs/CHART_LIGHTBOX.md](docs/CHART_LIGHTBOX.md). | Parked |
-| **Split toning: finer steps and balance** | The wheels run 0–10 in half steps (10 = the old +5) and only add a colour; a **Tone Balance** row under HSL (−5 the shadow colour reaches further, +5 the highlight colour). Camera-tested; in LookLab too. A midtones wheel ([#23](https://github.com/androidfanman/caduceus-om3/issues/23)) is not planned (owner, 2026-11-12: not a photo-editing norm). | **Done (v0.28)** |
-| **Blacks / Whites as one grid** | The Blacks and Whites sliders became one Picture Mode row with a grid like the WB shift grid (Blacks left / right, Whites up / down), −7…+7 each with the same step size, the values in the row's cell under a "B/W ±" icon. Camera-tested; a grid in LookLab too. | **Done (v0.28)** |
-| **Film settings when you pick a film** | **WB:** each film and COLOR remembers the WB last used with it (any mode, Custom WB with its Kelvin), like its HSL; picking it brings that WB back, one that never had one gets Auto. Camera-tested; a WB mode per film in LookLab. **Exposure compensation and ISO per film:** not planned (owner, 2026-11-12: on a digital camera ISO does not change a film's look, and the film's own tone settings brighten it without changing the exposure). | **WB done (v0.28)**; exposure / ISO not planned |
-| **Film Mode (a roll of film)** | Off by default: pick a roll length (e.g. 24 / 36 / 72) and the film you're on is locked until the roll is shot, like Fujifilm's X half "Film Camera Mode" (without hiding photo review). Looked into 2026-11-12: doable with pieces already camera-tested (the film lock, a per-photo counter, saving at the half-press); showing the frames left on the shooting screen is the open part. Notes: `research/NOTES.md`. | Tabled (owner, 2026-11-12) |
-| **Cleaner JPEGs** | Less JPEG compression blocking at high ISO ([#17](https://github.com/androidfanman/caduceus-om3/issues/17)). Out of scope: Caduceus leaves the camera's JPEG compression as it is (owner, 2026-11-12). | Not planned |
+| **Films in the camera** ([#35](https://github.com/androidfanman/caduceus-om3/issues/35)) | Films, edits and Extras kept in the camera's own memory, so any SD card works. Research by iancw. | **Done (v0.29)** |
+| **Films from your own LUTs and Lightroom presets** (LookLab) | Make a film from a `.cube` LUT or a Lightroom preset; the file stays in your browser. | Testing |
+| **Halation** | The red glow around bright lights, its own Picture Mode row (0–5). | **Done (v0.28)** |
+| **Split toning** | Shadows and Highlights wheels in half steps, plus a Tone Balance row. | **Done (v0.28)** |
+| **Blacks / Whites grid** | One grid row, −7 to +7 each. | **Done (v0.28)** |
+| **White balance per film** | Each film remembers its own WB. | **Done (v0.28)** |
+| **One control panel for all Caduceus cameras** ([#71](https://github.com/androidfanman/caduceus-om3/issues/71)) | One shared panel with each camera as a profile, proposed by cakelesscoder (Caduceus for the E-P7). | In progress |
+
+## Coming in v0.40
+
+On top of the v0.40-alpha test version (crop modes, a white Border and our own grain). Camera-tested, not yet released.
+
+| Feature | What it means | Status |
+|---|---|---|
+| **Borders at every ratio, white or black** ([#80](https://github.com/androidfanman/caduceus-om3/issues/80), [#81](https://github.com/androidfanman/caduceus-om3/issues/81)) | The Border row runs −5 to +5 (minus is black), all round at every aspect ratio. | Coming in v0.40 |
+| **Crops kept after a restart** ([#83](https://github.com/androidfanman/caduceus-om3/issues/83)) | XPan, 21:9 and 5:4 no longer fall back to 16:9. | Coming in v0.40 |
+| **Faster grain** | Our own film grain saves faster. | Coming in v0.40 |
+| **Screen Info** | Choose what shows on the shooting screen (rear screen). | Coming in v0.40 |
+| **Live view follows your look** | Look changes show in live view at once. | Coming in v0.40 |
+| **Our version in the camera's menu** | The Caduceus version on the Firmware Version page. | Coming in v0.40 |
+| **Faster looks** ([#82](https://github.com/androidfanman/caduceus-om3/pull/82), by crombach) | Looks save faster; two Picture Mode bugs fixed. | Coming in v0.40 |
+| **LookLab matched to the camera** | The preview follows the camera more closely. | Coming in v0.40 |
 
 ## Bugs being looked at
 
 | Bug | What happens | Status |
 |---|---|---|
-| **Reboot when switching films fast** ([#72](https://github.com/androidfanman/caduceus-om3/issues/72)) | Holding the arrow, or switching quickly between two films in the Picture Mode list, restarted the camera within seconds: after every step the firmware wrote the films' record into the camera's memory. Now written once, as the list (or the super control panel) closes. | Fixed in v0.30.4-alpha (test version) |
-| **Debug log slows the shutter** | With `DEBUG.TXT` on, the log was written at every half-press and release in the shutter's own task: the shutter fired late and bursts went on after release (flrvr). Now written only when you let go, and not right after a burst. | Fixed in v0.30.3 |
-| **Black review, then a frozen live view** ([#65](https://github.com/androidfanman/caduceus-om3/issues/65), probably [#27](https://github.com/androidfanman/caduceus-om3/issues/27)) | With Image Review on, a Glow / Clarity / Halation photo showed a black review picture, and the Creative Dial to a standard picture mode then froze live view. Our effect route no longer reaches a shot's small extra pictures (as the camera does for its own effects); the review and playback screen show the film without the glow. Cause found first by Caduceus for the E-P7. | Fixed in v0.30.2 |
-| **Menu flash in Picture Mode** ([#66](https://github.com/androidfanman/caduceus-om3/issues/66)) | Leaving the B/W or WB Compensation row showed the old row's title and a box with its icon for one frame. The bottom bar now comes back after the next row's values are on screen ([#67](https://github.com/androidfanman/caduceus-om3/pull/67), by crombach). | Fixed in v0.30.1 |
-| **Live dial turns change films** ([#54](https://github.com/androidfanman/caduceus-om3/issues/54)) | Turning the mode dial between a custom mode and P / A / S / M with the camera on put a "*" on COLOR profiles nobody changed, and a mode could come back on the wrong film: the camera reports the new mode a moment after the dial moves, and the films were switched in between. Now the switch waits for the new mode ([#59](https://github.com/androidfanman/caduceus-om3/pull/59), by crombach). | Fixed in v0.30 |
-| **Video freeze** ([#53](https://github.com/androidfanman/caduceus-om3/issues/53)) | In video, a half-press soon after switching on could freeze the live image. Video and S&Q now do no film work ([#55](https://github.com/androidfanman/caduceus-om3/pull/55), by crombach). | Fixed in v0.30 |
-| **Photos not saved with Film Grain** ([#50](https://github.com/androidfanman/caduceus-om3/issues/50)) | One user's camera takes the photo but saves nothing when a film has Film Grain; without grain it saves. Not reproduced on the owner's camera (2026-11-16 and 2026-11-17: every drive mode, quality, aspect and computational mode tried, also with the reporter's exposure, C-AF and face / eye detection). Waiting for the reporter's tests (Single, S-AF, face / eye off). | Investigating |
-| **Picture Mode stars and saving** | A "*" showed on the wrong row: a WB change starred HSL, and the B/W and WB rows never had one. The profile kept its "*" after Noise went back to Std. Changes were saved only at the next half-press, so a power-off right after leaving Picture Mode lost them. Halation showed a stray center dot, Whites had the wrong letter, and Vignette read wrong before the first half-press. Now a row gets a "*" only when it differs from its profile's or film's default, and leaving Picture Mode saves. | Fixed in v0.29.4 |
-| **Film WB lost in the WB screen** | On a film with Custom WB, OK on CWB in the WB screen brought back the camera's old Kelvin, and the film got a "*" and kept it. Photos (and their RAW files) were then taken at the wrong Kelvin. Now a film sets both of the camera's Custom WB Kelvin values. | Fixed in v0.29.4 |
-| **Custom modes change films** ([#41](https://github.com/androidfanman/caduceus-om3/issues/41)) | Turning to a custom mode (C1–C5) swapped in its saved picture settings while the film stayed selected: the camera shot the film mixed with them, and the next film pick saved them into the film (a "*"); a custom mode also didn't keep its film. Now each custom mode brings back the films and picture mode it was assigned with (Save Settings: Hold and Recall too). | Fixed in v0.29.2 |
-| **No films without a card** ([#38](https://github.com/androidfanman/caduceus-om3/issues/38)) | v0.29: with no card in the camera the films never loaded (the Picture Mode list showed COLOR 1–4 only), although they are kept in the camera: the load at the first half-press still waited for a card. The films loading at switch-on, without the half-press (the other half of #38), is not planned: tried, it lagged at switch-on, and the owner doesn't want the camera's start-up changed (2026-11-13). | Fixed in v0.29.1 |
-| **Film Grain with RAW+JPEG** | With image quality set to RAW+JPEG, a photo with Film Grain was saved, then the screen went black and the camera froze (battery out). v0.25 to v0.26.1. A RAW+JPEG photo develops a second, smaller picture for the RAW file, and that upset the grain. Probably the cause of [#12](https://github.com/androidfanman/caduceus-om3/issues/12). | Fixed in v0.26.2 |
-| **Glow with grain** | Reported: the camera shuts down after taking a photo with Glow and grain together ([#12](https://github.com/androidfanman/caduceus-om3/issues/12)), and Med grain is much stronger when Glow is on ([#16](https://github.com/androidfanman/caduceus-om3/issues/16)). | Fixed in v0.26.1 |
-| **Playback while saving** | Pressing playback while the photo is still being written could freeze the camera (dark grey screen; only taking the battery out helped; the photo was fine), reported on v0.26.1 ([#15](https://github.com/androidfanman/caduceus-om3/issues/15)). No fix is recorded in the changelog or the notes. | Closed (2026-11-13) |
-| **Creative dial freeze** | Turning the creative dial away from COLOR while a film is on can freeze live view (IS and level still update); sometimes only taking the battery out helps. v0.26.2. Reporter: mostly with Glow and / or grain on, most often CineStill 800T with grain, RAW+JPEG. Not reproduced on the owner's camera or by another user so far ([#27](https://github.com/androidfanman/caduceus-om3/issues/27)). | Investigating |
-| **Grain + Glow freeze in burst** ([#28](https://github.com/androidfanman/caduceus-om3/issues/28)) | On v0.26.2 one user's camera freezes after a photo with grain and Glow / Clarity, in sequential (burst) shooting with the mechanical shutter; Single is fine, and the camera gets warm. Not reproduced on the owner's camera, also with the reporter's card files and in bursts of up to 27 frames incl. RAW+JPEG (camera-tested 2026-11-10); another user says it no longer happens for them. Remaining differences: card, lens or the camera itself. The reporter thinks their card may be old or damaged and will try a faster one (2026-11-10). | Waiting on reporter |
+| **Video crash** ([#74](https://github.com/androidfanman/caduceus-om3/issues/74)) | Video crashed once on the video dial; no debug log. | Closed (2026-11-18), fixed in v0.40 |
+| **Photos not saved with Film Grain** ([#50](https://github.com/androidfanman/caduceus-om3/issues/50)) | One user's camera takes the photo but saves nothing; never reproduced here. | Marked fixed for v0.40 (reporter to confirm) |
+| **Reboot when switching films fast** ([#72](https://github.com/androidfanman/caduceus-om3/issues/72)) | Holding the arrow in the film list restarted the camera. | Fixed in v0.40 (and the test versions) |
+| **Debug log slows the shutter** | With `DEBUG.TXT` on, the shutter fired late. | Fixed in v0.30.3 |
+| **Black review, frozen live view** ([#65](https://github.com/androidfanman/caduceus-om3/issues/65)) | A Glow photo gave a black review, then live view froze. | Fixed in v0.30.2 |
+| **Menu flash in Picture Mode** ([#66](https://github.com/androidfanman/caduceus-om3/issues/66)) | One-frame flash leaving the B/W or WB row. | Fixed in v0.30.1 |
+| **Live dial turns change films** ([#54](https://github.com/androidfanman/caduceus-om3/issues/54)) | Turning the mode dial put a "*" on films nobody changed. | Fixed in v0.30 |
+| **Video freeze** ([#53](https://github.com/androidfanman/caduceus-om3/issues/53)) | A half-press soon after switching on in video froze live view. | Fixed in v0.30 |
+| **Picture Mode stars and saving** | Wrong "*" on rows; changes lost if you switched off right after leaving Picture Mode. | Fixed in v0.29.4 |
+| **Film WB lost in the WB screen** | A film's Custom WB Kelvin jumped back to an old value. | Fixed in v0.29.4 |
+| **Custom modes change films** ([#41](https://github.com/androidfanman/caduceus-om3/issues/41)) | Custom modes mixed their settings into your films. | Fixed in v0.29.2 |
+| **No films without a card** ([#38](https://github.com/androidfanman/caduceus-om3/issues/38)) | With no card in the camera the films didn't load. | Fixed in v0.29.1 |
+| **Film Grain with RAW+JPEG** ([#12](https://github.com/androidfanman/caduceus-om3/issues/12)) | The camera froze after a RAW+JPEG photo with grain. | Fixed in v0.26.2 |
+| **Glow with grain** ([#12](https://github.com/androidfanman/caduceus-om3/issues/12), [#16](https://github.com/androidfanman/caduceus-om3/issues/16)) | The camera shut down after a photo with Glow and grain; Med grain was too strong. | Fixed in v0.26.1 |
+| **Playback while saving** ([#15](https://github.com/androidfanman/caduceus-om3/issues/15)) | Playback right after a shot could freeze the camera. | Closed (2026-11-13) |
+| **Creative dial freeze** ([#27](https://github.com/androidfanman/caduceus-om3/issues/27)) | Turning the Creative Dial could freeze live view; not reproduced. | Closed (2026-11-15) |
+| **Grain + Glow freeze in burst** ([#28](https://github.com/androidfanman/caduceus-om3/issues/28)) | One user's camera froze in bursts with grain and Glow; not reproduced on v0.29. | Closed (2026-11-14) |
 
 ## Lenses and focus
 
 | Feature | What it means | Status |
 |---|---|---|
-| **Focus stacking with any lens** | This fork removes the stacking-capability rejection for otherwise eligible autofocus lenses. Focus bracketing is unchanged. [Scope and camera test](docs/FOCUS_STACKING.md). | Experimental fs1; not camera-tested |
-| **Panasonic lenses work properly** | The aperture ring on Panasonic lenses that have one sets the aperture ([#29](https://github.com/androidfanman/caduceus-om3/issues/29)). Waiting for focus before the picture with lenses like the Panasonic 20mm f/1.7 ([#13](https://github.com/androidfanman/caduceus-om3/issues/13)) is not planned (owner, 2026-11-13). | Planned |
+| **Focus stacking with more lenses** ([#79](https://github.com/androidfanman/caduceus-om3/pull/79), by Bensonson) | Focus stacking with more autofocus lenses. [Details](docs/FOCUS_STACKING.md). | Coming in v0.40 |
+| **Panasonic lenses work properly** ([#29](https://github.com/androidfanman/caduceus-om3/issues/29)) | The aperture ring on Panasonic lenses sets the aperture. | Requested |
+| **Sync image stabilisation with Panasonic lenses** ([#47](https://github.com/androidfanman/caduceus-om3/issues/47)) | Camera and lens stabilisation working together. | Requested |
 
 ## Buttons and controls
 
 | Feature | What it means | Status |
 |---|---|---|
-| **More button functions** | Button functions to switch S-AF / C-AF, and to switch between normal and high-speed sequential shooting ([#10](https://github.com/androidfanman/caduceus-om3/issues/10)). | Requested |
-| **Quick WB / ISO page** | A button that opens a quick WB / ISO page as on the PEN-F and E-P7 ([#8](https://github.com/androidfanman/caduceus-om3/issues/8)). | Requested |
-| **ISO-Auto slowest shutter speed on a dial** | Change the ISO-Auto lowest shutter speed quickly with a dial, or a button that steps through presets ([#25](https://github.com/androidfanman/caduceus-om3/issues/25)). | Requested |
-| **Fn lever stores more settings** | Each Fn lever position can also keep its own subject detection and drive mode ([#31](https://github.com/androidfanman/caduceus-om3/issues/31)). | Requested |
-| **Electronic shutter sound** | An optional shutter click from the speaker when the electronic shutter is used ([#19](https://github.com/androidfanman/caduceus-om3/issues/19)). | Not planned (owner, 2026-11-13) |
-| **Power lever as an Fn lever** | When the Fn lever is set to On / Off, the power lever takes over the Fn lever's job ([#34](https://github.com/androidfanman/caduceus-om3/issues/34)). | Requested |
+| **Fn lever stores more settings** ([#31](https://github.com/androidfanman/caduceus-om3/issues/31)) | Each Fn lever position keeps its own subject detection and drive mode. | Requested |
+| **ISO Auto and WB Lock keys** ([#52](https://github.com/androidfanman/caduceus-om3/issues/52), [#77](https://github.com/androidfanman/caduceus-om3/pull/77), [#78](https://github.com/androidfanman/caduceus-om3/pull/78), by ryanbughuang) | Two new button functions, offered as pull requests. | In progress |
+| **Touchscreen Delete button in Playback** ([#49](https://github.com/androidfanman/caduceus-om3/issues/49)) | A touch Delete button in playback. | Requested |
 
 ## Video (after the photo side is finished)
 
 | Feature | What it means | Status |
 |---|---|---|
-| **Colour profiles in video** | The colour profiles, your films and their settings also apply when recording video, baked in, like real-time LUTs ([#3](https://github.com/androidfanman/caduceus-om3/issues/3)). | Planned |
-| **10-bit beyond Log and HLG** | Today the OM-3 records 10-bit only with OM-Log400 or HLG; the other profiles are 8-bit H.264, which bands and blocks when graded. Allow 10-bit (and other log / bit-depth choices) with the standard and COLOR profiles, or failing that, cleaner 8-bit encoding ([#1](https://github.com/androidfanman/caduceus-om3/issues/1), [#3](https://github.com/androidfanman/caduceus-om3/issues/3)). | Planned |
-| **Sharpness in video** | The look's Sharpness (down to Off) also for video; today video stays at the camera's normal sharpening ([#6](https://github.com/androidfanman/caduceus-om3/issues/6)). | Planned |
-| **Wider C-AF settings for video** | C-AF speed and sensitivity beyond −2..+2 (for example −5..+5) so subject detection holds on to people without hunting ([#14](https://github.com/androidfanman/caduceus-om3/issues/14)). | Requested |
-| **Open gate video** | Record video from the whole sensor height (open gate) ([#24](https://github.com/androidfanman/caduceus-om3/issues/24)). | Requested |
+| **Colour profiles in video** ([#3](https://github.com/androidfanman/caduceus-om3/issues/3)) | Your films also apply when recording video. | Requested |
+| **10-bit beyond Log and HLG** ([#1](https://github.com/androidfanman/caduceus-om3/issues/1), [#3](https://github.com/androidfanman/caduceus-om3/issues/3)) | 10-bit with the standard and COLOR profiles, or cleaner 8-bit. | Requested |
+| **H.265 and a bitrate setting** ([#51](https://github.com/androidfanman/caduceus-om3/pull/51), by buburun) | H.265 for every picture mode, plus a bitrate choice. | Requested |
+| **Sharpness in video** ([#6](https://github.com/androidfanman/caduceus-om3/issues/6)) | Sharpness down to Off in video. | Requested |
+| **Wider C-AF settings for video** ([#14](https://github.com/androidfanman/caduceus-om3/issues/14)) | C-AF speed and sensitivity beyond −2..+2. | Requested |
+| **Open gate video** ([#24](https://github.com/androidfanman/caduceus-om3/issues/24)) | Record from the whole sensor height. | Requested |
 
 ## Done
 
 | Feature | Released |
 |---|---|
-| **Crop modes, photo borders and our own grain:** XPan 65:24, 21:9 and 5:4 as Image Aspect choices, saved at that shape, with live view, grid, focus target, histogram and the playback labels to match (idea from Caduceus for the E-P7); a white Border per film (0–5) with a frame line in live view; our own colour film grain, strength 1–5 and Grain Size; safer start-up; Picture Mode open 30 s ([#75](https://github.com/androidfanman/caduceus-om3/issues/75), by crombach, [#76](https://github.com/androidfanman/caduceus-om3/pull/76)) | v0.40-alpha (test version, 2026-11-17) |
-| **Crops at switch-on, live looks, black borders:** the crop back at switch-on ([#83](https://github.com/androidfanman/caduceus-om3/issues/83)) with the frame lines at its edges; split toning, Tone Balance, RGB curves and B/W in live view as you adjust them; Border −5..+5 (black and white) and the border at every ratio; your own choice of shooting-screen info; faster grain; our version on the Firmware Version screen; faster looks and two fixes ([#82](https://github.com/androidfanman/caduceus-om3/pull/82), by crombach); focus stacking with more lenses ([#79](https://github.com/androidfanman/caduceus-om3/pull/79), by Bensonson) | v0.40-beta (test version, 2026-11-18) |
-| **The color wheel's label names the page and our looks stay out of video:** Sat / Hue / Lum / Tint under the wheel, the front dial skipping Color All off Saturation ([#64](https://github.com/androidfanman/caduceus-om3/issues/64), by crombach, [#70](https://github.com/androidfanman/caduceus-om3/pull/70)); no split toning, Tone Balance, RGB curves, Glow or Art Effects in video and S&Q ([#68](https://github.com/androidfanman/caduceus-om3/issues/68), by crombach, [#73](https://github.com/androidfanman/caduceus-om3/pull/73)) | v0.30.4-alpha (test version, 2026-11-17) |
-| **Remappable Delete button:** in photo and video mode the Delete button takes any Fn function ([#37](https://github.com/androidfanman/caduceus-om3/issues/37), by crombach, [#40](https://github.com/androidfanman/caduceus-om3/pull/40)) | v0.29.3 (released 2026-11-14) |
-| **Faster halation, smoother fade:** about half the work per Halation photo (ideas from Caduceus for the E-P7), and a halo that fades out gradually at higher strengths; every dial click counted on the RGB / Mix pages, faster looks and saves ([#69](https://github.com/androidfanman/caduceus-om3/pull/69), by crombach) | v0.30.3 (released 2026-11-17) |
-| **Color Mix and RGB curves:** two new Picture Mode rows (a ring for red / green / blue strength and hue, a tone curve per channel with five points), the 20 films regraded with them (`CURVES.BIN`), a new Picture Mode order with a picture per row; in LookLab too | v0.30 (released 2026-11-16) |
-| **Films ready at switch-on:** the films load from the camera's memory as it starts, in every mode ([#56](https://github.com/androidfanman/caduceus-om3/pull/56), by crombach) | v0.30 (released 2026-11-16) |
-| **Custom modes keep their own copy of everything:** Assign › Set copies the films, all their changes and the picture settings into that custom mode; nothing done in another mode changes it; Assign › Reset puts it back to the films as built | v0.29.5 (released 2026-11-15) |
-| **Custom modes keep their films:** each custom mode (C1–C5) brings back the films it was assigned with, and no longer changes your films ([#41](https://github.com/androidfanman/caduceus-om3/issues/41)) | v0.29.2 (released 2026-11-14) |
-| **Films with no card:** the films load from the camera's memory with no card in the camera ([#38](https://github.com/androidfanman/caduceus-om3/issues/38)) | v0.29.1 (released 2026-11-13) |
-| **Films in the camera:** films, on-camera changes and Extras kept in the camera's own memory, guide pictures / code / labels / tone pictures built into the firmware: any card works ([#35](https://github.com/androidfanman/caduceus-om3/issues/35)) | v0.29 (released 2026-11-13) |
-| **Start-up freeze fix:** films load at the first half-press again (the automatic load could freeze the camera at switch-on) | v0.27.1 (released 2026-11-11) |
-| **Buttons and the film in the photo:** all four arrow keys in Button Function ([#9](https://github.com/androidfanman/caduceus-om3/issues/9)); the Creative Dial positions each set to CRT / ART / COLOR / MONO, with each COLOR position keeping its own film ([#21](https://github.com/androidfanman/caduceus-om3/issues/21)); the film's name and recipe code in each JPEG's EXIF, read by LookLab and a kit for other sites ([#20](https://github.com/androidfanman/caduceus-om3/issues/20)); an optional debug log | v0.27 (released 2026-11-11) |
-| **Films load at power-on** (no half-press; from [fernandezk26](https://github.com/fernandezk26/camera-stuff)'s fork); the super control panel dials step through the films; fixes for Film Grain with RAW+JPEG, the shooting-screen label and `EDITS.BIN` | v0.26.2 (released 2026-11-09) |
-| **WB shift ±7 in films** (`LOOKS.BIN` −7..+7, like the camera's fine-tune); the 20 film sims tuned (draft 1) | v0.26.1 (released 2026-11-09) |
-| **Split toning**: Shadows and Highlights wheel pages (12 colours, −5..+5), in photos and live view; `TONES.BIN` guides; fix for a restart after changing the drive mode | v0.26 (released 2026-11-09) |
-| **Fast colour grain with every setting** (image processor, Grainy Film's texture route): Shading back; Glow row (+ Glow, − Clarity); WB row with the camera's own WB grid (OK opens the fine-tune screen on the look's A-B / G-M); no Art Effects (Frame removed); saving over power off fixed | v0.25 (released 2026-11-09) |
-| **Films in the Picture Mode list**: FILM 1, FILM 2, … after COLOR 1–4 with their names (title, quick menu, shooting screen); changes kept per film (`EDITS.BIN`); hold OK = as built; `*` = changed | v0.24.1 |
-| **Picture Mode rows**: Blacks, Whites, A-B, G-M, Sharp, Noise Filter (High new), Vignette Correction and Film Grain on the camera's own screen; HSL wheel Color → Color All → Hue → Luminance | v0.24.1 |
-| **Sharpness per look**: Sharp on the Extras page (−5 Off..+2), replacing the camera's Sharpness row on COLOR 1–4 | v0.22 |
-| **Colour grain**: Off / Low / Med / High on the COLOR profiles, from the camera's own grain engine | v0.21 |
+| **Crop modes XPan, 21:9 and 5:4**, a white Border per film, our own grain with Grain Size, safer start-up, Picture Mode open 30 s ([#76](https://github.com/androidfanman/caduceus-om3/pull/76), by crombach) | v0.40-alpha (test version, 2026-11-17) |
+| **Fast-switching reboot fixed** ([#72](https://github.com/androidfanman/caduceus-om3/issues/72)); the colour wheel's label names the page ([#70](https://github.com/androidfanman/caduceus-om3/pull/70)); our looks stay out of video ([#73](https://github.com/androidfanman/caduceus-om3/pull/73)), both by crombach | v0.30.4-alpha (test version, 2026-11-17) |
+| **Faster Halation** with a smoother fade; faster dial clicks and saves ([#69](https://github.com/androidfanman/caduceus-om3/pull/69), by crombach) | v0.30.3 (2026-11-17) |
+| **Color Mix and RGB curves**, the 20 films regraded, a new Picture Mode order, films ready at switch-on ([#56](https://github.com/androidfanman/caduceus-om3/pull/56), by crombach) | v0.30 (2026-11-16) |
+| **Custom modes keep their own copy** of everything | v0.29.5 (2026-11-15) |
+| **Remappable Delete button** ([#37](https://github.com/androidfanman/caduceus-om3/issues/37), [#40](https://github.com/androidfanman/caduceus-om3/pull/40) by crombach) | v0.29.3 (2026-11-14) |
+| **Custom modes keep their films** ([#41](https://github.com/androidfanman/caduceus-om3/issues/41)) | v0.29.2 (2026-11-14) |
+| **Films with no card** ([#38](https://github.com/androidfanman/caduceus-om3/issues/38)) | v0.29.1 (2026-11-13) |
+| **Films in the camera's own memory**, any card works ([#35](https://github.com/androidfanman/caduceus-om3/issues/35)) | v0.29 (2026-11-13) |
+| **Start-up freeze fix**: films load at the first half-press again | v0.27.1 (2026-11-11) |
+| **All four arrow keys** in Button Function ([#9](https://github.com/androidfanman/caduceus-om3/issues/9)); Creative Dial modes with a film each ([#21](https://github.com/androidfanman/caduceus-om3/issues/21)); the film's name and recipe in each JPEG ([#20](https://github.com/androidfanman/caduceus-om3/issues/20)); an optional debug log | v0.27 (2026-11-11) |
+| **Films load at power-on** (from [fernandezk26](https://github.com/fernandezk26/camera-stuff)'s fork); the dials step through the films | v0.26.2 (2026-11-09) |
+| **WB shift ±7 in films**; the 20 film sims tuned | v0.26.1 (2026-11-09) |
+| **Split toning**: Shadows and Highlights pages | v0.26 (2026-11-09) |
+| **Fast colour grain** with every setting; Glow and WB rows | v0.25 (2026-11-09) |
+| **Films in the Picture Mode list**, and the look's settings as Picture Mode rows | v0.24.1 (2026-11-08) |
+| **Sharpness per look** | v0.22 |
+| **Colour grain** on the COLOR profiles | v0.21 |
 
 See the [changelog](CHANGELOG.md) for what each release already contains.

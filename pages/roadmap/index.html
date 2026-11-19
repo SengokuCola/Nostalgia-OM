@@ -20,6 +20,9 @@
   --bad: #b3261e;    --bad-bg: #fbe4e2;
   --info: #2459b8;   --info-bg: #e3ebfa;
   --idle: #5d6573;   --idle-bg: #eceef2;
+  --soon: #0b6e80;   --soon-bg: #dcf1f5;   /* coming in the next release */
+  --test: #6a3fb0;   --test-bg: #ebe3f8;   /* test version */
+  --ask: #a3295f;    --ask-bg: #fbe3ee;    /* requested */
   --display: "Archivo", "Helvetica Neue", Arial, sans-serif;
   --body: "IBM Plex Sans", "Segoe UI", Roboto, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
@@ -32,6 +35,7 @@
     --good: #6fd3a0; --good-bg: #173527; --warn: #f2c25c; --warn-bg: #3a2e12;
     --bad: #ff8a80; --bad-bg: #3d1a18; --info: #8fb4ff; --info-bg: #1b2a47;
     --idle: #aab1bd; --idle-bg: #262b33;
+    --soon: #72d4e6; --soon-bg: #12353c; --test: #c4a8f4; --test-bg: #2d2148; --ask: #f59cc4; --ask-bg: #44182e;
     color-scheme: dark;
   }
 }
@@ -41,6 +45,7 @@
   --good: #6fd3a0; --good-bg: #173527; --warn: #f2c25c; --warn-bg: #3a2e12;
   --bad: #ff8a80; --bad-bg: #3d1a18; --info: #8fb4ff; --info-bg: #1b2a47;
   --idle: #aab1bd; --idle-bg: #262b33;
+  --soon: #72d4e6; --soon-bg: #12353c; --test: #c4a8f4; --test-bg: #2d2148; --ask: #f59cc4; --ask-bg: #44182e;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -75,6 +80,9 @@ td.num { white-space: nowrap; width: 1%; }
 .s-bad { color: var(--bad); background: var(--bad-bg); }
 .s-info { color: var(--info); background: var(--info-bg); }
 .s-idle { color: var(--idle); background: var(--idle-bg); }
+.s-soon { color: var(--soon); background: var(--soon-bg); }
+.s-test { color: var(--test); background: var(--test-bg); }
+.s-ask { color: var(--ask); background: var(--ask-bg); }
 .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; }
 .lanes { display: grid; gap: 22px; }
 .lane { display: grid; gap: 8px; }
@@ -155,7 +163,11 @@ function statusClass(t) {
   const s = t.toLowerCase();
   if (/not confirmed/.test(s)) return "s-bad";
   if (/^(done|fixed|released)/.test(s)) return "s-good";
-  if (/^(next|building|camera testing)/.test(s)) return "s-warn";
+  if (/^(coming in|marked fixed)/.test(s)) return "s-soon";
+  if (/^test version/.test(s)) return "s-test";
+  if (/^(in progress|building|next)/.test(s)) return "s-info";
+  if (/^(camera testing|testing)/.test(s)) return "s-warn";
+  if (/^(requested|planned)/.test(s)) return "s-ask";
   if (/^(research|investigat|waiting|proven)/.test(s)) return "s-info";
   return "s-idle";
 }
