@@ -8714,3 +8714,16 @@ screen gets 3200 K A3 M2 at the half-press that takes the set; FILM 15 Shade G3;
 - **Camera-only:** the time per tile (v0.40 ~270 ms; guess: Fine quicker, Coarse about the same or a little slower),
   the look on photos (no squares, stripes or repeats), Halation with grain, bursts, start-up with the 4 KB longer boot
   copy.
+
+## Combined test: fix #88 + grain g4 (2026-11-19; branch try/fix88-grain4; emulator, on the owner's card)
+- Owner: "if possible lets test 88 with the better grain build". `fix/88-film-wb` (1182a7b) and
+  `feature/better-grain-g4` (42e7626) merged on main b4b3161; conflicts only VERSION ("v0.40-dev fix88 + grain g4
+  (test 1)") and these notes (both sections kept); editor.s merged cleanly.
+- cad's check: fix88 cleared earlier (no new hooks, nothing at start-up, stills only; rebuild = its package). Grain g4:
+  no new hook or patch site; the tile is made during the still's development as g3; work malloc 14,280 B (cap
+  16,448); locks ~85..100 K instructions (estimate, under HL_LOCKN 120 K); loader end word 0x60fbf000, inside the
+  GX4-proven reserve (to 0x6103f000, camera-tested 2026-11-12).
+- Build: ext11 65,376 / 65,536, ext12 261,904 / 262,144, ext13 75,584 / 81,920. E1479999.BIN `4f7393a5…3ecd`,
+  GUIDES.BIN `3b7819e5…70e6`. Suite: **119 of 119 pass** (exit 0, recorded on 58227b4).
+- Package `test-builds/2026-11-19-fix88-grain4` (private folder); copied to the owner's card by cad and checked by
+  sha256 (2026-11-19). Camera test pending.
