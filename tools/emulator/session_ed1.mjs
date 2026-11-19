@@ -19,7 +19,8 @@ const rom = expandImage(new Uint8Array(fs.readFileSync(IMAGE)));
 const nvram = process.env.NV_FILE ? (await import(EMU + '/host/nvram.mjs')).fileNvram(process.env.NV_FILE) : null;
 const env = { rom, resBlock: loadBlock(), createHash, card, ...(nvram ? { nvram } : {}),
   deflate: (b, l) => new Uint8Array(zlib.deflateSync(b, { level: l })), inflate: (b) => new Uint8Array(zlib.inflateSync(b)) };
-const pl = new Player({ ...PLAYER_PARSER, no_browser: true, idle: 'off', a15: 'on', out: '<out>', no_wait_on_error: true, device: 'tft' },
+const DEV = process.env.DEVICE || 'tft';   // framelines-1: DEVICE=evf runs and shoots the viewfinder (1024 x 768)
+const pl = new Player({ ...PLAYER_PARSER, no_browser: true, idle: 'off', a15: 'on', out: '<out>', no_wait_on_error: true, device: DEV },
   { ...env, wallClock: () => performance.now() / 1000 });
 const WATCH = new Set((process.env.WATCH || '').split(',').filter(Boolean).map((x) => parseInt(x, 16) >>> 0));
 let curStep = 'start'; const hits = [];
@@ -73,7 +74,7 @@ function armWatch(L) {
 if (WATCH.size && !bootLab) armWatch(lab);
 lab.sim.write(0xa32de590, new Uint8Array([0xff, 0x03, 0, 0])); lab.sim.write(0x60369308, new Uint8Array([0x00, 0xf0, 0, 0]));
 const shot = (file, tick = true) => {
-    if (tick) s.scene_frame(); s.a15_apply('tft'); const comp = lab.compose('tft', true, true); const w = comp.header.width, h = comp.header.height, px = comp.raw; const bpp = px.length / (w * h); console.log('shot', w, h, bpp, comp.status, comp.errors.length);
+    if (tick) s.scene_frame(); s.a15_apply(DEV); const comp = lab.compose(DEV, true, true); const w = comp.header.width, h = comp.header.height, px = comp.raw; const bpp = px.length / (w * h); console.log('shot', w, h, bpp, comp.status, comp.errors.length);
     const raw = Buffer.alloc((w * 3 + 1) * h);
     for (let y = 0; y < h; y++) { raw[y * (w * 3 + 1)] = 0; for (let x = 0; x < w; x++) { const i = (y * w + x) * bpp, o = y * (w * 3 + 1) + 1 + x * 3; raw[o] = px[i]; raw[o + 1] = px[i + 1]; raw[o + 2] = px[i + 2]; } }
     const crcT = []; for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; crcT[n] = c >>> 0; }
@@ -160,7 +161,7 @@ for (const t of SCRIPT.split(/\s+/).filter(Boolean)) {
     // expect:pxsame:X,Y,X2,Y2 / expect:pxdiff:X,Y,X2,Y2 (border preview, 2026-11-17): the rear screen drawn as shot:
     // draws it; ends the run with exit 1 unless the pixels at (X, Y) and (X2, Y2) are the same / differ.
     const same = t.startsWith('expect:pxsame:'), [x, y, x2, y2] = t.slice(14).split(',').map(Number);
-    s.scene_frame(); s.a15_apply('tft'); const comp = lab.compose('tft', true, true);
+    s.scene_frame(); s.a15_apply(DEV); const comp = lab.compose(DEV, true, true);
     const w = comp.header.width, px = comp.raw, bpp = px.length / (w * comp.header.height);
     const at = (X, Y) => Buffer.from(px.slice((Y * w + X) * bpp, (Y * w + X) * bpp + 3)).toString('hex');
     if ((at(x, y) === at(x2, y2)) !== same) { console.error(`${t}: ${at(x, y)} / ${at(x2, y2)}`); process.exit(1); }
@@ -205,7 +206,7 @@ for (const t of SCRIPT.split(/\s+/).filter(Boolean)) {
     // expect:ink:X,Y,X2,Y2 / expect:noink:X,Y,X2,Y2 (fwver): the rear screen drawn as shot: draws it; ends the run with
     // exit 1 unless some pixel of the box from (X, Y) to (X2, Y2) differs from its top-left one / none does.
     const ink = t.startsWith('expect:ink:'), [x, y, x2, y2] = t.slice(ink ? 11 : 13).split(',').map(Number);
-    s.scene_frame(); s.a15_apply('tft'); const comp = lab.compose('tft', true, true);
+    s.scene_frame(); s.a15_apply(DEV); const comp = lab.compose(DEV, true, true);
     const w = comp.header.width, px = comp.raw, bpp = px.length / (w * comp.header.height);
     const at = (X, Y) => Buffer.from(px.slice((Y * w + X) * bpp, (Y * w + X) * bpp + 3)).toString('hex');
     let found = false;
@@ -244,8 +245,8 @@ for (const t of SCRIPT.split(/\s+/).filter(Boolean)) {
   else if (t.startsWith('fhash:')) {
     // fhash:NAME notes the screen's hash (as shot: composes a fresh frame). expect:fsame:A:B / expect:fdiff:A:B end the
     // run with exit 1 unless the frames noted as A and B are the same / differ.
-    s.scene_frame(); s.a15_apply('tft');
-    (globalThis.__fh ??= {})[t.slice(6)] = createHash('sha256').update(lab.compose('tft', true, true).raw).digest('hex');
+    s.scene_frame(); s.a15_apply(DEV);
+    (globalThis.__fh ??= {})[t.slice(6)] = createHash('sha256').update(lab.compose(DEV, true, true).raw).digest('hex');
   }
   else if (t.startsWith('expect:fsame:') || t.startsWith('expect:fdiff:')) {
     const [a, b] = t.slice(13).split(':'), fh = globalThis.__fh || {}, same = fh[a] === fh[b];

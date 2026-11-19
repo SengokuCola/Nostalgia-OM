@@ -169,12 +169,29 @@ def apply(m, o, sy, log=print):
                 0x61238b3c, 0x6123907e, 0x612395e7, 0x61239848, 0x61239a5b, 0x6123b059, 0x6123e9df, 0x6123eb5c]
     LABEL_SITES = (0x611d8467, 0x612357fb, 0x612356c0)   # c2: the SCP cell's and the top bar's label reads, and the top
                                                          # bar's "show the label?" (hidden at 4:3) -> cr_gvl
+    FRAME_SITE = 0x612385d1                              # framelines-1: the aspect frame's style (0x6123853c) -> cr_gvf
     for a in GV_SITES:
         assert bytes(m[o(a):o(a) + 3]) == b'\x2c\x0d\x01', hex(a)
         c = next(c for c in range(a + 3, a + 12) if m[o(c)] == 0xdd)
         assert (c + struct.unpack_from('<i', m, o(c) + 1)[0]) & 0xffffffff == 0x610fd8ef, hex(a)
         assert bytes(m[o(c) + 5:o(c) + 7]) == b'\xf0\x1c', hex(a)
-        struct.pack_into('<i', m, o(c) + 1, sy['cr_gvl' if a in LABEL_SITES else 'cr_gv'] - c)
+        to = 'cr_gvl' if a in LABEL_SITES else 'cr_gvf' if a == FRAME_SITE else 'cr_gv'
+        struct.pack_into('<i', m, o(c) + 1, sy[to] - c)
+    # 4b. framelines-1 (2026-11-18): the shooting screen's aspect frame lines. 0x6123853c writes a frame style into the
+    # screen object (+2962) from Image Aspect (8 4:3, 10 16:9 on the rear screen; 16 16:9, 32 none at 4:3 in the
+    # viewfinder); the frame widget takes its rectangle from the style's entry in 0x60377760 (24 x 20 B {u32 style,
+    # u32 on, u16 kind, i16 x0, y0, x1, y1, u16 0}, styles 8..31; lookup 0x61176b7a). Six entries the camera never
+    # writes (22, 26, 27, 29, 30, 31; off, rectangle 0) get the crops' rectangles; cr_fst puts their styles in place of
+    # 16:9's / 4:3's. Rear 900 x 600 (16:9 rows 47..552): XPan rows 134..465, 21:9 107..492, 5:4 columns 75..825;
+    # viewfinder 800 x 600 (16:9 rows 75..524): XPan 152..447, 21:9 129..470, 5:4 25..775 (crop round 2's areas).
+    FT = 0x60377760
+    CR_FRAMES = {26: (-1, 134, 900, 465), 27: (-1, 107, 900, 492), 29: (75, -1, 825, 600),
+                 30: (-1, 152, 800, 447), 31: (-1, 129, 800, 470), 22: (25, -1, 775, 600)}
+    assert [u32(FT + 20 * k) for k in range(24)] == list(range(8, 32))
+    for sid, r in CR_FRAMES.items():
+        e = FT + 20 * (sid - 8)
+        assert bytes(m[o(e):o(e) + 20]) == struct.pack('<IIH4hH', sid, 0, 1, 0, 0, 0, 0, 0), sid
+        m[o(e):o(e) + 20] = struct.pack('<IIH4hH', sid, 1, 1, *r, 0)
     # 5. Labels. The SCP strip draws its choices from a 5-entry list (0x615491c0, values 1,3,2,9,4, pictures 472 / 471 /
     # 473 / 475 / 2413; its record holds the pointer at 0x6154a8dc and the count at 0x6154a8e0) -> 8 entries, ours
     # CR_IC0 + 0..2 (firmware/mkicons.py crop_streams, 100 x 76) for 5, 6, 7.

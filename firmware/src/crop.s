@@ -191,6 +191,127 @@ cr_gvl:
 9:
  ret [d2,d3,a2,a3],28
 
+/* framelines-1 (2026-11-18; owner: "Can we get the frame lines ... to match the crop mode like it does on the default
+ * crop modes"). The shooting screen's aspect frame (the green lines at the picture's edges) comes from a style that
+ * 0x6123853c writes into the screen object at +2962 from its read of 269 (0x612385d1; a3 points at the style, its
+ * frame is [d2,d3,a2,a3],52), and the frame widget takes the style's rectangle from 0x60377760 (lookup 0x61176b7a).
+ * Through cr_gv the crops got 16:9's / 4:3's style, so 16:9's lines. crop.py fills six unused entries with the
+ * crops' rectangles. cr_gvf <- that read: as cr_gv, and with a crop set (cr_on, Image Aspect 5..7, a photo mode) it
+ * sends the function's return (its 52 + this call's 28: (80,sp)) through cr_fst, which writes the crop's style over
+ * the one just written. One at a time (cr_fra). Before the first restore of a power-on, and in video: as cr_gv.
+ * In .ext13 (section 6 as .ext12, which is full). */
+.section .ext13,"ax"
+cr_gvf:
+ mov a0,(8,sp)
+ call cr_gv0,[d2,d3,a2,a3],28
+ mov d0,d2                        /* the getter's result, kept */
+ movbu (cr_on),d1
+ cmp 0,d1
+ beq 9f
+ mov (8,sp),a0
+ mov (a0),d1
+ cmp 5,d1
+ bcs 9f
+ cmp 8,d1
+ bcc 9f
+ mov 1,d3                         /* as cr_gv: 5 -> 1, 6 / 7 -> 3 */
+ cmp 5,d1
+ beq 1f
+ mov 3,d3
+1:
+ mov d3,(a0)
+ mov (cr_fra),d1
+ cmp 0,d1
+ bne 9f
+ call cr_pho,[],0
+ cmp 0,d0
+ beq 9f
+ mov a3,(cr_fsp)                  /* where the style goes */
+ mov (80,sp),d1
+ mov d1,(cr_fra)
+ mov cr_fst,d1
+ mov d1,(80,sp)
+9:
+ mov d2,d0
+ ret [d2,d3,a2,a3],28
+
+/* cr_fst <- 0x6123853c's `ret [d2,d3,a2,a3],52` when cr_gvf sent it here: its caller's registers and sp. The style
+ * it wrote -> the crop's (crop.py 4b): rear 16:9 (10) -> XPan 26, 21:9 27; rear 4:3 (8) -> 5:4 29; viewfinder 16:9
+ * (16) -> XPan 30, 21:9 31; viewfinder 4:3 (32, no frame; (6916,this) 5) -> 5:4 22; any other style as it is. Back
+ * to the caller through MDR (free after a call): d0, d1, a0, a1 as the function left them. */
+cr_fst:
+ mov d0,(cr_fsv)
+ mov d1,(cr_fsv + 4)
+ mov a0,(cr_fsv + 8)
+ mov a1,(cr_fsv + 12)
+ mov (cr_fsp),a0
+ movhu (a0),d0
+ movbu (CR_A1),d1
+ cmp 5,d1
+ beq 5f
+ cmp 6,d1
+ beq 6f
+ cmp 7,d1
+ bne 8f
+ cmp 10,d0                        /* 21:9 */
+ bne 1f
+ mov 27,d0
+ bra 7f
+1:
+ cmp 16,d0
+ bne 8f
+ mov 31,d0
+ bra 7f
+6:
+ cmp 10,d0                        /* XPan */
+ bne 1f
+ mov 26,d0
+ bra 7f
+1:
+ cmp 16,d0
+ bne 8f
+ mov 30,d0
+ bra 7f
+5:
+ cmp 8,d0                         /* 5:4 */
+ bne 1f
+ mov 29,d0
+ bra 7f
+1:
+ cmp 32,d0
+ bne 8f
+ mov a0,a1
+ add -2962,a1
+ mov (6916,a1),d1
+ cmp 5,d1
+ bne 8f
+ mov 22,d0
+7:
+ movhu d0,(a0)
+ mov (cr_nfr),d1
+ inc d1
+ mov d1,(cr_nfr)
+8:
+ mov (cr_fra),d0
+ mov d0,mdr
+ clr d0
+ mov d0,(cr_fra)
+ mov (cr_fsv),d0
+ mov (cr_fsv + 4),d1
+ mov (cr_fsv + 8),a0
+ mov (cr_fsv + 12),a1
+ retf [],0
+ .balign 4
+cr_fra:                           /* cr_fst's way back (0: none due), the style's place, the registers, the styles set */
+ .long 0
+cr_fsp:
+ .long 0
+cr_fsv:
+ .space 16
+cr_nfr:
+ .long 0
+.section .ext12,"ax"
+
 /* The camera's saved settings never hold a crop. Store M (RAM image 0x62920700, 256 KiB) keeps 269 at +0x2c2 and
  * +0x32458. The camera saves M through 0x60061183 (a0 = the store, a1 = a callback): after a menu with a callback (the
  * image is copied to the buffer 0xa373d280 with its checksum, then written: cr_sbuf patches the buffer), at power-off
@@ -872,7 +993,7 @@ cr_owt:                           /* the task of the last write of 269 by others
 cr_gtid:
  .hword 0xffff
 cr_t1:
- .asciz "\r\n\r\nCROP MODES (crop round 13): tag "
+ .asciz "\r\n\r\nCROP MODES (crop round 14): tag "
 cr_w0:
  .asciz " (not read yet)"
 cr_w1:
@@ -923,6 +1044,8 @@ cr_t27:
  .asciz "), after a menu "
 cr_t28:
  .asciz ", last tag written "
+cr_t29:
+ .asciz "; frame lines set to the crop "
  .balign 2
 cr_txt:                           /* `call cr_txt,[d2,d3,a2,a3],24` */
  LGS cr_t1
@@ -1008,6 +1131,9 @@ cr_txt:                           /* `call cr_txt,[d2,d3,a2,a3],24` */
  LGS cr_t28
  mov (cr_stg),d0
  call lg_h,[],0
+ LGS cr_t29                       /* framelines-1 */
+ mov (cr_nfr),d0
+ LGD
  ret [d2,d3,a2,a3],24
 
 /* ---- Grid lines inside the strip (crop round 2; camera c5: "the gridlines/guides do not match the framing"). The

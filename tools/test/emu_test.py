@@ -500,6 +500,36 @@ def CROP_SET_AGAIN(n):                           # crop83-2: times cr_chk set th
 CROP_BASE_BACK = 'poke:629209c2=03 poke:62952b58=03'
 
 
+# framelines-1: a frame line at a row / column of the shooting screen: that pixel differs from one 10 px inside the
+# picture on om-emu's blank live view (x 300 for rows, y 300 for columns; viewfinder x 600, y 384)
+def FRAME_AT_ROW(y, x=300, p='diff'):
+    return f'expect:px{p}:{x},{y},{x},{y + 10 if y < 300 else y - 10}'
+
+
+def NO_FRAME_AT_ROW(y):
+    return FRAME_AT_ROW(y, p='same')
+
+
+def FRAME_AT_COL(x, y=300, p='diff'):
+    return f'expect:px{p}:{x},{y},{x + 10 if x < 450 else x - 10},{y}'
+
+
+def NO_FRAME_AT_COL(x):
+    return FRAME_AT_COL(x, p='same')
+
+
+def EVF_FRAME_AT_ROW(y):
+    return f'expect:pxdiff:600,{y},600,{y + 12 if y < 384 else y - 12}'
+
+
+def EVF_NO_FRAME_AT_ROW(y):
+    return f'expect:pxsame:600,{y},600,{y + 12 if y < 384 else y - 12}'
+
+
+def EVF_FRAME_AT_COL(x):
+    return f'expect:pxdiff:{x},384,{x + 12 if x < 512 else x - 12},384'
+
+
 def SCP_ASPECT(n):
     return 'ok wait' + (' main+1 wait' * n if n > 0 else ' main-1 wait' * -n) + ' ok wait wait'
 
@@ -725,6 +755,32 @@ TESTS = {
              'expect:pxdiff:300,300,310,300 expect:pxsame:300,120,310,120 expect:pxdiff:450,243,450,250 poweroff'),
     ],
     # crop round 2: a stock ratio keeps the camera's own thirds (16:9: the line at x 300 runs above y 134; y 215).
+    # framelines-1: the camera's aspect frame lines at the crop's edges (rear screen 900 x 600): XPan rows 134 / 465 and
+    # none at 16:9's 47; 21:9 rows 107 / 492; 5:4 columns 75 / 825 and none at 4:3's 50; 4:3 back at 50 afterwards.
+    'crop-frame-lines-at-the-crop-edges': [
+        Boot(f's1 wait wait {PICK_ASPECT(6)} s1 wait wait {FRAME_AT_ROW(134)} {FRAME_AT_ROW(465)} {NO_FRAME_AT_ROW(47)} '
+             f'{SCP_ASPECT(1)} s1 wait wait {FRAME_AT_ROW(107)} {FRAME_AT_ROW(492)} {NO_FRAME_AT_ROW(47)} '
+             f'{SCP_ASPECT(-2)} s1 wait wait {FRAME_AT_COL(75)} {FRAME_AT_COL(825)} {NO_FRAME_AT_COL(50)} '
+             f'{SCP_ASPECT(-5)} s1 wait wait {FRAME_AT_COL(50)} {FRAME_AT_COL(850)} {NO_FRAME_AT_COL(75)} poweroff'),
+    ],
+    # framelines-1: the camera's own ratios keep their frame lines: 16:9 rows 47 / 552, 1:1 columns 150 / 750, none at 3:2.
+    'crop-frame-lines-stock-ratios-unchanged': [
+        Boot(f's1 wait wait {PICK_ASPECT(1)} s1 wait wait {FRAME_AT_ROW(47)} {FRAME_AT_ROW(552)} {SCP_ASPECT(1)} s1 wait wait '
+             f'{NO_FRAME_AT_ROW(47)} {NO_FRAME_AT_COL(50)} {SCP_ASPECT(1)} s1 wait wait {FRAME_AT_COL(150)} {FRAME_AT_COL(750)} '
+             'poweroff'),
+    ],
+    # framelines-1: the viewfinder (om-emu's 1024 x 768, the GUI's 800 x 600 x 1.28): XPan rows 195 / 573 and none at
+    # 16:9's 97; 5:4 columns 32 / 993 (4:3 has none there); 16:9 keeps rows 97 / 672.
+    'crop-frame-lines-in-the-viewfinder': [
+        Boot(f's1 wait wait {PICK_ASPECT(6)} s1 wait wait {EVF_FRAME_AT_ROW(195)} {EVF_NO_FRAME_AT_ROW(97)} '
+             f'{SCP_ASPECT(-1)} s1 wait wait {EVF_FRAME_AT_COL(32)} {EVF_FRAME_AT_COL(993)} '
+             f'{SCP_ASPECT(-4)} s1 wait wait {EVF_FRAME_AT_ROW(97)} {EVF_FRAME_AT_ROW(672)} poweroff', env=(('DEVICE', 'evf'),)),
+    ],
+    # framelines-1: video keeps its own frame: with XPan saved, a video boot draws no line at the strip's edge.
+    'crop-frame-lines-not-in-video': [
+        Boot(f's1 wait wait {PICK_ASPECT(6)} s1 wait wait {FRAME_AT_ROW(134)} poweroff'),
+        Boot(f'wait wait s1 wait wait {NO_FRAME_AT_ROW(134)} poweroff', photo_switch=PHOTO_SWITCH_VIDEO),
+    ],
     'crop-grid-stock-ratio-unchanged': [
         Boot(f's1 wait wait {PICK_ASPECT(1)} s1 wait wait {GRID_THIRDS} '
              'expect:pxdiff:300,120,310,120 expect:pxdiff:450,215,450,225 poweroff'),
