@@ -1,7 +1,7 @@
 # Deterministic firmware tests
 
 Research, 2026-11-15. Status: analysis, with emulator runs where marked. Nothing here is camera-tested. The suite is
-built: seven emulator tests, the patch audit, and five static build checks, all run by `tools/test/emu_test.py`.
+built: seven emulator tests, the patch audit, and six static build checks, all run by `tools/test/emu_test.py`.
 
 A deterministic regression suite for the firmware is possible and cheap to start. The emulator, om-emu, gave
 byte-identical screenshots, card images, and settings files when one build ran the same script twice. om-emu also
@@ -96,13 +96,23 @@ The gate and the digest have unit tests that need no firmware:
 | `color-wheel-readout-keeps-the-callers-a2` | On Hue, ed_get gives its caller a2 back after the label code. v0.20..v0.30.3 returned the call's return address in a2 (#64) |
 | `color-wheel-tone-readout-keeps-the-callers-a2` | On Shadows, tn_get gives its caller a2 back after the label code (#64) |
 | `color-wheel-saturation-guide-names-the-page` | The Saturation guide reads "Saturation [INFO]" with one color and "Sat. All [INFO]" with ALL, from the dial or INFO. The ALL guide is the camera's again off Saturation (#64) |
+| `color-wheel-dial-step-writes-the-cursor-only` | A rear dial click on Hue and on Shadows writes only COLOR 1's cursor (2197) through the settings manager, the frame changes, and a click back gives the frame before it (experiment/wheel-speed) |
+| `mix-and-rgb-dial-step-writes-the-panel-mode-only` | A dial click on the Mix page (both dials) and on the RGB page writes only the H&S panel's mode (2191) through the settings manager, the frame changes, and a click back gives the frame before it (experiment/rgb-cal-speed) |
+| `border-dial-steps-as-contrast` | A rear and a front dial click step the Border row the way they step the camera's Contrast row: rear +1 up, front +1 down (experiment/border-dial-direction) |
+| `glow-dial-steps-as-contrast` | The same for the Glow row, after Contrast: rear +1 up, front +1 down (experiment/perf-040, 2026-11-18) |
+| `halation-dial-steps-as-contrast` | The same for the Halation row, after Contrast: rear +1 up, front +1 down (experiment/perf-040, 2026-11-18) |
+| `tone-balance-dial-steps-as-contrast` | The same for the Split Tone Balance row, after Contrast: rear +1 up, front +1 down (experiment/perf-040, 2026-11-18) |
+| `grain-dial-steps-as-contrast` | The same for the Film Grain row, after Contrast: rear +1 up, front +1 down, and the debug log names the strength it ends on (experiment/perf-040, 2026-11-18) |
 | `look-tables-match-the-model` | `st_run`'s R, G and B tables on a fake COLOR job match the Python models for split toning, curves and both together, and `sd_crc` matches zlib's CRC-32 |
+| `live-view-gates-wait-for-section-6` | The three live-view hook sites (hook_mx, hook_tone, hook_lv), called directly with the camera's ready word at 0x1f, reach the stock code (lv_skip with d0 = 11), and at 0x3f our code (fix/section-gates, 2026-11-17) |
 | `patch-audit` | om-emu's audit finds no patched byte the camera does not load, and no task started at power-on |
 | `static:release-rebuild` | `firmware/patch.py` rebuilds the newest release byte for byte, and `SHA256SUMS` matches |
 | `static:hook-list` | The build's hooks equal `tools/test/hooks.json` |
 | `static:hook-sections` | Each `.hook_*` section in `firmware/src/editor.s` has a hook entry, and the reverse |
 | `static:changed-bytes` | Every byte that differs from stock lies in a place the build may write |
 | `static:loader-end` | The loader's end word, read from the image, covers every section that uses it |
+| `static:section-order` | No hook or patch site in sections 1..5 reaches our code or data in a later section (copied later while the camera starts), unless behind the camera's own ready check for that section |
+| `static:comment-swallow` | No instruction line (one space, then a mnemonic) starts inside a `/* */` comment in `firmware/src/*.s`: a comment opened on the line above swallows it and it is never assembled (2026-11-18: a `blt` and a `bne` of the day's work, and two older ones) |
 
 Results, emulator only:
 
@@ -122,6 +132,13 @@ or `reject`.
 A `Boot` can also put files on the card before it boots: `card={'CURVES.BIN': 'CURVES_A'}` puts the `FIXTURES` entry
 of that name into `OM3MOD/`, `None` removes the file (v0.30 test 9). Fixtures are made at run time in `--out/fixtures/`
 from the newest release's `LOOKS.BIN` (`card/mkcurves.py`).
+
+A `Boot` can count what the code does, for a change that leaves the log as it was. `watch=('fopen',)` names build
+symbols, and `hits=fn` gets each time the code reached one, in run order, as `(symbol, string at a0)`, from power-on
+on (`WATCH`, `WSTR` and `WBOOT` in `session_ed1.mjs`). `fn` returns the errors. `debug-log-off-writes-no-log` counts
+`hl_ok` inside `lg_write`, and `card-edits-and-bundles-unused-with-films-in-camera` names the files `fopen` opens. An
+`ncall` call takes `count`, addresses whose hits during the call come back in its result's `count`. The WB and
+Hue / Lightness tests count the getter calls that way.
 
 `session_ed1.mjs` takes `PSET0` and `MODE0` in its environment, the photo/video switch and mode dial positions
 before boot, and the tokens `pset:N` and `mode:N` to move them during a run. A `Boot` sets them with `photo_switch`
@@ -271,7 +288,9 @@ release. `--all-releases` rebuilt all 23 releases byte for byte in 44 s. All pas
 | `static:hook-list`: the build's hooks equal `tools/test/hooks.json` | A new hook nobody reviewed, such as one on the start-up path | `hooks.json` holds names, addresses, and lengths for 40 hooks, and no firmware bytes. |
 | `static:hook-sections`: every `.hook_*` section in `firmware/src/editor.s` has a hook entry, and the reverse | A hook assembled but not placed, or placed but not built | |
 | `static:loader-end`: the loader's end word, read back from the image, covers every section that uses it | Code past the loaded end, such as `.ext11` beyond 0x60f99800 | |
+| `static:section-order` (crop round 7b, 2026-11-17; fix/section-gates): from each hook and changed patch site in sections 1..5, follows our code's direct jumps, calls and branches (objdump of `p.elf`, `-z`) and flags any later-section address reached or named, and any pointer into our later code. It keeps going past each crossing, with the later section as the new floor, so a path from section 5 on into 6 is found (hook_tone -> tone -> st_run). A jump or call right after `mov (0xa32de58c),dN; and MASK,dN; beq/bne` passes for any section up to MASK's lowest bit (the camera marks sections ready in order) | A hook on a path that runs while the camera starts jumping into code not copied yet, such as crop round 7's 0x6057fb1b, which boot-looped the camera; on main 78a809e: hook_mx, hook_tone (and its st_run), hook_lv | Indirect jumps and calls (`jmp (aN)`, `calls (aN)`) are not followed. The released paths it finds besides those three are listed in `LATE_RELEASED` (the shutter hook's, behind `hl_ok` / STATE; the stills hooks; the validator words): audited in research/NOTES.md "Section order audit" (2026-11-17), not proven. Needs the toolchain's objdump. |
 | `static:release-rebuild`: `firmware/patch.py --release` rebuilds the newest release, and the `SHA256SUMS` line matches | An unintended change to a shipped release | |
+| `static:section-order` (crop round 7b, 2026-11-17): from each hook and changed patch site in sections 1..5, follows our code's direct jumps, calls and branches (objdump of `p.elf`) and flags any later-section address reached or named, and any pointer into our later code; a jump or call right after `mov (0xa32de58c),dN; and BIT,dN; beq/bne` with that section's bit is a gate and passes | A hook on a path that runs while the camera starts jumping into code not copied yet, such as crop round 7's 0x6057fb1b, which boot-looped the camera | Indirect jumps and calls (`jmp (aN)`, `calls (aN)`) are not followed. The released paths it finds (21 entries in v0.30.x and border preview 1: the shutter hook, the picture pipeline's hooks, 13 menu and grain words) are listed in `LATE_RELEASED`, not proven: they start normally on the camera. Needs the toolchain's objdump. |
 
 After a reviewed hook change, regenerate the list with `--write-hooks` and read each difference first.
 
@@ -327,7 +346,8 @@ more work than the tests above.
 - **Stills.** om-emu has no sensor or capture pipeline, so grain, glow, halation, RAW+JPEG, and Pin Hole regressions
   need the camera. The halation pass's bytes are the exception (`halation-matches-the-model`, a direct call on test
   frames in plain DRAM); its timing, the bus window path it takes on the camera, and the capture route stay
-  camera-only.
+  camera-only. Likewise our grain tile's bytes (`grain-tile-matches-the-model`, `tg_fill` called directly, against
+  `research/grain/tile_model.py`); its time, the window path and the look on photos stay camera-only.
 - **Video.** om-emu does not model movie recording. A camera video boot puts films back, and an om-emu one does not.
   The v0.29.5 live view freeze (#53) itself is camera-only. `video-boot-after-photo-boot` checks the code path its
   fix removes.
@@ -351,8 +371,18 @@ emulator test as proposed here would have failed. "Maybe" means it depends on a 
 | DS2, #54 | A live turn from C1 back to M briefly shows "COLOR1*" before M's film | No | None, the camera's own picture-mode write at a turn. `live-dial-turn-holds-the-label` checks the hold |
 | DS3, #54 | The same flash: at the turn the camera reads as video and makes no 901 write, so no hold is set | No | None, the emulator draws no label while the mode code is in between |
 | e9b954f | Start-up path overwrote its caller's saved registers | Yes | Boot smoke, register watch |
+| crop round 7 (2026-11-17) | Boot loop at every start: a section-2 hook (0x6057fb1b) jumped into section 6's extension before section 6 was copied | No in om-emu (it maps every section at once); yes statically | `static:section-order` |
+| fix/section-gates (2026-11-17) | Live view's first picture set-up at power-on could jump into section 6 (hook_mx, hook_tone via st_run, hook_lv) before the camera marks it ready: never seen on a camera | No (om-emu maps every section at once and runs no live-view set-up); yes statically | `static:section-order`; `live-view-gates-wait-for-section-6` calls the sites directly |
 | v0.28–v0.30.1, #65 (#27) | With Image Review on, a Glow or Halation photo gives a black review picture, then the Creative Dial to a standard picture mode freezes live view | No | None, om-emu develops no photos (the review picture is one of the shot's small extra developments) |
+| v0.41-dev test 3 (2026-11-18) | A black Border (-1..-5) left the photo without a border: the capture's route check (xb_cap) sent only a Border above 0 through the Soft Focus passes where xb_gs draws it | No | None, om-emu takes no photos (xb_cap runs at a capture); `border-matches-the-model` covers the drawing itself |
+| v0.41-dev test 4 (2026-11-18) | At 16:9, 3:2, 1:1, 3:4, 5:4, XPan and 21:9 the camera's 1600 px preview inside the JPEG (camera playback, phones) showed a 1 px line of picture at its cut edges: the camera cuts the preview a few px wider than the photo, past the border | Yes for the drawing (`border-matches-the-model` with the margin past a crop's cut sides; test 4's build `caught`); No for the preview itself (om-emu makes no JPEGs) | `border-matches-the-model` |
+| v0.40-alpha .. v0.40b, #83 | After a power-off in XPan or 21:9 the camera started in 16:9 (5:4: in 4:3) until the first half-press: the crop came back only at the first shutter event | Yes | `crop-xpan-back-at-start-up` (Image Aspect before any half-press); `crop-start-up-restore-photo-only` (cr_el's gates, the half-press fallback) |
+| test 8 = crop83-2 (2026-11-18), #83 | XPan not kept through one power cycle: the camera saved M without a callback while on ("save patches 2"), cr_sin left the live Image Aspect at the crop's base, and the power-off save sealed no tag | Yes, with the camera's own save of M called mid-session | `crop-kept-over-a-save-of-m-while-on` (crop83-2's build `caught`) |
+| crop83-1 (2026-11-18), #83 | The crop put back at start-up was undone later in the same power-on (log: "then 3, set to 6, after 6, now 3"); the next start showed 16:9 | No for the cause (om-emu's start-up is over before the GUI's first state change and it runs no live view); Yes for the put-back, with the base poked back | `crop-kept-when-the-camera-puts-the-base-back` (crop83-1's build `caught`); `crop-xpan-21-9-5-4-kept-over-power-cycles`, `crop-user-pick-after-start-up-kept` |
 | v0.30, menu-flicker | Leaving Blacks / Whites or WB compensation flashes the old row's bottom bar for a frame | No | None, om-emu draws only after the screen update. `grid-row-gives-the-bottom-bar-back` checks the bar comes back |
+| v0.30.1 and later, tone-page-flash | Moving between WB Compensation and Highlight & Shadow shows one frame with an empty table area: no grid, no curve | No | om-emu draws both passes inside one key event, before its next frame, so the frame itself is camera-only. `wb-to-highlight-shadow-sets-the-scene-in-the-row-refresh` checks the cause: no `sc_set` between `gr_upd` / `gr_end` and the update's end |
+| v0.30–v0.30.3, #72 | Switching films fast in the Picture Mode list (holding the arrow, or FILM 1 <-> FILM 2) reboots the camera | Yes | om-emu does not reboot; the cause (the group's record kept at every step, camera probe J) is counted: `film-list-keeps-the-record-once-as-it-closes`, `control-panel-dial-keeps-the-record-once-as-it-closes` |
+| v0.26..v0.40b (live look, 2026-11-18) | Split toning, Tone Balance, Blacks / Whites and the RGB curves reach live view only at the next half-press / AF: the camera rebuilds a job's tone tables only when its context's mask (C+60) asks | Yes for the cause (the camera's development function run whole on a fake live-view job: test 7 `caught`); No for the live view picture (om-emu runs no live view jobs) | `live-view-tone-tables-follow-a-change` |
 | 331691c | Custom mode showed the previous mode's films until a half-press | Yes | Custom modes |
 | 6438628, ea8b97c | A film picked with no half-press was lost at power-off | Yes | Film picked before the first half-press |
 | v0.29.2, #41 | C1–C5 mixed films with saved settings, `*` leaked | Yes | Custom modes |
@@ -369,7 +399,7 @@ emulator test as proposed here would have failed. "Maybe" means it depends on a 
 | lk6, lk7 | Reboot at every half-press, 1 s hang on COLOR switch | No | None, cache |
 | #11, #12 | Video with a new film crashed, grain with glow crashed | No | None, video and stills |
 
-Of these 18, 7 are catchable, 4 maybe, and 7 not. The owner's camera or a user found every one of them first.
+Of these 20, 8 are catchable, 4 maybe, and 8 not. The owner's camera or a user found every one of them first.
 
 Two classes recur. Start-up and first half-press work accounts for six of the 18. The
 calling convention accounts for three. Settings kept per mode and across boots is the most testable class.

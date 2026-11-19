@@ -1,5 +1,12 @@
 SECTIONS {
   .hook_color   0x60518615 : { *(.hook_color) }
+  .hook_crs     0x60061183 : { *(.hook_crs) }   /* crop modes: the settings store write (power-off: M patched in RAM) */
+  .hook_crb     0x6006120e : { *(.hook_crb) }   /* crop modes: the buffer before the write (after a menu) */
+  .hook_crg     0x611cb24d : { *(.hook_crg) }   /* crop round 3: the GUI screen spec's ratio byte */
+  .hook_crh     0x60dc4bb1 : { *(.hook_crh) }   /* crop round 5: the live histogram's area (Set_Histogram_CalcMode) */
+  .hook_crk     0x6111341e : { *(.hook_crk) }   /* crop round 9c: the single frame's info build, after its label code */
+  .hook_crq     0x60c7c18a : { *(.hook_crq) }   /* crop round 10: the play component's record-mode lookup (reads only) */
+  .hook_crr     0x611133cd : { *(.hook_crr) }   /* crop round 10: SimplePlayCommon's quality lookup */
   .hook_shutter 0x60415216 : { *(.hook_shutter) }
   .ext1         0x6031e920 : { *(.ext1) }
   .ext4         0x60a8f100 : { *(.ext4) }
@@ -11,6 +18,8 @@ SECTIONS {
   .hook_tch     0x612a8db3 : { *(.hook_tch) }     /* #75: a touch's idle re-arm, 30 s in Picture Mode */
   .hook_c1e     0x605053cc : { *(.hook_c1e) }
   .hook_wl      0x604b8d91 : { *(.hook_wl) }
+  .hook_trs     0x604cf156 : { *(.hook_trs) }
+  .hook_trl     0x604cf1a4 : { *(.hook_trl) }
   .hook_tone    0x605197d7 : { *(.hook_tone) }
   .hook_fx      0x60555e50 : { *(.hook_fx) }
   .hook_lv      0x6046b8bb : { *(.hook_lv) }
@@ -40,12 +49,20 @@ SECTIONS {
   .hook_sc      0x610cdf05 : { *(.hook_sc) }
   .hook_pu      0x611d04ec : { *(.hook_pu) }
   .hook_pe      0x611d059c : { *(.hook_pe) }   /* the Picture Mode update's end: the bottom bar back off the grid rows */
+  .hook_rr      0x611356e6 : { *(.hook_rr) }   /* the row refresh (property 275's handler): the holder's scene swap */
   .hook_inf     0x611c29c2 : { *(.hook_inf) }   /* rgb-curves: INFO goes to the row's panel for 5397 / 5398 / RG_IT */
   .hook_rsi     0x611c296f : { *(.hook_rsi) }   /* rgb-curves: the held-OK reset the same */
   .hook_mx      0x6051485a : { *(.hook_mx) }    /* colour mix: the matrix function's row-scaling call */
   .hook_bar     0x611d1035 : { *(.hook_bar) }
   .hook_rda     0x611d16b4 : { *(.hook_rda) }
   .hook_rdb     0x611d1725 : { *(.hook_rdb) }
+  .hook_si      0x6123043d : { *(.hook_si) }
+  .hook_bga     0x6123825e : { *(.hook_bga) }   /* border preview: the grid builders' grid read -> bl_gv */
+  .hook_bgb     0x611cb433 : { *(.hook_bgb) }
+  .hook_bgc     0x611e44d7 : { *(.hook_bgc) }
+  .hook_bgd     0x611eae1e : { *(.hook_bgd) }
+  .hook_blk     0x611c7922 : { *(.hook_blk) }   /* border preview: the line lookup's loop end -> bl_tail */
+  .hook_fv      0x6120b698 : { *(.hook_fv) }    /* fwver: the Firmware Version page's build, its end -> fv_add */
   .ext2         0x607187a8 : { *(.ext2) }
   .ext7         0x6164afd0 : { *(.ext7) }
   .ext3         0x6081fe10 : { *(.ext3) }
@@ -59,6 +76,9 @@ SECTIONS {
   .ext13        0x60fac000 : { *(.ext13) }   /* v0.30 test 10: the debug log, after the RGB work area */
 }
 color_builder = 0x60518381;
+si_get44      = 0x610fd8ef;   /* screen info: the shooting-screen updater's settings getter (d0 id, a0 out) */
+si_sv0        = 0x60b8781f;   /* screen info: the facade's stock SetValue (vtable +4) */
+si_back       = 0x61230443;   /* screen info: after the hook's replaced mov 0x62ceeb54,a0 */
 pm_back       = 0x611bd90f;
 stock_sel     = 0x60b86a01;
 rng_back      = 0x611d1090;
@@ -94,6 +114,7 @@ sc_ref        = 0x61192d6c;
 pu_back       = 0x611d04f2;
 pe_back       = 0x611d05a2;
 pe_ret        = 0x611d05b2;
+rr_back       = 0x611356ec;
 gx_back       = 0x610f601c;
 pme_back      = 0x6125bed1;
 ev_arg        = 0x6129b050;         /* ft1: the still set-up (Grainy Film's texture is made here) */
@@ -117,6 +138,11 @@ rdb_11        = 0x611d1757;
 
 color_resume  = 0x6051861a;
 getter        = 0x60063380;
+gui_get       = 0x610fd8ef;   /* border preview: the GUI's setting read (its cache, else the settings interface) */
+fv_lab        = 0x611c782f;   /* fwver: a line's label into its record (a0 the viewer, d0 the record, a1 the label) */
+fv_back       = 0x6120b69e;   /* fwver: the build's end, ret [d2,d3,a2,a3],84 */
+gl_loop       = 0x611c78cc;   /* border preview: the line lookup's record loop */
+gl_ret        = 0x611c7927;   /* and its retf */
 trig          = 0x60415343;
 trig_resume   = 0x6041521b;
 get_tid       = 0x6003193e;
@@ -126,6 +152,9 @@ LOCK          = 0x60075f73;   /* v0.28 halation: as the code block's xb_open */
 UNLOCK        = 0x60075fbc;
 WINMAP        = 0x60071018;
 FLUSH         = 0x60070e69;
+RES_SZ        = 0x601d7546;   /* better grain g1: the grain tile's size (resource 0x8001) */
+RES_LD        = 0x604ce6c9;   /* its load into the texture builder's buffer */
+TLD_BACK      = 0x604cf1a9;   /* after that call in the builder 0x604cf0b9 */
 OS_FOPEN      = 0x608d4d22;
 OS_FCLOSE     = 0x608d4d2b;
 OS_FSEEK      = 0x608d4fb1;
@@ -233,3 +262,22 @@ dl_none       = 0x610ba054;         /* #37: the walk's return (d0 = found) */
 ex_back       = 0x60457580;         /* v0.27 EXIF: after the hook's 8 bytes */
 ds_get        = 0x610cd5ac;         /* #54: the camera's data store, read: a0 buffer, d0 item, d1 length (call [],4) */
 ds_put        = 0x610cd5c4;         /* #54: and write, marking the item changed: a1 0 as the camera's (call [d2,a2],16) */
+/* custom crop modes (crop.s): where the stock switch cases continue after setting width and height */
+cr_os_j       = 0x60c14d28;
+cr_ta_j       = 0x60c15156;
+cr_sa_j       = 0x60c0670e;
+cr_sb_j       = 0x60c28c7b;
+cr_sc_j       = 0x60c2ab68;
+cr_pb_j       = 0x60c66889;
+cr_gv0        = 0x610fd8ef;         /* the GUI getter (d0 id, a0 out) */
+cr_ef         = 0x60060eff;         /* the store write's first call (replayed by cr_sin) */
+cr_sin_back   = 0x6006118b;
+cr_sb_back    = 0x60061214;
+cr_pbk1_back  = 0x61113424;         /* crop round 9b: SimplePlayCommon after mov (2844,sp),d2; mov 78,a0 */
+cr_pq_back    = 0x60c7c18f;         /* crop round 10: the record-mode lookup after its first three */
+cr_pqg_back   = 0x611133d5;         /* crop round 10: SimplePlayCommon's call 0x6110130d */
+cr_lr_j       = 0x60bf2d2b;         /* the live view ratio switch: mov d0,(28,sp) (the height) */
+cr_rc_j       = 0x60c0d35f;         /* ratioToConvertSize: mov d0,(4,a1); retf [],0 */
+cr_oa_j       = 0x60c14b95;         /* getOutputAspect: mov d0,(16,sp) */
+cr_spec_back  = 0x611cb253;         /* crop round 3: after the screen spec's ratio byte */
+cr_dhm_back   = 0x60dc4bb7;         /* crop round 5: Set_Histogram_CalcMode after its entry */

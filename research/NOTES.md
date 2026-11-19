@@ -3141,6 +3141,7 @@ Fork: github.com/fernandezk26/camera-stuff (Apache-2.0), branches `sdload/v0.26.
   The owner has used the "Halo" row icon and the "FILM 1*" lettering from h3 / h5 without objection.
 
 ### Our version on the camera's Firmware Version screen: first look, parked (2026-11-12; emulator / disassembly only)
+- **Picked up 2026-11-18:** built as fwver 1, see "Our version on the Firmware Version screen: fwver 1" at the end.
 - Owner: wanted for v0.28; after hearing it is more work than expected: "we can just scrap it. it can be a future
   update." Parked; nothing built. What was found, so the next try starts here:
 - **The screen:** MENU -> wrench tab page 6 "Reset/Clock/Language/Others" -> "Firmware Version" (row value "1.1" on
@@ -3284,6 +3285,57 @@ Fork: github.com/fernandezk26/camera-stuff (Apache-2.0), branches `sdload/v0.26.
   Gentler Shading is parked (ROADMAP "Difficult (parked)"; #22 to be answered so). The probes stay on `experiment/shading-probe-s1` (s1, s2) for
   anyone who picks it up: the next lead would be the mask's source (the radial `ausEffectiveShadingCoefficient` table
   or another unit configured from request +1752 / +1590).
+
+## Gentler Shading s1: our own vignette on stills (2026-11-18; emulator + analysis, camera test pending; branch feature/gentler-shading)
+- **Owner (2026-11-18, #22 reopened): "the +2 and -2 options are fine, but they should be at the max end. aka, it gets
+  too strong, too quick."** Route 1 (find the camera's mask strength) looked at briefly, out of reach; route 2 (our own
+  CPU vignette on stills) described with its costs (no preview on the shooting screen or in Image Review, slower
+  saves): **owner chose route 2** ("A: our own vignette", via cad).
+- **Route 1 (analysis):** combiner 33's COLOR set-up 0x605052b2 writes only +4 0x1002, +8 0xeee, +92 0, +96 0x04000400,
+  +100 1024, +128 / +132 (the targets, s1), +144 0x151500, +148 0x04000400, +152 1024, +196 3; the dispatcher 0x60504b2b
+  first sets +76 / +80 / +104 / +128 / +132 / +156 = 0, +188 = 1, +192 = 1024, +196 = 0, and an unknown combiner id
+  falls to combiner 0 (0x605056ef). Pin Hole's combiner 9 (0x60504e65) also sets +4 0x1002 and +196 3 (a mask mode,
+  guess). +92, +96 / +100 and +196 were never probed; no field carries the level, so the strength is set elsewhere.
+- **Where a still's Shading comes from (analysis; om-emu for the getter):** the capture snapshot (0x603e7f65) reads
+  getter key **0xf7c9** (AGET id 1016, the current picture mode's Shading; COLOR k's own setting is key 0x9389 |
+  (k - 1) << 16, AGET 912 + k) into **capture +37722**; the request builder (0x60553e36, picture mode 11) copies it to
+  its block's +266 = the development's **+1752**, the byte combiner 33 reads (MONO: +37720 / +37721 / +37722 -> +264..266);
+  0x6055fd6a / 0x60558550 copy it to capture +6098 (the maker note). The builder runs after the Art Effect converter
+  (our xb_cap). Capture +37690 / +37691 (keys 0x9651 / 0x9661, values 0..4) set the job flag 0x800000 = the MONO set-up,
+  not Shading (correcting the 2026-11-08 guess that Shading reaches xb_cap as Art Effect ids 8 / 9: those are the Art
+  Filter Shade effects SHADE_V / SHADE_H, converter table 0x606e5f88). Capture +38252..: 44-byte records of the COLOR /
+  MONO profiles (0x60560e9c, +43 = Shading), built only when getter 0xd191 is 1 (likely for the maker note).
+- **s1 (commits 68b440d + merge 0741d9d with try/v0.41-dev test 2):**
+  - xblock `xb_sh` (from xb_cap after the Border check, our COLOR looks only, as Halation / Border): the getter 0xf7c9
+    (the one xb_slot already calls there) at -5..-1 / 1..5 -> capture +37722 cleared (the camera develops the still as
+    with Shading 0), VG_LVL = the level, counters VG_NT (taken over) / VG_ND (the capture's byte was not the setting's);
+    the still takes the Soft Focus passes (w 1024) as the Border alone does. xb_gs (frame 24 -> 28) runs `VG_RUN` after
+    halation and grain, before the Border. No new hook or patch site.
+  - `shading.s` `vg_run` (.ext13; budget raised 0x60fbc000 -> 0x60fc0000, inside the GX4-proven reserve; 70,160 B used):
+    our vignette on buffer 0x1000, the exact model in `firmware/shading.py`: m = |level| / 5 x M5(r), r = distance /
+    half-diagonal (a circle, in the part the camera keeps: crop.s cr_bdc, so every ratio and the crop modes); darker
+    Y' = Y (1 - m), lighter Y' = Y + m (255 - Y), Cb / Cr toward 128 by the same m (the camera's own blend, s1 / s2).
+    M5 = a monotone cubic through (r, m) (0, 0), (0.30, 0.02), (0.525, 0.28), (0.75, 0.75), (1, 0.94): the camera's -2
+    from the s2 photos (-1 / -3 averaged; corner m 0.94, s1's +5 corner on a wall 0.90). Corner Y factor at -1..-5:
+    0.81, 0.62, 0.43, 0.25, 0.06. Per photo two tables (vg_gk {g, KC2} by idx = 512 r^2, vg_nx the S where g next
+    changes); rows walked from the centre outwards, mirror pairs sharing g, both Y and both chroma bytes of a pair in two
+    32-bit multiplies (16-bit lanes). Rows through hl_open as bd_run.
+  - Debug log: "Shading (gentler s1): photos N, taken over N, capture byte differed N, last level L, last time (ms) T".
+  - VERSION "v0.41-dev (test 2 + gentler shading s1)".
+- **om-emu:** `research/shading/emu_check.py`: **23 of 23 test frames bit-exact** (darker and lighter at every level,
+  4:3 / 3:4 / 16:9 / square, 64 x 64, 1028 x 131, 8192 x 64, the crops 3:2, 16:9, 1:1, 3:4, 5:4, XPan, 21:9; levels 0, 6,
+  -6 untouched) and the 20 MP cases: **-5 195 M instructions, +3 207 M, 16:9 -5 148 M; 1944 locks, at most 108 K under
+  one** (halation h8 104..124 M). Estimate (analysis, g3's ~170 M a second and ~0.15 ms a FLUSH): about 1.2..1.5 s
+  more per 20 MP photo with Shading on, nothing with Shading 0. The first try (a lookup per couple) was 226..246 M.
+  Suite test `shading-taken-over-at-a-still`: Shading -3 set on COLOR 1's own row in Picture Mode -> xb_sh on a fake
+  capture reads -3 through 0xf7c9, clears +37722, VG_LVL 0xfd, counts; a capture byte 0 (a burst's later frame, if the
+  snapshot is shared) is counted as differing and still taken over; with Shading 0 nothing changes.
+- **Camera-only:** that clearing +37722 really stops the camera's own Shading (no effect 0x0c00 development; if the
+  corners come out with both, the camera reads the level elsewhere); the look; the time (the log's "last time"); bursts;
+  RAW+JPEG. **Known differences from v0.41-dev test 2 (the owner's call):** the shooting screen still shows the camera's
+  own (strong) Shading, from the unchanged setting, while the photo gets ours (live view's own request path was not
+  traced: a follow-up could hide it there); Image Review shows no Shading; the RAW file's maker note says Shading 0.
+  LookLab's preview (f = 1 + 0.07 s r^1.5) is not this curve yet.
 
 ## Film WB: a film sets the camera's WB (2026-11-12; emulator, probe w1)
 - Owner: films carry a Kelvin; set on the camera (a new WB row) and later in the Control Panel; values as the
@@ -5269,6 +5321,46 @@ Owner: "yes, build the noise filter fix" (the row's '*' follows the camera's own
   tele-converter (x2), COLOR 3 FILM 15 single. Not in the files: RAW only, Live ND, multiple exposure, focus stacking,
   silent single. CADLOG: "nothing unusual", photos counted 87 (counted once per EXIF fill; the 33 above the 54 saved
   shots are likely the multi-frame modes' frames: guess).
+- Reporter's log on v0.30.3 (2026-11-17): A, f/4, ISO 200, 1/1.6..1/2.5 s, FILM 1, Drive [32], AF [1] (C-AF), face / eye
+  [6]; 4 photos counted in 57 events, nothing unusual.
+- **Owner's camera, test 5 (2026-11-17; camera-tested): not reproduced with their exposure and AF.** FILM 1 (changed),
+  M, f/4, ISO 200, 1/2 s, C-AF, face / eye [6], Drive [11]: 18 shots PB173018..035, all saved (JPG + ORF): 5 single
+  presses, a 6-shot burst with anti-shock, a 7-shot burst (EXIF "Sequential, Fast"). Left: the drive mode. Code 32 is
+  one of the owner's bursts too (the 10-shot "Sequential, Fast" burst at the end of grain g2b, 2026-11-16, COLOR 1, no
+  grain), but its EXIF reads the same as code 11's, so which menu mode it is is not known.
+- **Owner's camera, every drive mode with grain (2026-11-17, test 5, FILM 1 changed, A, 1/40 or 1/160 s):** 82 photos
+  PB173037..118 saved (EXIF list in the private card backup). Drive codes from the log's photo counts against the
+  EXIF: 11 Sequential + anti-shock, **32 Sequential (plain: PB173042-043, 2 shots, saved)**, 40 SH1, 41 SH2, 39 Pro
+  Capture, 42 Pro Capture SH1, 43 Pro Capture SH2 (single and single + anti-shock before them). Two loose ends: the
+  log counts 83 photos this power-on but PB173036 (the first after switch-on) is not on the card; and the last mode
+  tried (code 0, events 49-54) counted no photo and wrote none. The reporter's exact combination (code 32 at about
+  1/2 s) is still untested.
+- Drive code 0 = Single (PB173134 below; its EXIF says "Anti-shock", see the correction below).
+- **Owner's camera with the default 20 films (2026-11-17, test 5; the v0.30.3 LOOKS.BIN made new to the camera by one
+  byte after FILM 20's name, CURVES.BIN of v0.30.3, NAMES.BIN off the card):** the camera took the set ("from the card
+  (films the camera never had)", CURVES "taken", matches 20). FILM 1 Portra 400 with grain changed, A, f/4, ISO 200,
+  1/1.3 s, C-AF, face / eye [6]: drive 11 (Sequential + anti-shock) 6 single presses and a 9-shot burst, then drive 0:
+  16 photos PB173119..134, 16 counted, all saved. Not reproduced. Code 32 (plain Sequential) at a slow shutter is
+  still not tried.
+- **Side finding (analysis, to look at):** right after taking the new set the log lists films with changes 1, 2, 3, 4,
+  5, 7, 8, 9, 10, 12..19 (all but 6, 11, 20). Before the swap the owner's set had changes on 1, 6, 11 only (FILM 20 is
+  Natura 1600 in both sets). USING.md says a film changed by a new set starts again as built and the others keep
+  their changes, so a fresh set should show no '*' (except FILM 1's grain): this looks inverted (films that had changes
+  reset, the others keep the old film's values). Not checked in om-emu yet.
+  **Next power-on (owner, 2026-11-17): "they look normal to me"; the log lists films with changes: none.** So the
+  list was only in the log of the power-on that took the set (stale comparison in that power-on: guess); not a fault
+  the owner can see.
+- Correction: the EXIF "Anti-shock" tag is not the menu's anti-shock mode (owner: "I am not on antishock mode"; drive 0
+  is the owner's plain Single and its photos carry the tag too). Likely the electronic first curtain. So drive 11 is
+  the owner's usual Sequential and 32 the Sequential whose photos lack the tag (guess: Sequential H, mechanical shutter).
+- **Owner's camera, "Sequential H" try (2026-11-17, test 5, FILM 1 Portra 400 grain changed, f/4, ISO 200, C-AF):** the
+  modes picked were the silent SH2 (30 shots at 1/160, the camera's fastest) and SH1 (12 at 1/15): 42 photos
+  PB173135..176, no gap in the numbers. The log is from a later power-on (no photos). Not reproduced. Tag pattern: on
+  2026-11-16 the owner's Single / Sequential were codes 30 / 32 (no "Anti-shock" tag); today 0 / 11 (tagged), so a
+  camera setting between the two days changes the code; the reporter's 32 is the untagged Sequential.
+- Reporter on Discord (via the owner, 2026-11-17): "Sequential burst and aperture priority". The first #50 question
+  comment was deleted by the owner; the posted one (owner's OK) asks: Single, S-AF in place of C-AF, face / eye
+  detection off, each with Grain Low, and a new CADLOG.TXT. Waiting.
 
 
 ## LookLab: RGB curves and colour mix (2026-11-15; feature/looklab-rgb-curves; browser-checked, not live)
@@ -5702,6 +5794,180 @@ rgb-page-counts-every-click, halation-matches-the-model). Package `test-builds/2
   byte for byte, `--release v0.30.2` still 7fbd3957…. Extras as v0.30.2. LookLab rebuilt (h8's preview). PR #69 lands
   on main with this merge (its head 7b0cc80 is in the history).
 
+## #72: scrolling the films in the Picture Mode list reboots the camera (2026-11-16..17; cause found, fix v0.30.4 test 4)
+- Report (crombach, #72; owner: "trying to track down this bug for ages"): holding the arrow (or pressing it fast)
+  through the films in the Picture Mode list reboots the camera, every time, on v0.30.3. Earlier sightings: the reboot
+  on v0.30 test 12 and "reboot when resetting many films before a half-press" (above). om-emu never reboots.
+- Camera tests (owner, 2026-11-16; full record on `try/v0.31a`, probe builds on `experiment/72-probes` and
+  `experiment/72-probes-cd`): v0.30.3, slow scrolling: no reboot; COLOR 1 <-> COLOR 2 fast: none; **FILM 1 <-> FILM 2
+  fast: reboot in about 10 s**. Probes, each one part of a film step off: A (no settings writes) rebooted; B (no cell
+  redraws) rebooted later; C (a pick only notes the look: no load, WB, capture) rebooted; **E (the films' list cells
+  given the camera's own COLOR 1 picture) did not**; F (our picture lookup `fl_ic` runs, then answers the camera's own
+  picture) rebooted. So: the work `fl_ic` does when the camera asks for a film's picture.
+- What it does (code, om-emu counts): for the film on its COLOR (the one just picked), `fl_fch` -> `fl_live` reads
+  COLOR k's 18 settings through `fl_isdef` (about 67 checks per step) and compares curves and the slot, at every redraw
+  of the list (about 3 per film step; 0 for a COLOR step, whose film neighbours are not on their COLOR). All in the GUI
+  task (om-emu task ids), so not two tasks at once; analysis: the time spent inside the picture lookup while the
+  screen is drawn, at the speed of a held arrow, is what the camera does not survive (om-emu has no such limit).
+  Also seen (om-emu): one 28-byte Rhapsody event (`rhapsody/oxf/itronos.h` line 191) per settings-manager write, about
+  20 per film step; not the cause (probe E kept them).
+- **Fix (v0.30.4 test 1, branch `fix/72-film-switch` from v0.30.3):** `fl_lv`, per COLOR k the film's '*' (0 not
+  known, 1 no, 2 yes). A pick (`fl_set`, after `fl_sw` loaded the film's saved changes or the film as built) sets it
+  from the saved changes (`fl_fsv`, `fl_fch`'s own compare for a film not on its COLOR: memory only). `fl_fch` answers
+  it; `fl_live` only when not known, once. Cleared (not known) by any load into COLOR k (`pf_put1`: mode changes, resets)
+  and any edit (`sl_set` for every setting but 901 / 897 / 162 / 1440 / 2148, `s_dirty2`, `e_rst`, the curves page's
+  edit and `cv_dty`). Debug log, NOW: "Film '*' read from the camera's settings for the list this power-on: N".
+- om-emu: test `film-switching-reads-no-settings-for-the-star` (FILM 1 <-> FILM 2 six times, Tone Balance +1 on
+  FILM 2, away and back): the '*' through `fl_fch` 0, then 1, then 1 (`expect:fch`, a new driver token), the count 2
+  (both after the edit). v0.30.3 has no count line (caught).
+
+- **Camera (owner, 2026-11-16): v0.30.4 test 1 still rebooted, "after about 30ish seconds"** (v0.30.3: about 10 s).
+  Better, not fixed. Model (analysis): a film step's work is longer than the arrow's repeat, so something queues up
+  until it overflows; the more work per step, the sooner. COLOR steps and probe E stay under it. Next: om-emu
+  instruction counts per step for each build, and cut a film step below probe E's.
+- om-emu measurements after test 1 (driver tokens `insns:` with INSNSTATS, SPWATCH, `peek:`): instructions per FILM 1
+  <-> FILM 2 step about 18.7 M on v0.30.3, E, F and test 1 alike (E and F differ by about 25 k; C 11.9 M; a COLOR step
+  13.4 M): **not the amount of work**. The GUI task (t168, 16 KB stack, 0x62458710..0x6245c710) goes at most about 8 KB
+  deep, our picture code about 1.5 KB: **no stack overflow**. The camera's picture table (*(0x60379740)) holds ids up to
+  about 16300; ours are 32656.. (IC_FM0 / IC_FL0), past its end (answered only by our ic_get hook, as far as the code
+  shows: the table pointer is read only by ic_get).
+- Probe G (73632d1, `5d31c7a8…`, camera test pending): our ids in the list, ic_get answers the camera's COLOR 1 picture
+  for them at once (no fl_ic). Reboot -> the ids; none -> our picture code.
+- **Camera (owner, 2026-11-16): probe G rebooted** in about 20 s (our film picture ids, answered at once with the
+  camera's own picture, none of our picture code). With probe E (the camera's own ids) no reboot. **So the cause is our
+  picture ids (32656..32707, past the camera's ~16300).** Some camera code keeps something per picture id; ours fall
+  outside it. Fix: give the films' list pictures ids inside the camera's range.
+- Which camera code minds the ids is not found: in om-emu our ids reach only ic_get (from 0x6128ac1b, which passes
+  the slot on to 0x610db07a, no id) and none of the camera's other per-id lookups (0x610f5628 / 37 / 50). The
+  difference E / G is only the ids in the list's entries (`fl_l1` / `fl_l2`). The left cells' ids (IC_FL0 + j) are
+  asked for only when a film is selected (om-emu: none when switching COLORs), which fits FILM <-> FILM rebooting and
+  COLOR <-> COLOR not. The camera's picture table: 16298 entries; 9381 of them point to one blank placeholder
+  (0xa4693d78), the longest run 7736..8277.
+- **Fix (v0.30.4 test 2 = test 1 + this):** IC_FM0 = 7800, IC_FL0 = 7820 (were 0x7f90 / 0x7fb0), inside that run.
+  The list looks the same (om-emu screen). Test `film-list-pictures-use-the-cameras-ids` (the list entries' ids).
+  Our other picture ids (0x7f60.., IC_BK.., DG0, AR_IC0) are past the table too; they are not in the films' list and
+  did not reboot COLOR switching (left as they are).
+- **Camera (owner, 2026-11-16): v0.30.4 test 2 still rebooted, after 50 s (timed).** Times so far for FILM 1 <-> FILM 2
+  fast (estimates before this one): v0.30.3 ~10 s, probe C ~15 s, G ~20 s, test 1 ~30 s, test 2 50 s; **probe E
+  was tested only 30 s** ("no reboot"), so it may only be later, not gone. COLOR 1 <-> COLOR 2 fast: none in 60 s;
+  films slowly: none in 3-4 min. So every change made it come later, none removed it: something builds up with each
+  fast film step and drains when slow (analysis). Next: probe E for 2 minutes, timed; if it reboots too, the picture
+  ids are not the cause, and the fix is to not load a film's settings on every list step while the arrow is held
+  (load it when the stepping pauses) - a behaviour change, the owner's call.
+- **Camera (owner, 2026-11-17): probe E retest, FILM 1 <-> FILM 2 fast, timed: rebooted at 1 min 8 s.** So the picture
+  ids are not the cause either (the "So the cause is our picture ids" line above is wrong: E's 30 s run was too
+  short). Times now: v0.30.3 ~10 s, C ~15 s, G ~20 s, test 1 ~30 s, test 2 50 s, E 68 s (one run each, human tapping,
+  so rough). Every probe delays it, none removes it. Probe C (no film loading at all, our ids) still rebooted at ~15 s,
+  so the plan above (load a film only when the stepping pauses) is not expected to fix it alone (analysis).
+  The debug log is from the half-press before the test (written at shutter events only): nothing about the reboot.
+- Open: COLOR 1 <-> COLOR 2 fast was tested only 60 s, shorter than E's 68 s, so it does not yet show that the
+  camera's own list survives. Next (no build needed): COLOR 1 <-> COLOR 2 fast for 3 minutes, timed. A reboot there
+  means the camera's own list fails under fast stepping and our film steps only reach it sooner; none means our film
+  steps leave something behind each time.
+- **Camera (owner, 2026-11-17): COLOR 1 <-> COLOR 2 fast for 3 minutes (on probe E): no reboot.** So the camera's own
+  list holds up under fast stepping; our film steps leave something behind each time, and both parts add to it:
+  the film load (probe C, none: ~15 s) and our list pictures (probe E, the camera's own: 68 s) (analysis).
+- **Probe H** (5e8dba1 on `experiment/72-probe-h`, `74cc3659…`): v0.30.4 test 2, but a film / COLOR pick in the list
+  only notes the look (probe C's change: no capture, load, WB, '*'). om-emu: starts, picks, half-press keeps the pick;
+  `film-switching-reads-no-settings-for-the-star` fails by design (no '*' at the pick: one read later, then cached).
+- **Camera (owner, 2026-11-17): probe H rebooted at 13 s** (FILM 1 <-> FILM 2 fast, timed); test 2 with the loading
+  rebooted at 50 s. So taking the film loading out did not help: it is not the cause, and it may even slow the
+  stepping enough to make the reboot later. Analysis: the times may be largely random (a crash with some chance per
+  fast step, not a fill-up), so one run per build cannot rank the probes; only "reboots" / "no reboot in 3 min" is
+  solid. Solid so far: fast film steps reboot on every build; fast COLOR steps (3 min) and slow film steps (3-4 min)
+  do not.
+- What a FILM 1 <-> FILM 2 step does that a COLOR step never does (analysis): the list hands the camera the same
+  picture mode again (COLOR 1 -> COLOR 1), which the stock list never does (every stock entry is its own mode). Probe H
+  leaves almost nothing else of ours in a step except our list pictures. Next (no build): on probe H, FILM 5 <-> FILM 6
+  fast for 3 min (FILM 5 is on COLOR 1, FILM 6 on COLOR 2, so the camera's mode changes each step, as with COLOR
+  steps). No reboot -> the repeated same mode is the cause; reboot -> our list pictures. Then FILM 1 <-> FILM 2 again
+  on H, timed, to see how much the time varies.
+- **Camera (owner, 2026-11-17), probe H, no reflash: FILM 5 <-> FILM 6 fast for 3 min: no reboot. FILM 1 <-> FILM 2
+  fast: reboot at 30 s** (13 s on the first run: the time varies a lot run to run). Both use our list pictures and
+  neither loads the film, so **the cause is handing the camera the same picture mode again (COLOR 1 -> COLOR 1) at
+  speed**: a step between two films on the same COLOR. A step that changes the mode (COLOR <-> COLOR, FILM 5 <-> 6)
+  holds. Camera-tested on probe H; why the camera minds is not known (analysis next).
+- Why (analysis, disassembly): the settings manager (0x60bb528f) runs, for 111 / 897..901 / 988, 0x6041b019(111, 0)
+  before the write and 0x6041b0bd(111, 0) after it, with no same-value check; it always returns 1. fl_set handed it
+  901 = COLOR k on every film pick, also when the camera was on COLOR k already.
+- **v0.30.4 test 3** (72a95f4 on `fix/72-film-switch`, `b29daec0…`): test 2 + fl_set returns 1 as the manager does
+  (`ret [d2,d3,a2,a3],68`), without calling it, when the look on COLOR k changed and sget(901) is COLOR k already.
+  No look change (the camera's own 901 at a half-press): the manager as before. om-emu: all 29 pass; new test
+  `film-step-on-one-color-sets-no-picture-mode` (driver tokens count: / expect:count:): 0 manager 901 calls in 12
+  FILM 1 <-> 2 steps, 1 at FILM 5 -> 6; on test 2: "12, not 0" (caught). List and shooting screens pixel-identical
+  to test 2 at seven points (FILM 2/1/2/3/6, shooting screen, after a half-press). Not known: whether live view
+  follows a film on the same COLOR without the manager's 111 steps (om-emu shows no live view look): camera test.
+- **Camera (owner, 2026-11-17): v0.30.4 test 3 rebooted at 11 s** (FILM 1 <-> FILM 2 fast). So the manager's call with
+  the same 901 is not the cause either (om-emu: test 3 makes none in those steps; assumed the camera takes the same
+  path). What still holds on the camera: every fast test between films on one COLOR rebooted (all builds); fast steps
+  that change the COLOR never did (COLOR 1 <-> 2, 3 min; FILM 5 <-> 6 on probe H, 3 min). Analysis: a change of
+  picture mode makes the camera do its own (slower) mode change, which may pace the list; steps on one COLOR are
+  quicker and something of ours or the camera's list fails at that pace. Not proven.
+- Owner's idea (2026-11-17): put adjacent films on different COLORs (FILM 1 on COLOR 1, FILM 2 on COLOR 2, ...), so
+  every list step changes the COLOR, as the steps that held. Untested with film loading (probe H loaded nothing, and
+  FILM 5 <-> 6 back and forth loads nothing after the first two steps).
+- **Probe I** (045fe5e on `experiment/72-probe-i`, `b78037e5…`): test 3 with the list's films (fl_rec, fl_l0..2) in
+  the order j = 0,5,10,15,1,6,11,16,...,4,9,14,19 (COLOR 1-4, then FILM 1, 6, 11, 16, 2, ...), so each step between
+  films changes the COLOR; storage and film numbers as before. om-emu: starts; the list shows that order (screen); 12
+  FILM 1 <-> FILM 6 steps make 12 manager 901 calls (each a change of COLOR). Eleven tests fail only on the step counts
+  (they land on FILM 6 / another COLOR). Camera test pending: FILM 1 <-> 6 fast 3 min, the arrow held 2 min.
+- **Camera (owner, 2026-11-17), probe I: FILM 1 <-> FILM 6 fast 3 min: no reboot; the arrow held through all films:
+  reboot at 11 s.** So the order alone does not fix it: holding the arrow still changes a COLOR's film at every step.
+  The pattern over every camera run: a reboot whenever a COLOR's film (P+LIDX+k) changes many times a second (also
+  in probe H, where that byte was all a pick changed); none when fast steps leave each COLOR's film as it is (COLOR
+  1 <-> 2; FILM 5 <-> 6 and FILM 1 <-> 6 back and forth: after the first two steps each COLOR keeps its film).
+- What reacts to P+LIDX (analysis): since v0.30 (fcfdb7e, el_pk), sx_set marks every 901 write, and at the next GUI
+  event cm_hp keeps the group's record: cm_save (LIDX, choice) -> cm_wr (cm_ram into M at CM_C and CM_U, UB_DIRTY)
+  and ss_hp -> ss_put / ss_wr (the per-mode set's slots and looks, written when changed). The earlier reboot reports
+  in #72 (v0.30 test 12, resetting many films before a half-press) are from the same release. om-emu, 12 FILM 1 <-> 2
+  steps on test 3: cm_hp 12 times (cm_wr 0 there: the emulator's group may not hold; the owner's P/A/S/M/B keeps).
+- **Probe J** (b7ca60c on `experiment/72-probe-j`, `4d36c6e1…`): test 3 without el_pk (cm_hp at shutter events only, as
+  before v0.30). om-emu: 28 / 29; `film-kept-with-no-half-press-after-pick` fails (the behaviour el_pk added); cm_hp
+  0 times in the same 12 steps. Camera test pending: FILM 1 <-> 2 fast 3 min, the arrow held 2 min.
+- **Camera (owner, 2026-11-17): probe J: FILM 1 <-> FILM 2 fast 3 min and the arrow held 3 min: no reboot either way.**
+  **Cause found (camera-tested):** the group's record keep (cm_hp: cm_save / cm_wr / ss_hp) run at the GUI event after
+  every picture-mode change (el_pk, since v0.30 fcfdb7e), many times a second when a COLOR's film changes at each
+  step. Why the camera minds is not known (analysis: the record copies into M under LOCK, UB_DIRTY, racing the
+  camera's own use of M). Tests 1-3 and probes A-I were not the cause. Fix: keep the record once on leaving the list.
+- **The fix (v0.30.4 test 4, branch `fix/72-record-keep` from main, without tests 1-3 / probes, which were not the
+  cause; their record stays on `fix/72-film-switch`):** gx_map holds el_pk while the Picture Mode list (GUI state
+  0x0418, bytes 04 18) or the super control panel (0x0403: its dials step the films too, om-emu: cm_hp 8 times in 8
+  dial steps on v0.30.3) stays open: no state change (d0 0) or one between those two. The record is kept once at
+  the state change that closes them (OK, MENU, a half-press). om-emu: all 28 pass; new tests
+  `film-list-keeps-the-record-once-as-it-closes` (v0.30.3: "18, not 0", caught) and
+  `control-panel-dial-keeps-the-record-once-as-it-closes` (v0.30.3: "8, not 0", caught); driver tokens count: /
+  expect:count: (`*` = any d0).
+- Behaviour that differs from v0.30.3 (om-emu): a film picked in the list and the camera switched off **with the list
+  still open** (no OK / MENU / half-press) comes back on the film from before (v0.30.3: the new one; as before v0.30).
+  Leaving the list first, or a half-press, keeps it (`film-kept-with-no-half-press-after-pick` passes). The owner's
+  call.
+- **Camera-tested (owner, 2026-11-17): v0.30.4 test 4 (`0e5708ea…`): no reboot after 3 minutes; "looks good".** Debug
+  log: nothing unusual. Next (owner): a test merge of PR #70 and PR #73 with this fix before pushing.
+- **v0.30.4 test 5 (try/v0.30.4 086a0a2, `2b62b341…`): test 4 + PR #70 (c430a40) + PR #73 (d9cc857)**, merged as
+  written; conflicts only where both sides added lines (NOTES, emu_test.py, session_ed1.mjs: kept both). om-emu: 32 /
+  35. FAIL: PR #70's `color-wheel-dial-label-follows-the-page`, `color-wheel-saturation-guide-names-the-page`,
+  `color-wheel-tone-readout-keeps-the-callers-a2` (label stream sizes: e.g. Lum 1108 here, 1092 expected; the guide
+  4124, 4132 expected). Also on PR #70 alone. A build of PR #70 with Pillow **without raqm** passes all three: its
+  expected sizes come from a build without raqm text layout; release builds use raqm (`research/setup.sh`).
+- **Camera (owner, 2026-11-17): test 5 on the camera, card read:** debug log "nothing unusual" (57 shutter events, 35
+  log writes, 8 shooting-mode changes). Six photos (P, A, S, M; FILM 1 with split toning, a curve and Glow): each
+  shows the full look. The movie clip: no split toning, curve or Glow, but dark corners (the film's own camera
+  settings, which PR #73 leaves to video, its note); the S&Q clip: stock. **Camera-tested (owner, 2026-11-17): #72 and the wheel
+  labels "Both worked".** Test 5 is the v0.30.4 candidate (PR #70's three label-size tests still to settle).
+- PR #70's three label-size tests now take the sizes from the drawing code (1e02ceb): pass with and without raqm.
+- **v0.30.4 released locally (2026-11-17, owner: "lets make two new releases"; with PR #70 and PR #73 merged):** VERSION
+  "v0.30.4 (#72 fix + PR #70 + #73; camera-tested)", 47 characters as test 5's (a first try at 51 characters moved the
+  debug log's strings: 13,002 bytes apart). main.bin vs test 5: 48 bytes (the name, the code-block tag twice, the
+  built-in GUIDES CRC). E1479999.BIN 2814bfde…c0e; patch.py --release v0.30.4 and the default make it; v0.30.3 still
+  60b6d954…f546.
+- **Owner: "push 30.4 as an alpha, not full release" (2026-11-17):** as v0.28-alpha and v0.29-beta, a GitHub pre-release
+  from its branch (`try/v0.30.4`); main stays v0.30.3 (the local merge into main, never pushed, taken back). VERSION
+  "v0.30.4-alpha (#72 fix, PR #70, PR #73; tested)", 47 characters: main.bin vs test 5 47 bytes. Folder
+  `releases/v0.30.4-alpha`, E1479999.BIN 90a0325a…27bd (patch.py --release v0.30.4-alpha and its default).
+- **Published (owner's OK, 2026-11-17):** branch `try/v0.30.4` pushed (6609deb); GitHub pre-release `v0.30.4-alpha` at
+  6609deb with patch.json, LOOKS.BIN, CURVES.BIN, DEBUG.TXT, the photo code kit and SHA256SUMS; the latest release
+  stays v0.30.3. PR #70 and PR #73 stay open (their commits are on the branch, not on main).
+
 ## Issue #64: the wheel's dial label names the page (2026-11-16; feature/dial-label-per-page; camera-tested)
 - Owner on #64: "I like these changes, if you make a pr with them, I'll merge". This replaces the sp1 request (2026-11-09)
   that the dial label stay the camera's "Vivid" on Shadows / Highlights.
@@ -5832,6 +6098,1013 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   mode code while it records, or that movie's frames may not reach `st_run` / `s_lv6` as a COLOR job. That part is
   a guess. No recording flag is needed for now.
 
+## Photo borders b1: a white Border row (2026-11-16; branch feature/image-borders; emulator only, camera test pending)
+- Owner (2026-11-16, reopening 2026-11-12's "Film borders: not planned"): **white**, **adjustable 1..5**, **per film on
+  a Picture Mode row**, **the same width on all sides**. JPEG only (the file keeps its size; the border covers the
+  photo's outer edge); RAW untouched.
+- Route: not the camera's Frame Art Effect (job flag 0x8000, our white frame pictures, v0.20..v0.25: restarts with
+  the fast grain on COLOR's list (ft5 / ft8), "picture error" with Glow + Frame + Grain (rc2b), removed in v0.25).
+  Instead our own pass on the finished picture, `bd_run` (editor.s ext12), run by the block's `xb_gs` after halation
+  and grain, on the Soft Focus route that Halation alone already takes (flag 0x80, `xb_wt` w 1024: the sharp image
+  unchanged; camera-tested h1..h8 with bursts and RAW+JPEG). No new hook, no new job flag (`xb_rv`'s #65 rule covers
+  0x80), nothing at start-up, nothing in live view or video (`xb_lv` unchanged).
+- Storage: the Frame row's old byte, BUNDLES slot **+50** / LOOKS and EDITS record **+48** (0 Off, 1..5). Already in
+  pf_bt (48 <-> slot 50), fl_xr row 11 (FRB: 48, 50), ed_isd0 (+48..+51) and build.py's defaults ('frame'); the camera
+  checks it as -5..5 in every OM-3 firmware, and v0.25..v0.30.3 ignore it (XB_ART 0), so going back keeps the films and
+  shows no border (a film with a border keeps its '*' there). Risk: an old "Frame On" (5) stored on a COLOR or a film in
+  the v0.20..v0.25 era now reads as Border 5 (the debug log does not show the byte: the owner checks the rows).
+- Row: FR_IT 5381 / FRB 0x7eb0 / class 10 turned from the Frame choice row into a 0..5 slider like Halation: sl_slot
+  reads (50,slot), sl_cnt 6, LOWCNT 0 / 6, sl_set0 writes +50 (82 from P + 64k), rw_bar's 0..5 ends, rv_chk / st_chk
+  take FRB, rd_a / rd_b the rd6 readouts. Title "Border" (ST_BDR, string id 0x7f07, was "Frame"), left icon "Bdr"
+  (IC_BD = IC_GM: mkicons PICTURES[3], G-M's unused place, ic_list entry 8; ic_pay +1024 B), the choice-row stubs
+  (fr_a..fr_d, lc_fr, fr_l0..2) gone; build.py registers FR_IT with the slider rows. pm_list: last, after Film Grain
+  (page 4: Film Grain, Border).
+- `bd_run` (`call bd_run,[d2,d3,a2,a3],88`, a0 = buffer record, d0 = 1..5; checks as hl_run: format 0x0c02, W 64..8192
+  and a multiple of 4, memHw >= W, H >= 64): B = max(1, (min(W, H) T) >> 16) rows top and bottom, T = 983 / 1966 /
+  2949 / 3932 / 4915 (1.5 / 3 / 4.5 / 6 / 7.5 % of the short side: 58..291 px on 5184 x 3888), Bp = (B + 1) / 2 pairs
+  left and right; word 0x80ff80ff (Y 255, Cb = Cr = 128). Three bands (top, sides, bottom), K rows per lock with
+  K = max(1, 120000 / (4 pairs + 60)) (BD_LOCKN as HL_LOCKN); rows through `hl_open`, the cached view FLUSHed; a group
+  across the window's edge is retried a row at a time, a row across it a pair at a time (a pair that cannot be
+  mapped is skipped). Exact model `research/border/model.py`; om-emu check `research/border/emu_check.py` (through
+  `research/halation/emu_hl.mjs`, which now takes `fn` / `frame`).
+- om-emu (out-bd1 / out-bd2): **bd_run bit-exact on 9 frames** (4:3, 3:4, 16:9, 1:1, 64 x 64, 1028 x 131 with
+  padding, 8192 x 64, levels 0 and 6 untouched; registers, sp and the bytes after the frame intact); **20 MP at level
+  5: 9.99 M instructions, 89 locks, at most 115 K under one lock** (halation h8: 104..124 M), so ~0.1 s (estimate from
+  halation's rate). Row: page 4 shows "Bdr ±0" under Film Grain, title "Border", the bar from the left; right / the
+  dials step it (main dial: -1 = up), "Bdr +3" with the row's '*'; clamps at 0 and 5; saved at the half-press and
+  kept over a power-off. Code: ext12 +1,576 B (7,088 B left), ext11 -112 B, the block +60 B (6,132 B).
+- Not in om-emu (camera-only): the photo itself; whether buffer 0x1000 is already cut to the aspect (3:2, 16:9, 1:1,
+  3:4) or cut later (then a side would be lost); playback (since #65 the camera's playback preview is one of the
+  shot's small developments without 0x80, so likely no border there, as Glow / Halation); timing and bursts; grain
+  with a border (the look leaves the plain grain path for the Soft Focus route, as Halation + Grain does).
+- Not done: LookLab (the record's +48 is written 0, "Art Effect Off"), the photo code (om3.1 has no border field),
+  docs / CHANGELOG (until the owner's camera test).
+- Suite (build of dd9c6f0, out-bd2): **28 of 28 pass**, incl. the new `border-matches-the-model` and
+  `border-row-0-to-5-kept` (boot 1: right x 7 -> 5, left x 2 -> 3, half-press; boot 2: still 3, left x 4 -> 0) and
+  `static:hook-list` / `static:changed-bytes` (no new hook or patch site).
+- Package: `test-builds/2026-11-16-borders-test1` (private folder): E1479999.BIN `2e6e86fc…13f2`, VERSION
+  "v0.30.3-dev (borders test 1: white Border row 0-5)" (51 characters), go-back v0.30.3 `60b6d954…f546` (patch.py
+  --release v0.30.3), TEST-STEPS (rows, aspects, RAW+JPEG, bursts, Glow + Halation + Grain together, Image Review,
+  video, playback, old Frame values). New camera pictures for the owner's OK: the title "Border", the icon "Bdr".
+- **b1b (owner, 2026-11-16: "can you not use the frame effect icon that already exists in camera?"):** the Border row's
+  left icon is now the camera's own Frame picture, **stock id 832** (82 x 62): item 867 is the Art Effect (values 0..9,
+  value 3 = Frame, string 767), its left-column cells 829..833 (82 x 62) and strip icons 822..826 (100 x 76); sizes from
+  the picture table at *(0x60379740) + 4 id in om-emu. ic_list entry 8 = 832 (`IC_BD`), as the WB row's stock WB±
+  12545; our "Bdr" picture dropped (mkicons PICTURES[3] blank again, ic_pay back to 16640 B), so the build adds no
+  camera picture of ours (the title "Border" is camera-font text). om-emu: 832 and 825 both draw beside the value in
+  the left column ("[frame] +3*"); 832 is the cell the camera itself uses for Frame there and sits a little smaller.
+  VERSION "v0.30.3-dev (borders test 1b: the camera's Frame icon)".
+- b1b suite (build of ecca6b7, out-bd4): **28 of 28 pass**. ext12 254,032 B (8,112 B left), ext11 63,120 B, block
+  6,132 B. Package `test-builds/2026-11-16-borders-test1b` (private folder): E1479999.BIN `14372929…2028`, go-back
+  v0.30.3 `60b6d954…f546`; it replaces test 1 (`2e6e86fc…`, never flashed).
+- **b1c (owner on b1b, 2026-11-16: "the icon is too large and already cut off"):** 832 is drawn at its own 82 x 62 in
+  the 46 x 46 slot. The camera has no smaller Frame picture: a shape search over the 6,916 format-14 pictures in the
+  om-emu picture table (white-ink mask against 832's) finds the Frame icon only as 832 / 825 (the same family as the
+  other Art Effects 818..833, 3450..3453, 125, 156..158, 391 / 392); the small stock rectangles (e.g. 11161, 633) are
+  other functions' icons. Shrinking 832 would put a camera graphic into patch.json (not allowed), so the row gets our
+  own `mkicons.border_icon` (46 x 46, PICTURES[3], `IC_BD` = IC_GM again; ic_pay 17,152 B): a small photo with a 4 px
+  white border, a 1 px dark line, a grey sky and darker hill, the 2 px dark edge of the Glow / Halo / Balance icons.
+  om-emu: whole in the slot beside "+3", about the Film Grain icon's size. New picture: sent to the owner for approval.
+  VERSION "v0.30.3-dev (borders test 1c: own small Border icon)". Suite on c268419: **28 of 28 pass** (pass recorded).
+  ext12 254,544 B (7,600 B left). Package `test-builds/2026-11-16-borders-test1c`: E1479999.BIN `d8ce3d89…3db3`,
+  go-back v0.30.3 `60b6d954…f546`; tests 1 / 1b never flashed (folders moved to the Trash).
+- **Owner approved the Border icon (2026-11-16: "Yes, use it").** Test 1c (`d8ce3d89…3db3`) is ready for the owner's
+  camera test; nothing changed in the firmware.
+- **Test 1c camera-tested (owner's OM-3, 2026-11-16): "that works well!!!".** Flashed by cad from
+  `test-builds/2026-11-16-borders-test1c` (E1479999.BIN sha256 `d8ce3d89…3db3`, checked on the card). The owner's
+  report was overall, not per step: not reported separately are whether playback (or playback zoom) shows the border,
+  the aspect ratios one by one, and whether any old "Frame On" value turned up as Border 5. No DEBUG.TXT on the card,
+  so no log. Not merged, pushed or released (cad does that on the owner's word).
+
+## Better grain g1: our own colour grain tile (2026-11-15; branch feature/better-grain)
+- Owner: "I want better color grain, and I want to be able to set strength and size of grain". Settings mockup
+  (Film Grain Off / 1..5 slider + Grain Size Fine / Medium / Coarse) sent to cad for the owner's choice; g1 is the
+  probe for the texture itself and uses today's Film Grain row (Low / Med / High = size Fine / Medium / Coarse).
+- **Owner's choice (2026-11-15, via cad: "Both, as suggested"):** Film Grain becomes a slider Off, 1..5 (like Halo),
+  replacing Off / Low / Med / High; a new **Grain Size** row under it: Fine / Medium / Coarse; films saved with
+  Low / Med / High become 2 / 3 / 5; colour speckle on for every grain at a fixed amount tuned on the camera (no
+  colour setting for now). The rows follow once g1's grain works on the camera.
+- **How the camera makes Grainy Film's texture (static analysis, OM-3 1.1):**
+  - TXGET 0x604cd921 = a cache of 4 texture objects (116 B each at 0xa32e94b8; +112 refcount, +114 state 0 free /
+    1 being built / 2 ready). Key = obj+0..5 (the 6-byte block of xb_tex), matched by 0x604ce6f0: +0 halfword, +3
+    (TXPF 0x604b77fb: 1 or 3), +2 for some classes; a request with +5 = 1 never matches. On a miss: builder
+    0x604cf0b9. Release 0x604ce397: refcount <= 1 -> the buffer goes back (0x604afeb2) and the state to 0, so the
+    texture is made again for every shot that does not overlap a live one (bursts share it).
+  - Builder 0x604cf0b9: sizes from 0x604cec73; the **source = resource 0x8001**, size 0x601d7546(0x8001), loaded by
+    0x604ce6c9 into a buffer from 0x604afe6b (descriptor at the builder's sp+88: format +16 = 0x0c04 grey, 1536 x
+    1536, size +88 = (resource size + 1151) & -128, id +92 0x11100); texture buffer obj+8 (0x0c02, id 0x1104);
+    a kind-3 request, stage 0xf002 (0x604b5b44), copies the tile in strips of <= 1536 x 1536; DMA copies 0x604b0d0b
+    repeat that band downwards; the source buffer is released. Then the texture's pitch is set to the image width
+    (188) though it was written at (190), a shear, and obj+108 = an offset mask (the attach hook 0x604bc0cf adds
+    job+8312 & obj+108: a random shift per shot). So the camera's grain = one grey 1536 x 1536 tile, repeated,
+    sheared and shifted. The resource table (0xa32da49c) is empty in om-emu: the tile itself could not be read.
+  - Combiner set-up register image (context+8)+7988: the **second input's gains are +148 (low Y, high Cb) and +152
+    (Cr)**, laid out as the photo's +96 / +100 (case 0x60504bad: both inputs 1024 / 1024 / 1024; 0x60504c8c: second
+    115 / 115 / 115; 0x60504c23: second -1024). Combiner 1 (Grainy Film) writes the texture 1024 / 0 / 0 (grey grain)
+    and the photo's chroma 0 (mono); xb_c1e already gives the photo its chroma back.
+  - Analysis (rc1 numbers): the stock texture lifted Y by 26 at gain 1024 with grain std 19.5: 26 / 19.5 = 1.33, a
+    half-normal's mean / std. Reading (guess): the blend adds texture Y as it is (not centred), the camera's tile is
+    non-negative grain. Chroma inputs are centred (the output's chroma offsets are 512, and ft4's photo chroma came
+    through unchanged with gain 1024).
+- **g1 build (firmware only; emulator below):**
+  - Hooks (stock bytes checked by build.py): `.hook_trs` 0x604cf156 `call 0x601d7546,[d2,d3,a2],16` (ddf083d0ffe010)
+    -> `call tr_sz` (same form); `.hook_trl` 0x604cf1a4 `call 0x604ce6c9,[d2,d3,a2,a3],24` (cd25f5f018) -> `jmp tr_ld`
+    (`call tr_ld2,[d2,d3,a2,a3],24`, then back to 0x604cf1a9). Both run the stock call unless `tg_own` != 0.
+  - `xb_tex` (block): the key's 4th byte = 0x80 + size (Grainy Film's own are 1 / 3: neither gets the other's tile
+    from the cache); `tg_own` = size around its TXGET call. TXPF is no longer called there.
+  - With `tg_own`: `tr_sz` sets the source format (the builder's (104,sp)) to 0x0c02 and returns 1536 x 1536 x 2;
+    `tr_ld2` calls `tg_fill` (ext12) with the buffer's bus address instead of loading the camera's tile.
+  - `tg_fill`: Y = 48 + noise, Cb / Cr = 128 + noise, sigma 16 each; noise = a w x w box sum of uniform random bytes
+    (K = 14189 / w), w = size for Y, (w + 1) / 2 for Cb / Cr (half width and, here, half height). Rows repeat every
+    768 (row y + 768 = row y: half the work), columns every 1536; both wrap seamlessly. Column sums kept from row to
+    row (+ entering row, - leaving row, each made again from its own seed: `tg_seed`, xorshift32 streams), running
+    sum along the row (`tg_row`). Work memory: one malloc of 9264 B, used through its cached alias (FLUSH before and
+    after). Rows to the buffer by `tg_put`: `hl_open` (lock + this CPU's bus window, as halation), the window's cached
+    view, FLUSH, UNLOCK; split at the window's 128 MB edges. Failure anywhere -> `tg_bad` = 1.
+  - `xb_c1e`: +148 = Y gain 1024 | Cb gain 448 << 16, +152 = Cr gain 448, +180 low half = -192 (= -(4 x 48 x 1024 /
+    1024): our tile's Y level taken back, if the blend adds texture Y as it is). `tg_bad` -> both gains 0 (no grain
+    rather than a wrong one).
+  - Debug log (`DEBUG.TXT` on the card): "Grain tiles (better grain g1): made N, failed N, last size W, last time
+    (ms) T" (time from the us counter 0x98900284 >> 10).
+  - VERSION "v0.30-dev (better grain g1 probe)".
+- **g1 emulator (om-emu; it cannot develop a photo, so the builder, the image processor and the blend are untested):**
+  boots, half-presses, menus fine; debug log line present ("made 0, failed 0, ..."). `tg_fill` run natively (ncall
+  at tr_ld2's call, buffer at bus 0xb0100000 = the direct DRAM path, FLUSH stubbed: om-emu has no flush-done bit,
+  the first unstubbed run spun in FLUSH and ran node out of memory): sizes 1 and 3, the first 16 rows and their copies
+  768 rows down **equal a numpy model byte for byte** (scratch `models.py`); Y mean 48.0 / sigma 16.0 (size 1: 20..76,
+  size 3: 0..110), Cb / Cr 128 / 16. **Full tile, size 3: all 1536 rows equal the model**; the seams are seamless
+  (mean step across the repeat edges 10.54 / 10.59 = inside 10.54 / 10.52); tg_n 1, tg_bad 0. 66.4 M instructions
+  for a tile (camera time unknown: om-emu has no us counter; the debug log will tell).
+- Package `test-builds/2026-11-15-grain-g1` (outside the repo): E1479999.BIN 0bd7997b…47ac; back 01ea3d14… (v0.29.5).
+  Camera questions: no freeze (plain, RAW+JPEG, Glow, Clarity, Shading, burst); colour speckle; brightness and colour
+  as grain Off (if lighter / darker: the blend centres texture Y after all; if tinted: chroma is not centred); the three
+  sizes; the time per tile (CADLOG.TXT); Grainy Film unchanged.
+- **On hold (owner, 2026-11-15):** after two previews (made outside the repo on a public-domain sample photo:
+  g1's tile added as xb_c1e's gains intend, Y + (tY - 48), C + 0.4375 (tC - 128)), the owner: "our grain is fine
+  for now". g1 was **not** camera-tested. Preview reading (analysis): Fine looks like light film texture, Medium /
+  Coarse colour speckle can read as digital colour noise, Coarse's square box clumps show at 300%. Compared with real
+  film: same amount in every tone (the texture is added as it is: no tone shaping on this route, as far as known),
+  one clump size, even colour speckle, a repeating tile.
+- A film-like variant for later (design preview only, float maths, not built): Y = 0.85 / 0.55 mix of two sizes of
+  noise box-filtered twice both ways (Fine 2 + 1, Medium 3 + 1, Coarse 4 + 2), normalised to sigma 16; Cb / Cr
+  box-filtered twice at half resolution (2 / 3 / 3) with the chroma gain about 0.18 (about 184 / 1024) instead of
+  448. Estimate: 2-3x tg_fill's work. To pick up again: camera-test g1 first (the image processor takes a 0x0c02
+  tile, brightness / tint, time per tile), then the film-like tile and the Strength / Size rows.
+- **Back on (owner, 2026-11-16, via the main chat: "lets now try the new grain settings as well", after border test
+  1c passed): g1 on top of the Border row.** `feature/image-borders` (v0.30.3 + Border, camera-tested test 1c) merged
+  into `feature/better-grain` (2ba7211). Conflicts: VERSION, build.py (make_xblock: BD_RUN and TG_OWN / TG_BAD),
+  editor.s (v0.30.3 rebuilt the debug log: the "Grain tiles" line is now in `lg_sum`'s SUMMARY after the log writes),
+  NOTES (both kept). xb_gs untouched: the texture grain is in the development, `bd_run` after it on the finished
+  picture, so no grain on the border; XB_ART 0 keeps the Border byte (+50) out of xb_tex's Frame test.
+- Hooks reviewed against the start-up rule and added to `tools/test/hooks.json` by hand (not `--write-hooks`):
+  `hook_trs` 0x604cf156 (7 B) and `hook_trl` 0x604cf1a4 (5 B), both in the texture builder 0x604cf0b9 (TXGET's
+  miss path). With `tg_own` 0 they run the stock calls with the same frames; only `xb_tex` sets `tg_own`, around its
+  TXGET for a COLOR still with Grain at the shot. Nothing of ours at start-up.
+- Build (2ba7211): ext12 255,880 B (6,264 B left), ext11 63,120 B, block 6,192 B. Settings: as g1 (Film Grain Low /
+  Med / High = size 1 / 2 / 3 at one strength); the Strength / Size rows need a new per-film byte and row pictures,
+  so they wait for this camera result. Suite (OM3_EMU = the newer om-emu with `bin/card.mjs`): **28 of 28 pass**
+  (pass recorded on 2ba7211). `tg_fill` on this build (ncall at tr_ld2's call, FLUSH stubbed): full tiles, sizes 1
+  and 3, **equal the model byte for byte** (66.3 M / 66.4 M instructions).
+- Package `test-builds/2026-11-16-grain-borders-g1` (private folder): E1479999.BIN `4c026642…555f`, VERSION
+  "v0.30.3-dev (grain g1 + borders 1c)"; go-backs v0.30.3 `60b6d954…f546` (patch.py --release v0.30.3) and border
+  test 1c `d8ce3d89…3db3`. It replaces `2026-11-15-grain-g1` (never flashed). Camera questions as g1, plus Grain +
+  Border 3 (no grain on the white), Halation 5 + grain, bursts with a border, Image Review, video.
+- **First camera result (owner's OM-3, 2026-11-16; emulator + first camera photos, owner's verdict pending).** Package
+  `4c026642…555f`; files in the private card backups (CADLOG, PB162953..956, never in the repo). RAW+JPEG 5184 x 3888,
+  COLOR 1 with its own settings (no film), Border 0: 953 grain Off, 954 / 955 / 956 Low / Med / High (size 1 / 2 / 3).
+  - **No freeze or reboot** (4 photos, 20 shutter events, saves fine, log "nothing unusual"): **the image processor
+    takes our 0x0c02 colour tile** (camera-tested).
+  - The main chat's measurements (high-pass std of the centre 1024 x 1024, 9 x 9 box): Off Y 10.6, Cb 1.9, Cr 1.3;
+    grain on Y 17.3..17.9, Cb 5.6..5.9, Cr 5.1..5.4. Mean Y / Cb / Cr the same as Off within 1 (102 / 128 / 129.5):
+    **no brightening, no tint** (camera-tested), so the blend adds texture Y as it is (the -192 Y offset is right) and
+    the chroma inputs are centred. Sizes fine -> medium -> coarse by eye. The colour speckle is strong: on a blue box
+    at High it reads like digital colour noise (as the preview reading said).
+  - Log: "made 2, failed 0, last size 3, last time (ms) 4193924". **The time was measured the wrong way round:**
+    0x98900284 counts down (timing section, 2026-11-14), and g1 logged (end - start) >> 10, which wrapped:
+    2^22 - 4193924 = 380, so start - end = about 380 x 1024 us = **0.39 s for the last finished tile** (analysis;
+    66 M instructions -> about 170 M per second). **"made 2" with three grain photos:** `tg_w` is set when a tile
+    starts and `tg_n` when it ends; the log was written at event 20, the half-press / release after the 4th photo,
+    and all three grain photos carry our colour speckle (Cb 5.6..5.9 against 1.9), so the size-3 tile was most likely
+    still being made at that write (analysis). That fits the tile being built during the development, after the
+    photo is counted, with a half-press coming while it runs: no harm seen.
+  - **g1b (firmware only; not packaged: the owner's verdict on size, speckle and speed first):** `tg_ms` = ((start -
+    end) & 0x7fffffff) >> 4 x 1049 >> 16 = milliseconds (to 65 s). om-emu: the size-2 full tile still equals the
+    model byte for byte, time 0 (g1 gave 4194303 there: the same wrap). VERSION "v0.30.3-dev (grain g1b + borders
+    1c)". The time is camera-only (om-emu's counter barely moves), so no suite test for it.
+
+## Better grain g2: Film Grain strength and Grain Size rows (2026-11-16; branch feature/better-grain; emulator only)
+- Owner (via the main chat, after the g1 + borders photos): "Good, keep going": the mockup's settings (2026-11-15):
+  Film Grain a slider Off, 1..5; a Grain Size row Fine / Medium / Coarse under it; films' Low / Med / High -> 2 / 3 / 5.
+- **Storage (no record byte was free: LOOKS / EDITS +0..+62 all used, +63 the own records' '*'):**
+  - slot +53 (record +51) stays the old level, kept in step by `gs_wr` (strength 1-2 -> Low 1, 3 -> Med 2, 4-5 -> High
+    3): older firmware, the CPU grain (`xb_gs`), LookLab and the photo code read it as before; BUNDLES `fgrain` stays
+    0..3, so going back to v0.30.3 keeps the films and settings (strength shows as Low / Med / High there).
+  - strength and size in **the curves record's spare byte** (rgbcurves.inc: each 26-byte slot's last kept byte, "byte 7
+    zero" in docs/FORMATS.md), `G` = live[k] +25 in `cv_ram`: it travels with COLOR k's curves (`cv_cap` / `ck_rec` to
+    and from EDITS records ed[r], films and own settings alike; the per-mode sets `cv_sput` / `cv_sget`; the record in
+    M). v0.30.3's `cv_load` / `cv_pk` copy those 8 bytes without reading them. `G` = 0: strength from the level
+    (`gs_dv` Low 2, Med 3, High 5) and Medium; else 0x80 | size << 3 | strength; `gs_wr` writes 0 whenever the level
+    gives the same, so a film as built has G = 0.
+- **Rows:** `GS_IT` 5388 (class 15, bars `GSB` 0x7e90 + k, a 0..5 slider as Halation: sl_slot, SL_VAL, REAL, sl_cnt,
+  LOWCNT, sl_set0 -> `gs_row`, rw_bar, rv_chk, st_chk, rd_a / rd_b, CHC gs_f; title the camera's "Film Grain Effect"
+  2778, icon 12 = `IC_GR`) and `SZ_IT` 5387 (class 16, bars `SZB` 0x7e98 + k, a 3-choice row as Noise Filter: it_tab
+  sz_l0 titles "Grain Size: Fine / Medium / Coarse", sz_l1 left cells `IC_Z0..+2` "Size" over Fine / Med / Coarse,
+  sz_l2 strip words: the camera's "Fine" 1146, ours "Med" (the camera's "Medium" 1084 was cut off in its cell, om-emu)
+  and "Coarse"; CHC sz_a..sz_f, lc_sz). pm_list: ..., HL_IT, GS_IT, SZ_IT, FR_IT (5400 leaves COLOR's list; MONO keeps
+  it). Ids picked so their keys miss the row switches (5387 / 5388); bars in row 9 (FLB films end at 0x7e83). build.py:
+  it_tab count 31, ic_list choice count 12, the switches' entries (hooks.json: 34 new runs, all inside the row switch
+  tables 0x61536a2c..f2c / 0x615510cc / 0x6155124c, reviewed: menu only, nothing at start-up).
+- '*': `gs_def` (fl_isdef) for the rows (Film Grain against its film's level as a strength, no film: Off; Size against
+  Medium); the film's '*' counts G != 0 (`ck_kset` / `ck_jset`); the whole-profile reset clears G (`gs_zk` in e_rst).
+- Strings `ST_GZT`..`ST_MED` 0x7f0a..0x7f0f; pictures mkicons PICTURES[14..17] (`grain_icon`: a 28 x 28 square of
+  2 x 2 grey specks with a few orange / blue / green ones; "Size" over Fine / Med / Coarse, 100 x 76), ids 0x7f78..
+  (`ic_get`: ic_ent 14..17). `ic_pay` moved to ext13 (22,864 B): ext11 64,208 / 65,536, ext12 239,168, ext13 59,248.
+- **Photo path (block):** `xb_tex` calls `GS_EFF` (editor `gs_eff`) for this COLOR: `xb_tl` = strength 1..5, `xb_tz` =
+  size 1..3 (the tile key 0x80 + size, `TG_OWN`). `xb_c1e`: Y gain 400 / 650 / 1024 / 1280 / 1536 by strength (1024 =
+  g1's, camera: about today's Med; today's Low / High about 0.6 / 1.5 of it), Cb / Cr 0.4375 of it (175..672), the Y
+  offset -(4 x 48 x gain / 1024) = -75..-288 (-192 camera-confirmed; -240 / -288 untested). Debug log NOW: "Film Grain
+  on COLOR 1-4: 3 Medium, Off, ...".
+- **om-emu (out-g2b, bbf50fb):** the rows show and step (slider Off..+5, stops at 5; Size Fine / Med / Coarse, the
+  choice row wraps as the stock ones do), '*' on both, titles follow; the level byte follows (5 -> 3, 2 -> 1);
+  old levels Low / High / Med on COLOR 1-3 read "2 Medium, 5 Medium, 3 Medium"; a film keeps its own (FILM 2 at 4
+  Coarse, to its COLOR's own settings and back: 4 Coarse again). Suite: **29 of 29 pass** (pass recorded on bbf50fb),
+  new `grain-rows-strength-and-size-kept`; `border-row-0-to-5-kept` steps one row further (the 18th). Not in om-emu:
+  the photos (strength, size, colour, brightness at 4 / 5), timing, bursts.
+- Package `test-builds/2026-11-16-grain-g2` (private folder): E1479999.BIN `92ab3c99…10d3`, VERSION "v0.30.3-dev
+  (grain g2: strength + size rows)"; go-backs v0.30.3 `60b6d954…f546` and border test 1c `d8ce3d89…3db3`. The four
+  new pictures went to the owner for approval first (`row-pictures-for-approval.png`).
+- **g2b (owner, 2026-11-16, on the g2 row pictures: "for the size of grain, I say we reuse the current grain pictures
+  for low, med, high"):** Grain Size's left column = item 5400's own Low / Med / High pictures 14561 / 14563 / 14565,
+  its strip = 14562 / 14564 / 14566 (read from the stock item table 0x6154c2a8, 5400's lists; ids only, no picture in
+  the repo). Our three "Size" cells (mkicons 15..17) and the "Med" string are gone; ic_pay 18,024 B (ext13 54,400).
+  The camera's pictures carry the words Low / Med / High, so the cells read Low / Med / High under the title "Grain
+  Size: Fine / Medium / Coarse" (om-emu). The Film Grain slider icon (`grain_icon`) still waits for the owner's OK.
+  Suite on ff8251b: **29 of 29 pass**. Build f26ff261…842a (VERSION "v0.30.3-dev (grain g2b: strength + size rows)"),
+  not packaged until the icon is approved; g2 (`92ab3c99…`) withdrawn, never flashed.
+- **Owner approved the Film Grain icon (2026-11-16: "Icon OK").** Package `test-builds/2026-11-16-grain-g2b`
+  (private folder): E1479999.BIN `f26ff261…842a` (a rebuild of 466bf47 matches), go-backs v0.30.3 `60b6d954…f546` and
+  border test 1c `d8ce3d89…3db3`; TEST-STEPS: the rows, old Low / Med / High -> 2 / 3 / 5, strengths Off / 1 / 3 / 5,
+  sizes, Grain + Border 3 together, per film, no-freeze cases, Grainy Film, the log. Emulator only so far.
+
+## Better grain g2b camera result and g2c (2026-11-16; branch feature/better-grain)
+- **g2b camera (owner's OM-3, 2026-11-16; package f26ff261…): camera: halation lost with grain >= ~3, owner-confirmed at
+  4** ("the halation disappears at high grain, level 4"). Files in the private card backups (CADLOG, PB162962..997).
+  Otherwise fine (the main chat's readings): no freeze (38 photos, 150 events, "nothing unusual"); the rows and the
+  NOW line ("4 Coarse"); strength Off / 1 / 3 / 5 clear steps; sizes right; Border 2 = 116 px, 5 = 291..292 px, plain
+  white (std <= 0.4); bursts of 7 and 10 with Grain + Border 5 all saved; grain tiles "made 37, failed 0, last
+  time 428 ms". Not shown by the files: video (none taken), Image Review, ART Grainy Film.
+- **Cause (camera photos, measured):** the grain capped the highlights. Brightest parts (99.99th percentile, inside
+  the border) Off 239, strength 1 239, 3 218, 5 204 (972: 195); the lamp series 977 (no grain) 236, 978 228, 979 212,
+  980 195, 974 183. With no pixel above Halation's threshold (T 200, firmware/halation.py) the grid had no source
+  (research/halation/model.py on the photos: 6.6 % bright cells at 977, 0 at 980 / 974..976). g1 / g2 took the tile's
+  Y mean off as the combiner's output Y offset (+180), but the sum is clamped before that offset: the mean x gain
+  (10-bit 192 at 1024, 288 at 1536) filled the headroom over white (about 83 at 10-bit: strength 1's 75 fitted, so 1
+  was unaffected). The mean brightness stayed (g1's "no brightening"), so it was not noticed before.
+- **The combiner's register image (static analysis, init 0x605047c1 and the set-up cases 0x60504a80..0x605053d0):**
+  per input (first +76.., second = the texture +128..): +84 / +136 input offsets (low Y, high Cb; +88 / +140 Cr):
+  init Y 0, Cb / Cr -512 (how the chroma is centred); +92 / +144 mode; +96 / +148, +100 / +152 gains; +108 / +160 and
+  +112 / +164 clamp minima (init Y 0, Cb / Cr -512); +116 / +168, +120 / +172 maxima (init Y 1023, Cb / Cr 511); output
+  +180 (Y low, Cb high 512), +184 Cr 512. Another set-up (0x6050482f) fills the Y input offset, Y min / max and the
+  output Y offset from a table: a levels step, so the order is (input + offset) clamped, x gain, summed, + output
+  offset (analysis).
+- **g2c fix (xblock.s xb_c1e):** +136 low half = -192 (the tile's Y mean 48 x 4, on the texture's own input), +160 low
+  half = -512 (its Y minimum, so the centred grain keeps its lower half), +180 low half = 0. xb_tbias gone. Expected on
+  the camera: highlights and brightness as with grain Off, Halation's lamp back. If +136 is not the Y input offset,
+  grain photos would come out lighter (the mean added, no output offset): the test says which.
+- Simulation (centred Gaussian grain added to the no-grain photos, the halation model's coverage guard): lamp 977
+  6.6 % -> 7.0 % (sigma 16) / 7.5 % (sigma 24) bright cells: full strength. Daylight 962 / 970 (already 21-22 %,
+  partial): 48-61 % with sigma 16-24 -> Halation off. The guard (COV_U / COV_HI on the threshold-excess grid) counts
+  the grain's bright specks in mid-bright cells (Y ~150..200). Not changed in g2c (Halation's own tuning, owner's
+  call): an average over a few pixels before the threshold would make the grid blind to the grain.
+- **Grain tiles remade per photo (37 for 38):** the texture cache (TXGET) frees an object at its release when no
+  other still holds it (0x604ce397: refcount <= 1 -> buffer back, state 0); a burst's stills develop one after another,
+  so each makes its own tile (about 0.43 s). Keeping it would mean holding a 4.7 MB texture buffer from the camera's
+  pool for good (not done: memory risk); a cheaper tile (columns repeating every 768 as the rows already do) would
+  halve the time. Owner's call; unchanged.
+- om-emu: new test `grain-mix-keeps-the-highlights` (s_c1e on a register image as the init leaves it, strengths 1 / 3
+  / 5 and a tile not written: +96 / +100 the photo's chroma back, +148 / +152 the gains, +136 / +160 / +180 as above);
+  `--without` the g2b build (out-g2e): caught. session_ed1.mjs: W(addr) in ncall expressions (the code block's
+  address, P + XPTR). Suite on 084d088: **30 of 30 pass**. Glow: the camera's Soft Focus works on the developed picture
+  after the grain, so its highlights were capped too; camera-only.
+- Package `test-builds/2026-11-16-grain-g2c` (private folder): E1479999.BIN `317747e1…23a6` (VERSION "v0.30.3-dev
+  (grain g2c: grain centred, highlights kept)"), go-backs v0.30.3 `60b6d954…f546` and border test 1c `d8ce3d89…3db3`.
+- **g2c camera (owner's OM-3, 2026-11-16; package 317747e1…): Halation kept with grain, highlights to white**
+  (camera-tested; the main chat's readings, the owner's view pending). Files in the private card backups (CADLOG,
+  PB163001..008, 8 kept of 11). Log: 11 photos, 56 events, "nothing unusual", no freeze; "Grain tiles: made 6, failed
+  0, last size 3, last time 393 ms"; NOW "Film Grain on COLOR 1-4: 5 Coarse, Off, Off, Off". All 8 the lamp scene with
+  Halation, 001 grain Off, 002..008 grain at several strengths / sizes (Cb high-pass 5.2..8.2): the orange halo in
+  every one (mean R - B near the lamp 74.6 Off, 67..71 with grain; g2b: -4..1 at 3..4); Y 99.9th percentile 251 with
+  grain against 244 Off (g2b: 204..218); mean brightness as Off (43.5..46.8 against 45.9, a dark scene). So +136 is
+  the texture's Y input offset and +160 its Y minimum, as read from the init (the guess held). Not covered yet: a
+  white / bright scene, Glow + grain, video, daylight Halation.
+- **Owner on the g2c photos (2026-11-16): "Looks good"** (owner-approved look; via the main chat). Still untested on
+  the camera: a white / bright scene, Glow with grain, video, Halation in daylight with strong grain.
+
+## v0.31 alpha (2026-11-17; try/v0.31-alpha; emulator only, camera test pending)
+- Owner: "make a .31 alpha that uses the changes in 30.4 with our border and grain additions. I want to test that one
+  first before we put it up as an alpha".
+- **Test 1** (bb4f788 = main v0.30.4 46b059a + feature/better-grain ee80f9d: borders test 1c + grain g2c): conflicts
+  only where both sides added lines (NOTES, emu_test.py: VIDEO and GRAINMIX both kept, session_ed1.mjs: keep: and
+  expect:p: both kept) and VERSION ("v0.31-alpha-dev (test 1: v0.30.4 + borders + grain g2c)"). xblock.s merged on
+  its own (PR #70 and grain). om-emu: 39 / 39. E1479999.BIN `9622a965…2576`. Camera test pending.
+- Camera (owner, 2026-11-17, test 1): "borders don't show up in live view". As designed (b1: a pass on the finished
+  still, `bd_run` from `xb_gs`; nothing in live view or video, `xb_lv` unchanged), as Halation. A live-view preview
+  would be new work (an on-screen overlay, as the frame-lines work, is one way): the owner's call.
+
+## Border preview in live view: a frame line on the grid (2026-11-17; branch feature/border-live-view; emulator only, camera test pending)
+- Owner, after v0.31 alpha test 1: "borders don't show up in live view" -> "Add a live view preview".
+- **How the OM-3 draws its grid** (om-emu, this work): each line rect {x0, y0, x1, y1} is a **line segment** from
+  (x0, y0) to (x1, y1), 2 px wide (x - 1..x, y - 1..y), in the grid colour; a rect is never filled (a wide rect drew a
+  diagonal). Any of the 5 "V" and 3 "H" slots draws any line. So the grid can show the border's inner edge as a frame,
+  not white bars. Filled bars would need the OSD engine's own rectangle call (om-emu knows GPI_DRAW_OSD_RECTANGLE) from
+  the GUI's drawing side: not tried.
+- The four grid builders (0x612380bf rear screen, 0x611cb359, 0x611e4221, 0x611eab68) read the grid with the GUI's
+  setting read 0x610fd8ef (`call ..,[d2,d3,a2,a3],28`, d0 155 / 2047 stills, 446 movie) at 0x6123825e, 0x611cb433,
+  0x611e44d7, 0x611eae1e, then: 7 / 8 picture grids, 0 Off (kind 2), else kind 1 and the line lookup 0x611c78c7 (the
+  value's 68-B record, per screen and aspect; values in the tables: 1 thirds, 5 6x4, 6 golden; the 16:9 frame 9 has
+  tables of its own). The grid item is part of the GUI's screen object (rear: obj + 2668 = {u16, u16 kind, 5 V, 3 H};
+  its place differs from boot to boot in om-emu, 0x62469e7c / 0x6246875c), compared each frame and redrawn on a change.
+  The GUI read caches settings (tables 0x62ce5888 / 5b08 / 5d88, id < 300 / < 1200 / else) and fetches a miss through
+  the settings interface: 111 (the picture mode) is in it.
+- **Build (border preview 1, commit 7af273c):** the four reads -> `bl_gv`: the stock read, then for 155 / 2047 in a photo
+  mode (mx_photo), after the first shutter event (el_hold 0; STATE valid, PVAL), with the picture mode (111 via the GUI
+  read) a COLOR k (fl_cvt) whose slot +50 is 1..5: the value v becomes 0x100 | L << 4 | v. No table holds it, so the
+  lookup misses; its loop end (0x611c7922, frame-lines' hook site) -> `bl_tail`: for our values, v's own lines when v is
+  thirds or golden, then the frame B inside the picture (the table's thirds record: V[0] y0..y1, H[0] x0..x1),
+  B = max(1, min(w, h) 983 L >> 16) (bd_run's width), into the first empty slots; other values as stock. Other grids
+  (Off, 6x4, scale, diagonal, 16:9 frame) show the frame alone while a Border is set. ext12 +592 B (239,760 of 262,144).
+- om-emu (rear screen, 4:3: picture x 50..850, y 0..599): Border 3 -> lines on x 75..76 / 823..824, y 25..26 (the
+  bottom line at 573 under the info bar); Border 5 -> x 93..94, y 43..44; Border 1 -> x 58; thirds + Border kept both;
+  Border 0 -> no line; after a power-off with Border 3, no line before the first half-press (el_hold 1 after the early
+  load; STATE 0 without it), the line after it; a video boot with Border 3 and the stills grid on thirds: the stock
+  video grid only. Not seen in om-emu: the EVF and the other screens (their builders are hooked the same way).
+- Tests (emu_test.py): `border-preview-on-at-3-off-at-0`, `border-preview-waits-for-the-first-half-press`,
+  `border-preview-not-in-video`, through the driver's new `expect:pxsame` / `expect:pxdiff` (the rear screen as shot:
+  two pixels the same / different). `--without` v0.31 alpha test 1: the first two `caught`.
+- Suite (build of 7af273c, the package's bytes): **41 of 42 pass**, the new three included, patch-audit and
+  static:changed-bytes pass; `static:hook-list` failed only for the five new hooks until they were recorded, then
+  passed with the other static checks: **42 of 42**.
+- Hooks (reviewed for the start-up rule: before the first shutter event bl_gv is the stock read plus a few memory reads,
+  bl_tail is the stock loop for every value but ours): hook_bga 0x6123825e, hook_bgb 0x611cb433, hook_bgc 0x611e44d7,
+  hook_bgd 0x611eae1e (7 B each, call target only), hook_blk 0x611c7922 (5 B). Recorded in tools/test/hooks.json
+  with the owner's OK (2026-11-17, "Yes, record them"); only these five entries were added.
+- Clash: feature/frame-lines (XPan / 21:9, not merged) uses the same loop-end site 0x611c7922 and values 2 / 3: merging
+  both needs one tail that handles both.
+- Package `test-builds/2026-11-17-border-preview-1` (private folder): E1479999.BIN `db1fedfa…a732`, VERSION
+  "v0.31-alpha-dev (border preview 1: frame line in live view)", go-back v0.31 alpha test 1 `9622a965…2576`.
+
+## Crop modes reopened: crop round 1 (2026-11-17; branch feature/crop-modes; emulator only, camera test pending)
+- Owner (2026-11-17), after the XPan / 21:9 grid lines on the camera: "that looks good, but I'm honestly not happy with
+  it. Its just a faint attempt at crop modes. I think we should scrap the custom gridlines and really try and break into
+  a custom crop mode". The record of c1–c6 (2026-11-13/14, every address, test and camera result) is on
+  `feature/composition-guides` (research/NOTES.md there, "Crop modes ..."); this branch starts from
+  `feature/border-live-view` (27bcd0f, border preview 1, camera-tested).
+- **Round 1 = c5's working parts, nothing of ours before the first half-press** (`firmware/src/crop.s`,
+  `firmware/crop.py`). Kept from c5 (camera-tested there): Image Aspect values 5 (5:4, the camera's hidden ratio), 6
+  (XPan 65:24, was 7:6) and 7 (21:9, was 6:5) through the validator (0x6061b904 -> cr_vlist), the stills rule's map
+  (0x605d1134 -> cr_rmap), the super control panel strip and the three Image Aspect menus; photo sizes (5184 x 1920,
+  5184 x 2224, 4864 x 3888) and the RAW frame; the live view strip through ratioToConvertSize 0x60c0d30b and
+  getOutputAspect 0x60c14b28 (and the CapThr switches, which only run behind a mode check); the shooting screen's 16
+  reads of 269 (5 -> 4:3, 6 / 7 -> 16:9 for its lookups; the label reads give each crop a slot of its own); our labels
+  (pictures 0x7fc4.., strings 0x7f68..); the size text table; the save guard (hooks 0x60061183 power-off,
+  0x6006120e after a menu: M is saved with the crop's base ratio and our tag 'C' 'R' 0 id at M + 0x39FF0, the buffer's
+  checksum corrected) and the restore at the first shutter event (cr_rst through cr_hp).
+- **Left out of c5's build:** the c4 / c5 run counters and the 0x6043900f counter hook (diagnosis only), the playback
+  label diagnosis (rings in cr_ic / cr_str), the SetValue hook cr_set (cr_rst's own check, "269 still holds the crop's
+  base", covers it: a ratio picked before the first half-press other than the base is kept), and c6's AF target lists
+  (0x615034f8 / 0x615034e0): the only c5 -> c6 binary difference, and c6 was the only build with black screens.
+- **Start-up:** the camera's saved settings never hold 5 / 6 / 7, so it always starts on a stock ratio and stock code
+  paths. **Found on this base:** c5's restore ran from nm_ex, sd_load's last call, and since v0.30 sd_load also runs in
+  the early load (el_go: the films from camera memory at the GUI's first state change, during start-up, el_nc 1). The
+  first build of round 1 (out-cr1, 9d6240dd…) so set XPan back during start-up: om-emu, boot 2 after a power-off in
+  XPan, M + 0x2c2 was 6 before any half-press. Now `cr_hp` runs cr_rst once, from nm_ex only when el_nc is 0 (the
+  half-press load) and from lg_pr (the first shutter event after an early load); before it, 269 stays 3 (test below,
+  `--without` out-cr1: caught). `cr_on` (set by cr_rst) gates the label hook (cr_ic: straight to ic_get), and the 16
+  screen reads (cr_gv / cr_gvl: the stock getter, then one byte read). cr_str is a two-compare pass-through for ids
+  other than ours. The save hooks run only at a save of a store (a menu exit or power-off), never at start-up; they read
+  only a0, a3 and the stack after 0x60061183 (checked in the stock code: a1 is stored at entry, d0 comes from
+  0x60060eff, d1 is set before use). M + 0x39FF0 is free on this base (the films block starts at + 0x3A000).
+- **The c6 black screens, what is known:** two at switch-on, both after switching off in a normal ratio, with c6 only.
+  Not found by analysis. Round 1 removes c6's change and every diagnosis hook, and gates the rest; if a black screen
+  comes back with round 1, the cause is in c1–c5's parts (then: a build with the save hooks alone, then without them).
+- **Known gaps:** a custom mode saved while in a crop would hold 5 / 6 / 7 and could start the camera in it (test steps:
+  don't); the AF point in S-AF at XPan (c5: disappears when moved); grid lines and the border preview line follow
+  16:9, not the strip (the camera's grid can now take our own lines: border preview's hook at 0x611c7922); playback
+  labels (16:9 / 4:3 codes from 0x610db128).
+- **Tests (emu_test.py):** `crop-xpan-starts-as-16-9-and-comes-back` (boot 1 picks XPan, power-off; boot 2: Image
+  Aspect 3 and cr_on 0 after start-up, 6 after the first half-press; log "tag at the first half-press 43520006, Image
+  Aspect then 3, set to 6, after 6, now 6") and `crop-stock-ratio-left-alone` (16:9 saved as it is, no tag, nothing
+  set). `--without` the first build (out-cr1): caught.
+- **Suite** (build of 47b82ca = the package's bytes, om-emu 0819080): **42 pass, 2 FAIL**: `static:hook-list` (the two
+  new hooks, hook_crs 0x60061183 8 B and hook_crb 0x6006120e 6 B, reviewed against the start-up rule above: they run
+  only at a store write, which om-emu shows at power-off and after a menu, never at start-up) and
+  `static:changed-bytes` (crop.py's data patches: validator, rule map, strip / menu records, size tables, jump tables,
+  the 16 call sites, the size text constants). Both pass once tools/test/hooks.json records them, which needs the
+  owner's OK (as border preview's hooks did); not recorded yet.
+- om-emu, round 1: XPan shows in the control panel cell and the top bar (preview); border preview 1's regression shots
+  (Picture Mode, live view at 3:2) identical to border preview 1.
+- Package `test-builds/2026-11-17-crop-round-1` (private folder): E1479999.BIN `a5d4a2ab…aaa7` (commit 47b82ca),
+  VERSION "v0.31-alpha-dev (crop round 1: XPan, 21:9, 5:4)", go-back border preview 1 `db1fedfa…a732`.
+- **Camera, round 1 (owner, 2026-11-17; card read by the main chat, checked here):** the owner flashed a5d4a2ab… and
+  took one photo per crop: XPan 5184 x 1920, 5:4 4864 x 3888, 21:9 5184 x 2224 (AspectFrame 0 0 w-1 h-1, S-AF); the
+  crop looks centred vertically. **EXIF AspectRatio reads 7:6 / 5:4 / 6:5**: the maker note keeps ids 6 / 7, which
+  readers know as the hidden 7:6 / 6:5 (with the playback labels: one issue). The kept CADLOG.TXT is a later short
+  power-on (4 shutter events, 0 photos): "tag at the first half-press 00000000, Image Aspect then 0, set to 0, after
+  0, now 6" (no saved crop at that start; XPan picked after the first half-press); the switch-off at XPan / switch-on
+  power-on's log was overwritten. **Start-up (owner, 2026-11-17): "no black screens, all start-ups normal"**, after
+  switching off at XPan and in a normal ratio (camera-tested). The AF target at XPan: not drawn (crop round 2).
+- **Plan for round 2 (analysis):**
+  - AF point in S-AF: the E-P7's fix list (cakelesscoder, docs/ASPECT.md section 1i, camera-tested there) names every
+    place that looks the ratio up and misses at 6 / 7: the AF selector set-up lists, the AF rows / columns switches and
+    window table, the AF / live view driver's ratio pair (tracking, iAuto), **the AF frame display geometry, keyed by
+    an object's own copy of the ratio (a miss draws nothing: matches "the point disappears")**, the selected point's
+    validity map (a miss leaves stack garbage for a jump table), metering lists. cr_gv only covers reads through the
+    GUI getter, not copies. Next: find the OM-3's equivalents (om-emu at XPan, trace who copies 269 and which lookups
+    miss), give 6 / 7 the 16:9 entry as the E-P7 did; a phone photo of the screen while moving the point would help.
+  - Grid lines: border preview's line hook (0x611c7922, bl_tail) can draw thirds inside the strip.
+  - Black screens, if one comes back with round 1 (guess, not shown): the save hooks jump from section 1
+    (0x60061183, 0x6006120e) into section 6's extension (.ext12), and the sections are copied 1..10 while the camera
+    starts (SECBITS 0xa32de590). A store write before section 6 is in would run unloaded memory. om-emu maps every
+    section at once and, traced (WATCH 0x60061183 / 0x60045ed5), wrote stores only at power-off (E, then M), so it
+    cannot show this. Fix to try then: enter through a section loaded before 6, checking SECBITS bit 5 first.
+
+## Crop round 2: the AF target at XPan, grid lines in the strip (2026-11-17; emulator + analysis, camera test pending)
+- **Camera, round 1 (owner's phone photos, AF target screen at XPan, target mode Single):** the screen shows the
+  XPan strip (full width, centred) on blue, the "Single" box, **no target**, as with c5.
+- **om-emu cannot show it:** at XPan om-emu draws and moves the target in every target mode (Single, Small, Cross,
+  Middle; the main dial steps them on that screen). Traced (WATCH): om-emu never runs ratioToConvertSize 0x60c0d30b,
+  getOutputAspect 0x60c14b28, the pair converter 0x60c13c08 or the live view ratio switch 0x60bf2cc8, and leaves the
+  display set-up's globals (0xa32dd210..) at 0: the live view (through image) and display side is not emulated. Reads
+  of 269 on that screen: AF_Target_Actuator's ratio path 0x6119b23b (facade `calls (a2)`, reached in Single in om-emu:
+  a miss for 6 keeps the old style / mask, c6's lists fixed only that), 0x612d719c's callers, api_rec 0x6040541a; none
+  goes through the GUI getter, so cr_gv does not cover them.
+- **Found (analysis):** two per-ratio tables on the live view side with rows only for the camera's ratios (ids 5..8
+  0 x 0), found by a scan for {u16, u16} tables whose 4:3, 3:2, 16:9, 1:1 and 3:4 rows are shaped by ratio and whose
+  rows 6 / 7 are 0:
+  - The live view display set-up (0x602177c3.., log strings "DISP4-3!", "DISP17-9!", "DISP16-9!", "thr_start!"):
+    (12,sp) = camera setting 0x3081 (getter 0x60063380; om-emu ncall: 1 at 4:3, 3 at 16:9, 6 at XPan: Image Aspect)
+    indexes three 11-entry tables of picture areas, rear 900 x 600 at 0x602ed11e (4:3 800 x 600, 3:2 900 x 600, 16:9
+    900 x 506, 1:1 600 x 600, 3:4 450 x 600, 17:9 900 x 476), 1020 x 690 at 0x602ed152, 1024 x 768 at 0x602ed186,
+    into 0xa32dd21a / 21c (and 22a / 22c by another index). At XPan: 0 x 0, which fits a target scaled to nothing.
+  - The AF module's point grids (0x60903e88: (20,a0) the id; a 0 row logs an error, 0x60068a54 code 2513 / 2528, and
+    takes the 4:3 grid): 39 x 27 at 4:3 (0x60a3cd1e; 3:2 39 x 23, 16:9 and 17:9 39 x 19, 1:1 29 x 27, 3:4 21 x 27) and
+    19 x 13 (0x60a3cd4a). A third (0x60a3cd76) has only 16:9 / 17:9 rows: left alone.
+- **Round 2 (crop.py, data only):** display areas: the crops' true areas, as the camera gives 17:9 (rear XPan
+  900 x 332, 21:9 900 x 386, 5:4 750 x 600; 1020 x 690: 1020 x 376, 1020 x 438, 862 x 690; 1024 x 768: 1024 x 378,
+  1024 x 438, 960 x 768). AF grids: XPan / 21:9 = 16:9's, 5:4 = 4:3's (the stock pairing of 17:9: true area, 16:9
+  grid; the E-P7's af_dim). The CROP MODES log line adds the display set-up's id and area (0xa32dd210, 21a, 21c), so
+  the camera log shows what it used. Not done: AF_Target_Actuator's ratio lists (c6's change; only with a relocation
+  into .ext12, and c6 was the black-screen build).
+- Risk to watch: if the display area is also the live view window, the strip's display could change (the test steps
+  ask). Test: `crop-xpan-display-area-and-af-grid` (the tables in memory; om-emu cannot show the result).
+- **Grid lines in the strip (commit d80efbc):** with a crop set, bl_gv (border preview's read of the stills grid,
+  155 / 2047) calls `cr_gm`, which marks a line grid (thirds 1, 6x4 5, golden 6, or a Border's value) with BL_C 0x200,
+  in photo modes after the first shutter event. The lookup misses it; bl_tail accepts bits 8 / 9, copies v's record
+  (6x4 too when BL_C), and after the thirds record gives the picture's place jumps to `cr_gx`: it maps every line
+  from the picture (16:9 for XPan / 21:9, 4:3 for 5:4: cr_gv) into the strip (full width x 24 / 65 or 9 / 21, or full
+  height x 5 / 4, centred) and hands the strip back as the picture, so a Border's frame (L > 0 only) sits inside it.
+  om-emu (pinned 0819080; the older om-emu in ~/om3-work/om-emu kept the old lines on screen): XPan thirds x 300 / 600
+  over y 134..465 and y 243 / 354; 21:9 y 107..492 and 234 / 363; 5:4 x 324 / 575 over y 0..599, lines x 76..828;
+  16:9 thirds identical to border preview 1; XPan + Border 3: frame x 14 / 885, y 148 / 451, with thirds inside.
+  Tests: `crop-grid-thirds-in-the-xpan-strip` (`--without` the tables build 309293e: caught) and
+  `crop-grid-stock-ratio-unchanged`. The camera's own aspect frame lines (a GUI layer) still show 16:9's at XPan.
+- **Playback labels (lead, not fixed):** the playback info screens draw the ratio through a picture widget
+  (0x610db0df: (136,a0) the list, (132,a0) the index, the picture at +12 of a 16-B entry). Its lists (layouts
+  0x613f8d0c, 0x613fe9d0, 0x6147d56c: `0x502` = 5 entries) are 4:3 10931, 3:2 10932, 3:4 10933, 16:9 10930, 1:1
+  10934 at 0x613f5afc, 0x613fb194, 0x6147bff8. Which index a photo gets (from the maker note's 0x1112) is set in code
+  om-emu does not run (its playback shows no photo details). Next: more entries (our top-bar pictures) and that index.
+- **Suite** (build of d80efbc = the package's bytes, om-emu 0819080): **45 pass, 2 FAIL**, the same two as round 1
+  (`static:hook-list`: hook_crs / hook_crb, round 1's save hooks; `static:changed-bytes`: crop.py's data patches),
+  waiting for the owner's OK to record them. Round 2 adds no hook.
+- Package `test-builds/2026-11-17-crop-round-2` (private folder): E1479999.BIN `7a0736fd…8286` (commit d80efbc),
+  VERSION "v0.31-alpha-dev (crop round 2: AF target, grid lines)", go-back border preview 1 `db1fedfa…a732`.
+
+## Crop round 3: the AF target reproduced in om-emu, its cause and fix (2026-11-17; emulator, camera test pending)
+- **Camera, round 2 (owner, 2026-11-17):** "still no focus point when moving it. also after taking the pictures it
+  still displays 16:9 instead of the actual crop. the grids look good". Grid lines in the strip: **camera-tested**.
+  The display / AF grid rows of round 2 did not bring the target back. **Review after a shot: only the label is
+  wrong** (owner: "just the label is wrong. the format is the xpan strip").
+- Card read (main chat, card-backups 2026-11-17-crop-round-2-tested): CROP MODES "tag at the first half-press
+  00000000, Image Aspect then 0, set to 0, after 0, now 6; **display 3, 900 x 506**": the live view display set-up's
+  last run used 16:9's row (it may run only at start-up and mode changes, before XPan was picked that power-on), so
+  round 2's rows were not read. Photos 21:9 x 2 (5184 x 2224, EXIF 6:5), XPan (5184 x 1920, EXIF 7:6), S-AF, EXIF
+  AFAreas all the centre.
+- **The pinned om-emu (0819080) reproduces the missing target** at XPan, 21:9 and 5:4 (no target, no area outline;
+  16:9 normal), with every round so far. The earlier "om-emu draws it" came from the older om-emu in
+  ~/om3-work/om-emu (96bf756), which shoot.sh used by default (OM3_EMU). Use the pinned one for this screen.
+- Traced on the AF target screen at XPan vs 16:9 (pinned om-emu): the same settings reads in the same order (so
+  the split is in values); an execution-coverage diff of 0x61000000..0x61500000 (a scratch copy of session_ed1 with
+  Debugger.traceExec({from, to})) points at the screen's layout search **0x61291206** (ten callers, e.g. 0x61133aac,
+  0x611721f6, 0x6117346d): d0 = layout element, d1 = ratio, both bytes of the screen's struct (+18, +9), searched
+  in per-mode tables of 12-B entries {u8 element, ., u16, rect ptr, u32 ratio} (e.g. 0x615ee678, pointers / counts
+  set by 0x6129215c's paths into 0x6037e5c8 / cc, d0 / d4) that hold ratios 1, 2, 3, 4, 9, 10 only. Keys at the
+  search: 16:9 (3, 3), XPan **(1, 6)**: no entry, no layout, no target.
+- **Experiment (CROP_LSX=1 builds only, `.hook_crl` at 0x61291206, emulator only):** a crop's ratio -> its base
+  (6 / 7 -> 3, 5 -> 1) and, at XPan / 21:9, element + 2 (16:9's offset in the 1..5 / 8..12 groups): **the target is
+  drawn at XPan and moves**, as at 16:9. So this miss is the cause on this screen. Not for the camera: the element
+  is not always ratio + offset (elements 13..15 exist only for 16:9 / 17:9), so the fix belongs where the struct's
+  +9 / +18 are filled (not found yet: a memory watch saw no store to them after the screen opened; om-emu may
+  copy that struct natively).
+- Also built (commit with this note, not packaged, effect not shown): (a) `.hook_cra` 0x60882acd: the AF driver's
+  copy of the live view pair (+152 / +153 of its object; its point-area code 0x60853b.. has cases for 4:3, 16:9,
+  3:2, 6:6, 3:4 and logs an error otherwise) -> the base's pair; (b) `.hook_crk` 0x6119b240: AF_Target_Actuator's
+  ratio key -> the base's; (c) 0x61292189 (the screen helper's facade read of 269) -> `cr_gw`. With (a)-(c) and
+  without the experiment the target stays missing in om-emu. The CROP MODES log line adds the AF pair and the
+  mapped counts.
+- **Found and fixed (commit 701f9f2):** the struct is the GUI's screen spec. Its builder (0x611cb1c4..) reads Image
+  Aspect through the facade into its object's +1056 (0x611cadba), copies it into the spec's ratio byte at
+  **0x611cb24d** (`mov (8,sp),a0; mov (a0),d0; movbu d0,(9,a3)`; found with a memory watch on one of the spec's
+  copies: 0x6247ab78 is written by 0x611caf29..0x611cb381), and 0x611caf1d picks the element from that byte (default
+  1; 1, 2, 3, 4, 9 only). **`.hook_crg` 0x611cb24d -> cr_spec:** a crop's ratio -> its base (5 -> 1, 6 / 7 -> 3)
+  after the first shutter event; the element and every layout follow. Pinned om-emu: the target and the area outline
+  at XPan and 21:9 (16:9's outline) and 5:4 (4:3's), moved up / up / right exactly as at 16:9.
+- Checked by restoring stock bytes in copies of the build: (b) AF_Target_Actuator's key and (c) the helper's read
+  change nothing on screen with cr_spec in -> both dropped (and the experiment). Kept: (a) `.hook_cra` (the AF
+  driver's pair; camera-only; the log shows "AF pair w:h, mapped n").
+- Test `crop-af-target-drawn-at-xpan` (the outline at x 2 and the Single target at x 506 present at XPan; `--without`
+  round 2: caught). Package `test-builds/2026-11-17-crop-round-3`: E1479999.BIN `7cc7fb5f…16ec` (commit 701f9f2),
+  go-back border preview 1. Playback / review label: still 16:9 (next).
+- **Suite** (build of 701f9f2 = the package, om-emu 0819080): **46 pass, 2 FAIL**: `static:hook-list` (four crop
+  hooks waiting for the owner's OK: hook_crs 0x60061183 8 B, hook_crb 0x6006120e 6 B (round 1, save time only),
+  hook_cra 0x60882acd 16 B, hook_crg 0x611cb24d 6 B (round 3: the stock copy plus one byte read before the first
+  shutter event)) and `static:changed-bytes` (crop.py's data patches).
+
+## Crop round 4: the live histogram (2026-11-17; analysis + a direct-call test, camera test pending)
+- **Camera, round 3 (owner, 2026-11-17): "Ok! The focus point works."** (camera-tested at XPan: the target shows and
+  moves; the main chat's phone photo also shows the thirds in the strip). Two things: "The histogram is super weird
+  now with line shooting up" (phone photo: at XPan one tall spike at the far left, black, above a low flat curve), and
+  playback still labels the XPan photo 16:9 (the picture itself is the strip).
+- **The histogram (analysis):** the live histogram's main area {x, y, w, h} is set at 0x60c772c0 (`call 0x60bcd668,
+  [a2],28`, app_background_set_histogram_main_area -> app + 3452) from a rect in the live view's context ((0x6036bb78)
+  + 16, converted by 0x60c72400); om-emu leaves that context pointer 0 (live view not run), so it cannot show the area.
+  A spike at black = the area includes the dark bands above and below the strip: the live view's display window stays
+  16:9 at XPan (round 2's log: display set-up id 3, 900 x 506; its rows for 5..7 were never read). Likely there since
+  round 1 (nothing in rounds 2 / 3 touches that area), not yet confirmed.
+- **Round 4 (commit after this note): 0x60c772c0 -> `cr_hist`:** with a crop set (after the first shutter event), an
+  area larger than the crop is trimmed to it, centred (XPan / 21:9: full width, height w x 24 / 65 or 9 / 21; 5:4:
+  full height, width h x 5 / 4), then `jmp` the camera's setter in the same frame (it returns through the stack, so
+  mdr and d0 / d1 / a1 are free). An area already the crop's shape is kept as it is. The log line adds "histogram area
+  w x h, trimmed n" (the area asked).
+- Test `crop-histogram-area-trimmed` (emu_test.py, a direct call on a scratch app object, as grain-mix): 640 x 360 at
+  XPan -> (0, 62, 640, 236), at 21:9 -> (0, 43, 640, 274); 640 x 480 at 5:4 -> (20, 0, 600, 480); at 16:9 as it is.
+- **Playback label (lead, not in round 4):** om-emu's playback shows no photo details (shutter 1/125, size 0x0) even
+  with the owner's XPan / 21:9 photos on its card, so the label's choice runs only on the camera. The label is a
+  picture widget (0x610db0df, index at +132) over 5-entry lists; the five writers of +132 in the GUI belong to other
+  widgets. 16:9 for XPan and 21:9 but 4:3 for 5:4 suggests the label is picked by the photo's shape (nearest stock
+  ratio). Next: a camera log of the index's writer, or our own label pictures in that list.
+- Round 3 card read (main chat): CROP MODES "... now 6; display 3, 900 x 506; AF pair 0:0, mapped 0, screen specs mapped
+  40": cr_spec ran 40 times; **.hook_cra never ran** (its pair stayed 0:0 from boot), focusing works without it ->
+  removed in round 4 (one hook fewer). Display set-up still id 3, 900 x 506 at XPan. Photos XPan 5184 x 1920, EXIF
+  AFAreas the centre.
+- **Round 4 suite** (build of c4f97cb = the package `test-builds/2026-11-17-crop-round-4`, E1479999.BIN
+  `b443539a…`, om-emu 0819080): **47 pass, 2 FAIL**: `static:hook-list` (three crop hooks for the owner's OK:
+  hook_crs 0x60061183, hook_crb 0x6006120e (save time only), hook_crg 0x611cb24d (the screen spec)) and
+  `static:changed-bytes` (crop.py's data patches and call-site redirects, cr_hist's included).
+
+## Crop round 5: the live histogram, the display side (2026-11-17; analysis + a direct-call test, camera test pending)
+- **Camera, round 4 (owner): "the bars in the histo are still there"**; card read (main chat): CROP MODES "... now 6;
+  display 3, 900 x 506; screen specs mapped 4; histogram area 0 x 0, trimmed 0": round 4's wrapper (0x60c772c0, the
+  app's histogram main area setter) never ran. (The card's empty DCIM folder: the owner erased the photos.)
+- The display draws the live histogram from Dev_HistogramFactory: **Set_Histogram_CalcMode 0x60dc4bb1** (a method:
+  data ref 0x60f16218; entry `movm [d2,d3,a2,a3],(sp); add -256,sp`, ends `add 256,sp; ret [d2,d3,a2,a3],16`; d0 the
+  mode 16 / 17 / 32, a1 -> the main area {x, y, w, h}, d1 -> the sub area) copies the areas into the block for
+  0x6041847b and starts the calculation (0x604188e4 via 0x60dc54c2). The other callers of those two (0x60c1ee4f..
+  0x60c1f06a) are CapPlh, the playback histogram.
+- **Round 5:** `.hook_crh` 0x60dc4bb1 -> cr_dhm: the stock entry, `call cr_trim,[],0` on the main area, then the
+  stock body (jmp 0x60dc4bb7). cr_trim (d2, d3, a2, mdr only; d0 / d1 / a0 / a1 kept): with a crop set after the first
+  shutter event, an area larger than the crop is trimmed to it, centred. Round 4's wrapper removed. If the method runs
+  only when the histogram starts, it needs a restart at XPan (INFO, a menu): the test steps ask for it; the log shows
+  the area seen ("histogram area w x h, trimmed n").
+- Test `crop-histogram-area-trimmed` now calls cr_trim (same cases and results).
+- **Round 5 suite** (build of d92c8d4 = the package `test-builds/2026-11-17-crop-round-5`, E1479999.BIN
+  `52731083…7fa9`, om-emu 0819080): **47 pass, 2 FAIL**: `static:hook-list` (four crop hooks for the owner's OK:
+  hook_crs 0x60061183, hook_crb 0x6006120e (save time only), hook_crg 0x611cb24d (the screen spec), hook_crh
+  0x60dc4bb1 (the histogram area: before the first shutter event the stock entry plus two stores of our own log
+  values and one byte read)) and `static:changed-bytes`.
+- **Camera, round 5 (owner, 2026-11-17): "Histo works!!"** (camera-tested). Card read (main chat): CROP MODES "... now
+  5; display 3, 900 x 506; screen specs mapped 0; histogram area 800 x 600, trimmed 6": cr_dhm ran and trimmed (the
+  main area at 5:4 was 4:3's 800 x 600). Specs mapped 0: no screen spec rebuilt at a crop that power-on (ended on
+  5:4, the focus screen probably not opened). Photos XPan 5184 x 1920, 21:9 5184 x 2224, 5:4 4864 x 3888.
+- **Camera-tested so far:** the crops in the files, start-up, the grid in the strip, the AF target, the live
+  histogram. Open: the playback label (16:9).
+
+## Crop round 6: the playback label, a diagnosis build (2026-11-17; emulator checks, camera run pending)
+- Not found by analysis: what picks the playback label's entry. The label is the generic picture widget 0x610db0df
+  (its index at +132) over 5-entry lists (4:3 10931, 3:2 10932, 3:4 10933, 16:9 10930, 1:1 10934; elements
+  0x613f8cd4 / 0x613fe9.. / 0x6147d5.., descriptor word 0 = 0x0193 8003). Searched without a hit: a ratio-id -> list
+  position table (u8 / u16 / u32), the five writers of +132 in the GUI (other widgets), code using 0x0193 (403 is a
+  screen id at 0x6037a360), ratio thresholds (cmp 133 / 150 / 177: event code chains), the play module's maker note
+  read 0x618dfcde (sizes only; 0x618e2e66 turns 4:3 into 16:9 for three sizes). XPan and 21:9 read 16:9 but 5:4
+  reads 4:3, so the choice looks shape-based (nearest stock ratio), not a single default.
+- om-emu cannot show it: with the owner's XPan / 21:9 photos on its card, its playback shows no photo details
+  (1/125, -.-, 0mm, 0x0) and never asks for 10930 / 10931.
+- **Round 6 (diagnosis only):** in cr_ic's playback branch (GUI class 5..7), `cr_pbd`: the first request of 10930 or
+  10931 after the first shutter event keeps the picture id, mdr and 48 stack words; the log prints the id, mdr and the
+  words that look like code addresses ("CROP PLAYBACK LABEL (round 6 diagnosis): ..."). Nothing on screen changes.
+  Checked by a direct call in om-emu: saved id 10930 and the stack, d2 / d3 / a1 / sp as on entry, on to ic_get.
+- **Round 6 suite** (build of 7845953 = the package `test-builds/2026-11-17-crop-round-6`, E1479999.BIN
+  `6bc684b4…7769`): **47 pass, 2 FAIL** (the same four crop hooks for the owner's OK, changed bytes). Its test steps
+  ask for one XPan photo shown in playback with its info line, then a half-press: the log then holds the picture id
+  and the code addresses that drew it, the input for the label's fix.
+- **Camera, round 6 (owner, 2026-11-17):** "Still shows 16:9. I also noticed the borders get cropped off on the new
+  crop sizes". Diagnosis line (card read by the main chat): "picture 10931, mdr 610DB128, code words on the stack:
+  610DB128 610D9AE5 610C9630 610DB2A6 6128AE33 615E7128 615E7128 6128B4AC 610CD504 610D807C 610C8FF9 611509BC
+  610CD723 611504C8 6115047D" (the first label asked in playback was 4:3's). New: a film's Border is cut off on the
+  crops (the border drawn on the uncropped frame, its top / bottom outside the XPan / 21:9 band, its sides outside 5:4).
+
+## Crop round 7: the Border inside the crop; the playback label's code (2026-11-17; emulator, camera test pending)
+- **The playback label, found (from round 6's trace):** the playback screen (0x61150638.., the screen object a2 with
+  GUI item 197 = the photo's info, 416 B, copied to +1024 by 0x610cd5ac) takes its item 34 (the label widget) at
+  0x61150991 and the info's byte at +144 +78 (the ratio code): 0 hides the label, else 0x6128abe0 sets the widget's
+  index to code - 1 of its 5-entry list (1 4:3 10931, 2 3:2 10932, 3 3:4 10933, 4 16:9 10930, 5 1:1 10934). It draws
+  once before setting it (round 6 saw 10931 first). So an XPan photo's code is 4 (16:9), a 5:4 photo's 1 (4:3).
+  The play app copies the code at **0x6057fb1b** from its photo info (p + 132 + 22, p = its (4,sp); a2 = the GUI info
+  being filled; 0x6057fd15 writes a constant 4 on another path). Upstream (where the code is made, probably from the
+  photo's size) not found: copies at 0x6057ef01, 0x60570883, 0x60565096 carry it along; no ratio-id -> code table.
+  A fix needs a code per crop (6..8) and those three pictures in an 8-entry list (the element's 0x502 -> 0x802, list
+  -> ours), and a signal that the photo is a crop at the copy.
+- **Round 7, diagnosis:** `.hook_crp` 0x6057fb1b -> cr_pbi: the stock copy, then once per power-on keep the code and
+  p + 0..127, p + 132..163, the GUI info + 32..95 ("CROP PLAYBACK INFO (round 7 diagnosis)" in the log): with an
+  XPan photo the size (5184 x 1920) or the raw ratio (6) should show where to read it. Direct call in om-emu: the
+  stock store, the snapshot and every register as expected. Round 6's stack diagnosis removed.
+- **Round 7, the Border inside the crop:** bd_run calls `cr_bdc` after its checks: with Image Aspect 6 / 7 the crop is
+  the full width and Hc = (W num + 8 den) / (16 den) x 16 rows (num / den 24 / 65, 9 / 21), centred (y0 even); with 5
+  the full height and Wc = (5 H + 32) / 64 x 16, centred; a buffer no larger is left as it is. bd_run's P, H and bus
+  move to that area, so B follows the crop's short side (as the live view frame line). research/border/model.py
+  `crop_area` models it; emu_check.py has five crop cases (XPan in 4:3 and 16:9 buffers, 21:9, 5:4, a buffer already
+  the crop's shape) and pokes Image Aspect per case (emu_hl.mjs `pokes`): **14 of 14 bit-exact**.
+- **Round 7 suite** (build of d9c2c2c = the package `test-builds/2026-11-17-crop-round-7`, E1479999.BIN
+  `1cd2f94c…6c41`): **47 pass** (border-matches-the-model with the crop cases), **2 FAIL**: `static:hook-list` (five
+  crop hooks for the owner's OK: hook_crs, hook_crb, hook_crg, hook_crh, and hook_crp 0x6057fb1b, the playback info
+  diagnosis, playback only) and `static:changed-bytes`.
+
+## Crop round 7: the boot loop (2026-11-17; camera, analysis)
+- **Camera (owner, round 7, 1cd2f94c…): "it went into a bootloop and never could even load the camera".** The owner
+  went back to border preview 1 (main chat). The package is renamed `...-BOOTLOOP-do-not-flash`.
+- **Round 6 -> 7, the firmware's changes:** (1) `.hook_crp` at **0x6057fb1b** (the play app's copy of the photo
+  info's ratio code) -> cr_pbi in .ext12; (2) bd_run -> cr_bdc (runs on a finished photo, from the code block's xb_gs
+  at capture); (3) the log writer's cr_txt7 (shutter events); (4) cr_ic back to round 5's code (round 6's playback
+  branch removed). Only (1) can run outside a capture or a shutter event.
+- **Cause (analysis, the only start-up-capable change):** 0x6057fb1b is in **firmware section 2** (0x6031f000 ..
+  0x60718800); cr_pbi is in section 6's extension (.ext12, 0x60f59800..). The loader copies the sections 1..10 in order
+  while the camera starts (0x60045ed5 sets bit id - 1 of SECBITS 0xa32de590; the films' early load waits for 0x3ff
+  for this reason), and code in a section already copied can run before later ones arrive. If the play app fills a
+  photo's info during start-up (e.g. for the newest photo when the card mounts; its function 0x6057f9ed is called from
+  0x6057b73d / 0x6057b766) before section 6 is in, the jump lands in memory not yet loaded: a crash at every start.
+- Every other hook in sections 1..5 that jumps into section 6's extension runs only while a photo is taken or saved:
+  hook_crs / hook_crb (section 1: the settings store's write), hook_ex (EXIF), hook_su, hook_wl, hook_trs, hook_trl,
+  hook_sel2, hook_c1e, hook_mx (section 2: the image pipeline). hook_crp was the first in section 2 on a path that is
+  not the capture's. Hooks in section 6 (hook_crh 0x60dc4bb1) or later (hook_crg 0x611cb24d, the GUI) load with or
+  after .ext12.
+- om-emu cannot show it: its driver sets SECBITS to 0x3ff at the start and every section is mapped from the first
+  instruction; a boot trace (round 6 and 7 builds, WATCH 0x6057fb1b / 0x6057f9ed, boot + half-press) never reaches
+  the play app's info fill, nor does its playback.
+- **Rule for the next builds:** no hook in sections 1..5 may jump into .ext11 / .ext12 / .ext13 unless its site runs
+  only after start-up (and say why); for such a site, enter through the same section's tail with a SECBITS check, or
+  pick a site in section 6 or later. The playback label's next try will be on the GUI side (0x611509bc, section 7),
+  not in the play app. tools/test has no check for this yet (static:hook-sections only matches editor.s to build.py).
+
+## Crop round 7b: start-up safe (2026-11-17; emulator + analysis, camera test pending)
+- **What changed from round 7:** the playback hook (0x6057fb1b) and its log line are gone; the two store-write hooks
+  (section 1) now enter through cr_g1 / cr_g2 in section 1's tail, which check the camera's own ready bit for section 6
+  first; the two lists that section-2 records point to moved out of section 6 (cr_vlist -> section 2's tail,
+  cr_rmap -> section 1's tail). The Border inside the crop (cr_bdc, round 7) stays. VERSION "crop round 7b".
+- **The camera's ready bits (analysis, stock code):** 0xa32de58c, bit id - 1 set at 0x60046064 after section id's copy
+  and its start-up step; 0x60045e39 (d0 = id) reads it. Stock section 1 waits on it before it calls section 9
+  (0x60062210: `mov 9,d0; call 0x60045e39`, a sleep loop, then `call 0x618386bf`), so the firmware itself runs early
+  code before later sections are in, and checks first. om-emu sets bits 0..6 before the settings store starts
+  (FIDELITY-NOTES, S-BOOTSTAGE). 0xa32de590 (the copied mask) is only ever OR-ed by the loader.
+- **Every crop entry, its section, who reaches it, and start-up:**
+
+  | Entry (round) | Section | Reaches | Called by | While the camera starts? |
+  |---|---|---|---|---|
+  | hook_crs 0x60061183 (1) | 1 | cr_g1 (1) -> cr_sin (6) | the settings store write (om-emu: at power-off) | Can't rule out: now gated; until section 6's bit is set it runs the stock instructions (test crop-save-waits-for-section-6) |
+  | hook_crb 0x6006120e (1) | 1 | cr_g2 (1) -> cr_sbuf (6) | the same function's buffer path (after a menu) | The same: gated |
+  | validator record 0x6061b674 (1) | 2 | cr_vlist, now section 2 | whoever reads the section-2 record | Its list is in whenever the record is |
+  | stills rule 0x605d113c (1) | 2 | cr_rmap, now section 1 | the same | The same |
+  | hook_crh 0x60dc4bb1 (5) | 6 | cr_dhm (6) | the display's Set_Histogram_CalcMode | Same section: .ext12 is copied with section 6, and stock code calls section 6 only once it is in |
+  | crop.py's six live view / playback jump tables 0x60e8..0x60eac870 (1) | 6 | cr_os6.. (6) | section 6 switches | Same section |
+  | hook_crg 0x611cb24d (3) | 7 | cr_spec (6) | the GUI's screen spec | Section 7 is copied after section 6 |
+  | GV_SITES (16 calls), the SCP strip, label and menu records, the size text (1, 2) | 7 | cr_gv, cr_gvl, cr_lst, cr_ml0..2, cr_rtab (6) | the GUI | Section 7 is after section 6 |
+  | Our own calls inside section 6 code (st_stk, ar_ic, nm_ex, lg_pr, bl_gv, bl_tail, bd_run, the log writer) | 6 | cr_str, cr_ic, cr_hp, cr_gm, cr_gx, cr_bdc, cr_txt (6) | section 6 code, or the released shutter path | Same section |
+  | hook_crp 0x6057fb1b (7) | 2 | cr_pbi (6) | the play app's photo-info fill | **Removed** (the boot loop) |
+
+  crop.py's other data in sections 1..5 holds values only (size tables, the display and AF tables, the RAW frame's
+  jump table to section-2 cases): `static:section-order` finds no other pointer there.
+- **New check `static:section-order`** (tools/test/static_check.py, research/TESTING.md): round 7's build fails it
+  (crp, crs, crb, the two lists), round 6's too (all but crp), round 7b, border preview 1 and v0.30.3 pass. It also
+  finds 21 entries of the released firmware (v0.30.x, border preview 1) in sections 1..5 that reach section 4..8 code:
+  the shutter hook (0x60415216 -> pr_gate / lg_pr / sd_load ..), the picture pipeline's hooks (ex, lv, su, wl, trs,
+  trl, wt, sel2, c1e, mx, tone, fx) and 13 menu / grain words (0x604b9288, 0x6061a33c..0x6061a580). They start
+  normally on the camera; listed in LATE_RELEASED, **not proven here** (a follow-up).
+- **Start-up proof for this build (analysis + emulator):** sections 1..5 differ from round 6 (which started normally
+  on the camera) in 135 bytes: the two hooks' jumps (now to cr_g1 / cr_g2), the gates and cr_rmap in section 1's tail,
+  cr_vlist in section 2's tail and the two record words pointing at them; every other changed byte is the same call
+  to the same function at its new address (instruction diff of .ext1 / .ext2 / .ext4 / hook_mx: hl_ok, pr_nmd,
+  st_claim, ub_save, fopen .. fclose, ub_bun, ub_pfl, mx_go). Nothing new runs at start-up.
+- Tests: `crop-save-waits-for-section-6` (poke 0xa32de58c = 0x1f before a power-off at XPan: the next start reads 6,
+  no base ratio; on round 7's build "629209c2: 03, not 06": caught) and `static:section-order` (caught on round 7).
+- **Suite (out-cr7b2, E1479999.BIN 85af7365…e479, commit 480e6b2):** 49 pass, including boot-smoke, patch-audit,
+  every crop test, crop-save-waits-for-section-6 and static:section-order; 2 FAIL, as in every crop round:
+  static:hook-list (crs, crb, crg, crh not in hooks.json) and static:changed-bytes (crop.py's data sites), waiting
+  for the owner's OK to record them. Package `test-builds/2026-11-17-crop-round-7b` (private folder).
+- **Camera, round 7b (owner, 2026-11-17, 85af7365… flashed): "Ok. borders work. Now we just need to fix that label
+  when you review the image".** Start-ups normal (no loop; the camera ran normally all session). Card
+  (card-backups/2026-11-17-crop-round-7b-tested, main chat): CADLOG 19 writes, 38 shutter events, nothing unusual;
+  PB173202..206 all XPan 5184 x 1920; 203..206 have the white Border on all four edges (edge means 255), 202 none
+  (taken before the Border was set). CROP MODES line: "... now 6; display 3, 900 x 506; screen specs mapped 0;
+  histogram area 800 x 600, trimmed 14". **Camera-tested: the Border inside the crop, and round 7b's start-up.**
+
+## Crop round 8: the playback label, a diagnosis (2026-11-17; emulator + analysis, camera run pending)
+- **Where the label comes from (analysis):** the playback screen (0x61150638.., item 197's copy at (32,sp) =
+  screen + 1024, its photo info at (24,sp) = + 180) sets the label (item 34) at 0x611509bc..c2 to index code - 1
+  of 4:3, 3:2, 3:4, 16:9, 1:1 from (24,sp) + 78; 0x6128abe0 ignores an index past the widget's count. The photo's
+  file holds the crop: maker note (ImageProcessing) AspectRatio 0x1112 = **6 6** for the owner's XPan PB173203
+  (AspectFrame 0 0 5183 1919, ExifImageWidth / Height 5184 x 1920). The play module reads it at 0x618dfcde (tag
+  4370, its first byte stored at 0x618dfd0f), called from 0x618de947 (the photo's sizes by id from the WH4
+  tables, crop.py patches their rows 5..7) and 0x618dfb14 (the 160 x 120 thumbnail). 0x618e2e66 turns id 1 into 3
+  for three sizes (0x603865c8). No id -> code table (u8 / u16 / u32, indexed by id or id - 1) and no id switch found
+  on the way to the play app's p + 132 + 22 (copies 0x6057ef01, 0x60565096; 0x60570883 clears it).
+- **om-emu cannot show it:** in its playback (an XPan photo it took) neither 0x6057f9ed (the play app's info fill),
+  0x618dfcde, 0x618de947 nor 0x618e2e66 runs; item 197 is zeros but for the shutter, aperture, date and file number
+  strings (UTF-16 at +184, +198, +262, +276, +322..); the code is 0, so 0x611509bc is not reached (0x6115099d
+  hides the label).
+- **Round 8 (diagnosis only, nothing on screen changes):** `.hook_crl` 0x611509bc (section 7) -> cr_pbl, and
+  `.hook_crm` 0x618dfd0f (section 9) -> cr_pmr, both in sections loaded after section 6. From the first half-press:
+  the last four AspectRatio reads (seq, id, the call's d0, its caller) and label updates (seq, code); the first
+  label update with a code keeps item 197 (416 B) as A, the next with a different item 197 as B, each with the reads
+  then. The log line "CROP PLAYBACK (round 8 diagnosis)" prints A's non-zero words and B's words not as A's. The
+  next build can then pick the crop up where it is (item 197, or the last read for the photo shown).
+- **Start-up:** sections 1..5 are byte-identical to round 7b (camera: normal start-ups); the changes are .ext12,
+  6 B in section 7 and 10 B in section 9. static:section-order passes.
+- **Suite** (out-cr8, E1479999.BIN 37a0a294…bba2, commit 64c989c): **50 pass**, among them the new
+  crop-playback-info-kept (direct calls: info X kept as A, X again not kept, a different Y kept as B; cr_pmr's
+  stock instructions, d1 / a1 kept, the read kept), and **2 FAIL** as before: static:hook-list (now crs, crb, crg,
+  crh, crl, crm) and static:changed-bytes. Package `test-builds/2026-11-17-crop-round-8`.
+- **Camera, round 8 (owner, 2026-11-17, 37a0a294…): "No dice. Still says 16:9. Interestingly enough, the lsf+raw
+  also disappears".** Phone photos (main chat): 100-3207 (16:9) shows "16:9" and "LSF+RAW"; 100-3208 (XPan) shows
+  the strip, "16:9" and no quality label. Card (card-backups/2026-11-17-crop-round-8-tested): PB173207..210 =
+  16:9 5184 x 2920 (AspectRatio 3 3), XPan 5184 x 1920 (6 6), 5:4 4864 x 3888 (5 5), 21:9 5184 x 2224 (7 7).
+  **The diagnosis line: events 0, no read, no label update, none kept, but no data either:** the log was last
+  written at shutter event 28, before the playback viewing (none of the 28 events is a playback screen; main chat),
+  so it says nothing about whether 0x611509bc or 0x618dfd0f ran. Round 9 does not depend on it.
+- **Camera, round 8, playback done after a half-press (owner, 2026-11-17; card-backups/2026-11-17-crop-round-8-
+  playback3, PB173211 XPan 5184 x 1920 shown, label "16:9"):** "events 2; maker-note AspectRatio reads 0 ...; label
+  updates 2, last 4 (seq code): 1 4 2 4"; photo info A: code 4; item 197's non-zero words are UTF-16 strings
+  (shutter "1/40" at +180, aperture at +196.., the date / time at +260.., the file number at +320..) and the code
+  (+258 = (24,sp) + 78), **no width or height**. **Camera-tested:** the label is set at 0x611509bc from code 4 for an
+  XPan photo; the maker-note AspectRatio read 0x618dfd0f is not on playback's path; the photo info holds no size, so
+  the code is made upstream from the size (the GUI's shape classifier 0x61101381, round 9's analysis). Earlier tries:
+  playback3's order was shoot, shoot, play, shoot; playback2 viewed before the first half-press (cr_on 0: the hooks
+  wait for it), round 8's first log was written before the viewing.
+
+## Crop round 9: the playback labels, ratio and quality (2026-11-17; analysis + direct calls, camera test pending)
+- **Cause (analysis, reproduced by direct calls of the stock code in om-emu):** playback sorts a photo **by its
+  shape**, r = w x 10000 / h against fixed thresholds (8750, 11667, 14166, 16389), into the five stock ratios, in
+  two places. (1) The GUI's label code, 0x61101381 (d0 w, d1 h -> 3 3:4, 5 1:1, 1 4:3, 2 3:2, else 4 16:9; callers
+  0x61113417 -> item 197 + 78, and 0x612c90da), shown as index code - 1 of 4:3, 3:2, 3:4, 16:9, 1:1 (the label
+  widget's element in three layouts, 0x613f8d08 / 0x613fe9cc / 0x6147d568: {2, count 5, list start, end},
+  16-B states {0xffff, 7, 7, picture}; its count goes to widget + 131, 0x610dae1e takes an index below it).
+  (2) The play component (Cmp_PlayComponentBase, section 6) classes the shape the same way (0x60c79521,
+  0x60c82c93) for its record-mode code 0x60c7c18a: the class's table of {k, w, h, 0, code} (4:3 0x60ead048, 36;
+  16:9 0x60ead1f8, 28; ...) by exact size, a miss is 57: no quality label. So XPan (27000) and 21:9 (23309) are
+  16:9 by shape and miss its size table; 5:4 (12510) is 4:3 and misses too. Direct calls on round 7b's build give
+  exactly the camera's results: codes 4 / 4 / 1 and 57.
+- **Round 9:** `.hook_crk` 0x61101393 (section 7) -> cr_pbc: r > 25156 XPan (7), > 20625 21:9 (8), 11667 < r <=
+  12917 5:4 (6), the rest as stock; the three label elements get 8 states (crop.py; cr_pll: the stock five, then the
+  top bar's pictures CR_IC0 + 3..5, which are drawn as 10930 / 10931). `.hook_crq` 0x60c7c18a (section 6) -> cr_pq:
+  class 16:9 and w > 2.0625 h: the height of the 16:9 entry of the same width; class 4:3 and w <= 1.28 h: the width
+  of the 4:3 entry of the same height; then the stock lookup (its retf uses mdr: cr_pq has no mul, div or call).
+  Round 8's diagnosis (crl, crm, cr_txt8) removed.
+- **Behaviour beyond the crops (for the owner):** any photo of those shapes (e.g. an in-camera trim, another camera's
+  picture) is now labelled 5:4 / XPan / 21:9 instead of the nearest stock ratio, and a wide or 5:4-shaped photo
+  whose width (height) is a 16:9 (4:3) size gets that size's quality label instead of none.
+- **Start-up:** sections 1..5 byte-identical to round 7b (camera: normal start-ups); changes: .ext12, 5 B at
+  0x60c7c18a (section 6), 6 B at 0x61101393 and the three elements (section 7). static:section-order passes.
+- Test `crop-playback-label-and-quality`: the label code for the three crops, a smaller XPan, the five stock
+  ratios and h 0; the record-mode code for 16:9 / XPan / 21:9 / 5:4 / 4:3 at L (two compressions) and M, and a miss
+  (57); the elements and the states. On round 7b's build (`--without`): caught (codes 4 / 4 / 1, 57, 5 states).
+- **Suite** (out-cr9, E1479999.BIN 772cc5dc…e5fd, commit d306337): **50 pass** (crop-playback-label-and-quality
+  among them), **2 FAIL** as before: static:hook-list (crs, crb, crg, crh, crk, crq for the owner's OK) and
+  static:changed-bytes. Package `test-builds/2026-11-17-crop-round-9`. om-emu cannot show the labels on screen
+  (its playback gives photos no size): the owner's camera test.
+
+## Crop round 9: the reboot; round 9b (2026-11-17; camera, analysis, emulator)
+- **Camera, round 9 (owner, 2026-11-17, 772cc5dc…): "going into image review reboots the camera".** PB173212 (XPan
+  5184 x 1920) was saved; CADLOG was last written at event 8, before the review (nothing of the crash). Its CROP
+  MODES line: "now 6; display 9, 450 x 600 ..." (the display set-up's last id was 9, 3:4: Image Aspect went past
+  3:4 on its way to XPan; not round 9's).
+- **What round 9 changed that the camera runs when a photo is shown:** (1) cr_pbc in the shared shape sort
+  0x61101381: codes 6..8 for crop shapes, going to both playback info builders (CPlaySingleFrame::SimplePlayCommon
+  0x61113417 -> item 194 + 78 -> item 197 + 258 -> the label updates; the KomaSelect builder 0x612c90da -> item 6
+  + 8, read by the single display function 0x61115e09); (2) cr_pq at the play component's record-mode lookup
+  0x60c7c18a (Cmp_PlayComponentBase, which also handles the file: "complete_proprietary_play", "HdrInfo"): a real
+  record mode (1 for an L crop) where stock gave 57; (3) the label elements' 8 states.
+- **Ruled out (evidence):** the label widget handles 8 states: its constructor 0x610da490 clears 32 picture-cache
+  slots (+172), 0x6128abe0 / 0x610dae1e take an index below its count (+131, from the element); in om-emu playback
+  the real item 34 widget had count 8 and list cr_pll, and setting it to state 6 returned normally. Widget creation
+  from the patched element runs in om-emu playback without a fault. cr_pbc and cr_pq keep every register, flag,
+  stack slot and mdr as stock needs them (read and direct calls); the callers do not read back the stack arguments
+  cr_pq rewrites. cr_pbc forced to XPan in om-emu playback: no fault, but om-emu's playback does not carry the
+  builder's code to its screen, so the readers of items 194 / 197 / 6 are not exercised there.
+- **Cause (not proven; analysis):** a reader of a value round 9 changed: the play component handling a crop photo
+  with a real record mode, or a reader of codes 6..8 in items 194 / 197 / 6 that expects 1..5. om-emu cannot run
+  either path with a crop photo (its playback photo is 1620 x 1080).
+- **Round 9b: no stock value changes.** 0x61101381 and 0x60c7c18a are stock again (byte-identical). `.hook_crk`
+  0x6111341e (SimplePlayCommon, right after its 0x61101381 call; section 7) notes the crop shape from the photo's
+  own w x h in cr_pbk (6 5:4: 1.1719 h < w <= 1.2891 h; 7 XPan: w > 2.5156 h; 8 21:9: 2.0625 h < w <= 2.5156 h; shifts
+  only) and gives d0 / d1 back as they were; `.hook_crl` 0x611509bc (item 34) and `.hook_crm` 0x611525b9 (item 61)
+  show state cr_pbk - 1 instead of code - 1 when the stock code is the crop's base (4 for XPan / 21:9, 1 for 5:4).
+  The elements keep 8 states. The quality label stays stock (none for a crop): a later, GUI-side try.
+- om-emu playback (round 9b): cr_pbk1 runs at Play and at each INFO and returns to 0x61113424; the label updates are
+  not reached there (as in round 8). Sections 1..5 byte-identical to round 7b; outside .ext12 the changes against
+  7b are the three 6-B hooks and the three elements (section 7).
+- Test `crop-playback-label-and-quality` (rewritten): 0x61101381 and 0x60c7c18a give the stock codes for crop sizes;
+  cr_pbk1's kind for the three crops (L and M), the five stock ratios and h 0, with d0 / d1 / d2 / a0 as stock
+  leaves them; cr_pbla / cr_pblb's index for crop and mismatched codes, d1 and a0 kept; the elements and the states.
+- **Suite** (out-cr9b, E1479999.BIN 2bb52ef9…bba3, commit 755a1f7): **50 pass** (crop-playback-label-and-quality
+  among them), **2 FAIL** as before: static:hook-list (crs, crb, crg, crh, crk, crl, crm for the owner's OK) and
+  static:changed-bytes. Package `test-builds/2026-11-17-crop-round-9b`.
+
+## Crop round 9b: the reboot; round 9c (2026-11-17; camera, analysis, emulator)
+- **Camera, round 9b (owner, 2026-11-17, 2bb52ef9…): "still rebooting"** in image review. Card
+  (card-backups/2026-11-17-crop-round-9b-tested): the only photo, PB173213, is **2912 x 3888, a plain 3:4 photo**;
+  CROP MODES "tag at the first half-press 43520006, Image Aspect then 3, set to 6, after 6, now 9" (XPan restored at
+  the half-press, then 3:4 picked and shot); the log was written at event 10, before the review.
+- **What this shows (main chat, analysis):** for a 3:4 photo cr_pbk1 notes 0 and the label hooks take the stock path,
+  so the reboot comes with a stock-shaped photo. Shared by rounds 9 and 9b and not by round 8 (no reboot): the three
+  label elements patched to 8 states pointing at cr_pll in .ext12, with our pictures for the new states. **Likely
+  cause (not proven):** something that reads the label element (all of its states, its list in .ext12, or our
+  picture ids CR_IC0 + 3..5 through a path other than the picture getter) when the review screen is built. Round 9's
+  reboot then needs no other cause, and its notes' two suspects (the changed codes / record mode) are not shown.
+- **Round 9c: no layout or stock value changes.** The elements stay stock (5 states, the stock lists), the label
+  updates (0x611509bc, 0x611525b9), 0x61101381 and 0x60c7c18a are stock (byte-checked by the test). `.hook_crk`
+  0x6111341e notes the shown photo's crop shape (as 9b). **cr_ic answers the label's picture request instead:** in
+  playback (GUI class 5..7) a request for 10931 (4:3) while cr_pbk is 6 gets our 5:4, for 10930 (16:9) while it is 7
+  / 8 our XPan / 21:9 (CR_IC0 + 3..5, the top bar's, drawn as 10930 / 10931). The widget asks the picture getter at
+  each draw (0x610db0df -> 0x610f5611, our .hook_ic; camera, round 6: the playback label's 10931 came through cr_ic
+  with mdr 0x610DB128, in that draw) and keeps no copy (no writes to its 32 slots at +172 in the widget code).
+- Against round 7b (camera: playback normal), outside .ext12: the 6-B hook at 0x6111341e, and crop.py's pointers
+  into .ext12 at their new addresses (0x611cb24e, 0x6129fc2b / 3e / 73, 0x6151ffa0, 0x6154a8dc, 0x615863ac,
+  0x61596f04). Sections 1..5 byte-identical to 7b.
+- Test `crop-playback-label-and-quality` (rewritten): the stock bytes at both label updates, 0x61101381 and
+  0x60c7c18a; the elements stock; 0x61101381 / 0x60c7c18a's stock results for crop sizes; cr_pbk1's kinds with
+  d0 / d1 / d2 / a0 as stock; the picture getter called with GUI class 5 for 10930 / 10931 / 10933 and kinds 0, 6, 7,
+  8 (ours exactly when they match) and with class 1 (the stock picture).
+- **Suite** (out-cr9c, E1479999.BIN a0889007…d938, commit 4307cdf): **50 pass**, **2 FAIL** as before
+  (static:hook-list: crs, crb, crg, crh, crk; static:changed-bytes). Package `test-builds/2026-11-17-crop-round-9c`.
+- **Camera, round 9c (owner, 2026-11-17, a0889007…d938): "I can see the xpan name now in image review".** Card
+  (card-backups/2026-11-17-crop-round-9c-tested, main chat): build "crop round 9c", log written at event 34, 2 photos
+  this power-on, play screens at events 9 and 29, **no reboot**; PB173212 3:4 2912 x 3888 and PB173213 XPan
+  5184 x 1920, both normal. **Camera-tested:** the XPan label in playback / image review (cr_pbk1 + cr_ic's picture
+  swap), playback and review of a stock (3:4) and an XPan photo without a reboot. **Not seen yet:** the 21:9 and 5:4
+  labels (no such photos on the card). **Still open:** the quality label for crop photos (none, as stock).
+
+## Crop round 10: the playback quality label (2026-11-17; analysis + direct calls, camera test pending)
+- **How the quality label is made (analysis):** SimplePlayCommon (0x611133cd) asks the GUI's 0x6110130d with d0 =
+  pStillInfo's file type ((1012,sp): 255 / 1 / 8 / 9 / 16 JPEG, 5 JPEG + RAW, 4 RAW) and d1 = its record mode
+  ((1016,sp)); a 21-entry table at 0x6135f844 {record mode, JPEG picture, JPEG + RAW picture} gives the quality
+  picture code (record modes 1 + 4 s + q: L SF 1 -> 1, or 16 with RAW = "LSF+RAW"), stored at item 197 + 260; no entry
+  -> 0, no label. The record mode comes from the play component's 0x60c7c18a by shape class and exact size; a crop
+  size is in no table -> 57 -> no label.
+- **Round 10, no stock result changed:** `.hook_crq` 0x60c7c18a (section 6) -> cr_pqo **only reads** the lookup's
+  inputs and notes in cr_pqm / cr_pqw / cr_pqh the code of the crop's base size (16:9 class: the entry of the same k
+  and width when w > 2.0625 h; 4:3 class: the entry of the same k and height when w <= 1.28 h; else 0), then runs the
+  stock function from its first instructions with d0 / d1 / a1 / the stack as they were (no mul / div / call: its
+  retf uses mdr). `.hook_crr` 0x611133cd (SimplePlayCommon, section 7) -> cr_pqg: when the record mode asked is 57 and
+  the photo's pictureSize ((872,sp) / (874,sp), as cr_pbk1 reads it) is the noted one, it asks 0x6110130d with the
+  noted code instead. Item 197 then holds the quality code a stock photo of the base size has (L 16:9 + RAW: 16).
+- **What is different from round 9 (which rebooted):** round 9's cr_pq rewrote 0x60c7c18a's size arguments, so the
+  play component's own record mode for the photo became a real one; round 10's 0x60c7c18a result, the play
+  component's data and all its later steps are stock (the test checks the results: 57 for the crops, 1 for L 16:9 /
+  4:3). The only changed value is one argument of one GUI lookup in the single frame's info build, and its result is a
+  value stock photos already have (no new codes, no layout changes). Round 9's reboot is most likely its label element
+  patch (round 9b rebooted with a plain 3:4 photo; 9c without it did not).
+- om-emu: the play component's lookup does not run in its playback; cr_pqg runs at Play and at each INFO (record mode
+  0 there: the stock path) and returns to 0x611133d5.
+- Test `crop-playback-quality-label`: 0x60c7c18a's results stock and the notes for XPan / 21:9 / 5:4 at L (two
+  compressions) and M, cleared for L 16:9 / 4:3 and a miss; cr_pqg's record mode for a matching note, another
+  compression's note, a size mismatch, no note, and a record mode other than 57; 0x6110130d (stock): JPEG + RAW with
+  record mode 1 -> 16, JPEG 1 -> 1, 57 -> 0.
+- **Suite** (out-cr10, E1479999.BIN 5f910b23…23c4, commit 4994514): **51 pass**, **2 FAIL** as before
+  (static:hook-list: crs, crb, crg, crh, crk, crq, crr; static:changed-bytes). Sections 1..5 byte-identical to 7b;
+  against 9c (camera: normal) the changes outside .ext11..13 are the two hooks and the build's version bytes.
+  Package `test-builds/2026-11-17-crop-round-10`.
+- **Camera, round 10 (owner, 2026-11-17, 5f910b23…23c4): "They look great!!!!"** (the quality and ratio labels in
+  review and playback). Card (card-backups/2026-11-17-crop-round-10-tested, main chat): build "crop round 10", log
+  written at event 62, 8 photos this power-on, playback visited, **no reboot**, "nothing unusual". Photos, all normal:
+  4:3 5184 x 3888, 16:9 5184 x 2920, 3:2 5184 x 3456, 1:1 3888 x 3888, 3:4 2912 x 3888, 5:4 4864 x 3888, XPan
+  5184 x 1920, 21:9 5184 x 2224. **Camera-tested:** the ratio label (XPan / 21:9 / 5:4) and the quality label for
+  crop photos in image review and playback; the stock ratios' labels unchanged; no reboot.
+
+## Section order audit: released paths from sections 1..5 into later sections (2026-11-17; analysis + om-emu, nothing camera-tested; branch research/section-order)
+- **Scope.** `static:section-order` (from `feature/crop-modes`, "Crop round 7b") on three builds, each rebuilt here:
+  v0.30.3 (byte for byte, E1479999.BIN 60b6d954…), main 78a809e (v0.30.3 + PR #70, #73) and border preview 1
+  (`feature/border-live-view` 27bcd0f, db1fedfa…, byte for byte). With `LATE_RELEASED` emptied it finds **26 entries,
+  not 21**: 13 hooks and 13 data words. v0.30.3 has 23; main adds hook_lv (PR #73, #68); border preview 1 adds
+  hook_trs and hook_trl. v0.26 (34df5bf6…, byte for byte) already has hook_tone, su, wl, sel2, c1e (all reaching
+  section 6) and hook_fx (section 8).
+- **How the camera starts** (om-emu `docs/hle-gaps.md` 4.6.3, 4.6.4, `FIDELITY-NOTES.md` 7.17..7.19; their E147
+  addresses + 0x10021020 = ours; the parts below were read again in the stock code here):
+  - CPU 2's loader (0x600455c5..0x600458de) copies sections 1..8 one after another (0x60045ed5: the copy, then bit
+    id - 1 of 0xa32de590) and posts each section's step 0x60045f44 to CPU 0 (section 8's to CPU 1). It waits for
+    stage 7 (0x60045856) before it posts section 8's step, copies 9, waits for stage 8 (0x60045892), copies 10.
+  - The step runs the section's constructors, then sets bit id - 1 of the ready word 0xa32de58c (0x60046064). Before
+    that, for id < 10, it sets up a region from section id + 1's start to section 10's end in the block 0x99700000
+    (four times; the string "[DbgSup-" follows its table), and for id 10 it clears it (0x6005a7d6). What that unit
+    does with an access inside the region is not known (?). It may trap, so "copied" may not be enough: the ready
+    bit is the safe test, as `cr_g1` / `cr_g2` use.
+  - CPU 0's start tasks wait on the ready word: USTART2 on 2 only, USTART3 on 3 and 4, USTART4 on 6 and 7
+    (0x60219174, 0x6021917d) before the HighLevel (the camera application) starts, USTART5 on 8, 9 and 10. The fast
+    start (USR_FAST_APP, started by stage 1) starts the live view ("Flg-ThroughStart") and can take a picture
+    ("Flg-TakeFunc", "Flg-RhpTake") before it hands over to the HighLevel. Live view's request is built on CPU 2.
+  - The camera's own early code tests before it calls later code: 0x602eee0f / 0x602eee2f (section 1, called from
+    0x601e4270 / 0x601e4285) test stage 6 before calling 0x60ae1144 / 0x60ae3e85 (section 6).
+  - **A gate we already have:** STATE (0x62b4dd16) becomes non-zero only through `st_claim`, after `hl_ok` saw all ten
+    sections copied (SECBITS 0x3ff), and section 10 is copied only after stage 8. So our code behind `PVAL`, STATE or
+    `xp` (the code block, published by the load) runs with sections 1..8 ready.
+  - v0.20 test 1 (above, "v0.20 grain research"): section-8 code reached from the development stage 0x605196b4
+    (0x605196d2) boot-looped the camera; test 1b, the same code in sections 1, 3 and 4, started. So that stage runs
+    during start-up before section 8 is ready.
+- **The table.** "Who reaches it": direct calls in the stock code (pointer-table guesses checked by hand).
+
+  | Entry (site) | In | Reaches | Who reaches the site | During start-up, before the section is in? | Gate |
+  |---|---|---|---|---|---|
+  | hook_shutter 0x60415216 (s2) | all | pr_hook (s1) -> hl_ok, pr_nmd, st_claim, lg_pr / ic_pend (s6), sd_load (s4); further s4 -> s6, s6 -> s7 / s10 | function 0x60415111; its only way in is the `call` at 0x60af1445 (section 6; no pointer word, no immediate, no branch into its body). om-emu: task 164, return 0x60af144c | **No** (analysis + om-emu): section-6 code calls it, in the HighLevel, which starts after USTART4's wait for 6 and 7. The reaches past section 6 are behind `hl_ok` (all copied) or STATE | none |
+  | hook_tone 0x605197d7 (s2) | all since v0.26 | tone (s5), and from every exit of tone (t9) st_run (s6) | the development stage 0x605196b4: stills and live view (camera: split toning in live view, sp4) | **Yes, it runs during start-up** (live view's first picture set-up). Before section 6 is in: not shown. Every start since v0.26 (2026-11-09) took this jump; none failed. A race nothing enforces | G2 |
+  | hook_mx 0x6051485a (s2) | v0.30+ | mx_go (s6) | the matrix function 0x605147a2, called by the same stage (0x605196f6); the site is on every path (join 0x60514852). Camera: colour mix shows in live view (m1) | **Yes** (as hook_tone), since v0.30 (2026-11-15) | G1 |
+  | hook_lv 0x6046b8bb (s2) | main, border preview 1 | s_lv (s2) -> s_lv6 (s6), for picture mode 11 | the live view / movie request (#68) | **Yes**, at a COLOR mode at power-on. New in PR #73 (2026-11-16): v0.30.3's s_lv called `xp` first (0 until the half-press load) and stayed in section 2 | G3 |
+  | hook_wt 0x605048c1 (s2) | all | s_wt (s5), then `xp` | the Soft Focus weight getter in the combiner set-up (case table 0x606cc7f0) | Unknown whether live view gets here (an Art Filter live view may). Section 5 is ready before 6 (steps in order, I), so hook_tone's record covers it | none |
+  | hook_su 0x604b7730 (s2) | all | xs_su (s6) | the still set-up thunk (from 0x604b5896) | Stills only (analysis). A still before section 6 is in needs a shot in the first moments after switch-on (the fast start can take one). Unknown, never seen | G4 (optional) |
+  | hook_wl 0x604b8d91 (s2) | all | s_wl (s6) | the still's work-list builder 0x604b8cf7 | as hook_su | G4 |
+  | hook_sel2 0x60504b5d, hook_c1e 0x605053cc (s2) | all | s_sel2, s_c1e (s6) | the combiner set-up 0x60504b2b and its tail 0x6050538b (case table 0x606cc830) | stills (textured COLOR); whether an Art Filter live view passes here is unknown | G4 |
+  | hook_ex 0x60457578 (s2) | all | ex_hook (s6) | the per-shot EXIF fill | as hook_su | G4 |
+  | hook_trs 0x604cf156, hook_trl 0x604cf1a4 (s2) | border preview 1 | tr_sz, tr_ld (s6) | 0x604cf0b9, from 0x604cd921, from the still set-up 0x604b97db / 0x604b5585. (The word 0x604cf0df at 0x60b99f04 looks like a section-6 pointer to it but is a `ret` instruction's bytes) | as hook_su | G4 |
+  | hook_fx 0x60555e50 (s2) | all since v0.20 | s_cap (s8) | the Art Effect -> job flag converter 0x60555e47 (callers 0x6054f6fa, 0x60553ac2) | Stills only: if it ran in live view's start-up set-up, every start since v0.20 would fail as v0.20 test 1 did. A shot at switch-on is the most exposed case here: section 8 is ready last (after section 7's constructors, on CPU 1). Never seen | G4, first |
+  | word 0x604b9288 (s2) | all since v0.21 | g_sf (s3) | `mov imm32,a1` / `calls` in the work-list builder's default path 0x604b917f (a still's Soft Focus blend) | stills only; section 3 is copied right after 2 | none |
+  | 12 words 0x6061a33c..0x6061a580 (s2) | all since v0.27 | ar_list, dm_list, dm_plist (s6) | records of the settings store's value table 0x6061912c (settings 50..55, 571, 1275, 1277, 1284, 1958, 1966). A value is looked up in its list at 0x604051c1..0x604051ff (getter 0x603f15b1 -> 0x604050be) | **No in om-emu:** the store's start-up pass (task 160, 27,181 record lookups at 202 ms) reads only each record's kind byte (+17, 0x6040541f). Our lists are first read at 1.13 s (saved settings) or 2.6 s (fresh) from our own `cv_get` (s6) and the GUI (s7). Camera: not shown. If read early: a read bounded by the record's length (in section 2), so a wrong answer, never a jump | none (or move the 156 B of lists to `.ext4`) |
+- **Verdict.** Nothing is clearly unsafe, so nothing was built. The real exposure is the live view's first set-up at
+  power-on, which jumps into section 6 through hook_tone (since v0.26), hook_mx (since v0.30) and hook_lv (main and
+  border preview 1 only). It has never failed, but no stock wait orders it after section 6's step. The capture hooks
+  need a shot at switch-on to run early, hook_fx most of all.
+- **Proposed gates** (none built; SEC_READY = 0xa32de58c; .ext1 has 116 B free on main, .ext2 15 B, .ext5 20 B):
+  - G1 hook_mx: the site `jmp mx_g`; in .ext1 `mov (SEC_READY),d0; and 0x20,d0; beq 1f; jmp mx_go; 1: call
+    0x605144ef,[d2,d3,a2,a3],20; jmp 0x6051485f` (d0 and d1 are free there, mx_go's note). About 28 B. Before section 6
+    is ready: the stock matrix, the same picture as now (colour mix needs the films, loaded later).
+  - G2 hook_tone: the site `call tn_g,[d2,d3,a2,a3],56`; in .ext1 a test with no data register, because every
+    register but a0 is live there (e.g. `btst 0x20,(SEC_READY)`), then `beq 1f; jmp tone; 1: mov d3,a0; jmp
+    tone_next` (the displaced stock, as tone's own exit). About 21 B. Covers tone (s5) and st_run (s6). The check's
+    gate pattern (mov / and / bcc) would have to accept `btst`.
+  - G3 hook_lv: s_lv in .ext2 as v0.30.3 had it: `call xp,[],0; beq 9f; jmp s_lv6; 9: jmp lv_skip` (+12 B). xp is
+    non-zero only after the half-press load, which needs all ten sections copied.
+  - G4 (optional) the capture hooks, G1's pattern: hook_fx (bit 7, section 8) first, then ex / su / wl / sel2 / c1e /
+    trs / trl (bit 5). .ext1 has room for G1, G2 and about two more.
+  - Measure first, if wanted: G1's stub can keep the ready word from its first pass after power-on for the debug log.
+    A few camera starts (normal, from playback, on the EVF, without a card) would show the margin: 0x7f or more means
+    section 7's copy and constructors come between, 0x3f means it is tight. For G4 the camera question is a shot at
+    switch-on (the shutter held fully down while switching on); that may hang the camera if the risk is real.
+- **Gaps in `static:section-order` found here:** it stops at the first crossing. It missed hook_tone's jump from
+  section 5 on into section 6 (tone's exit -> st_run) and 15 crossings on the shutter path (sd_z s4 -> fopen / fseek /
+  ftell s6; ed_trig s6 -> vl_s s7, gd_set s10), all behind `hl_ok` / STATE. A walk that keeps going, with the later
+  section as the new floor, lists them (prototype in this audit). Using it would add st_run to hook_tone and those 15
+  targets to hook_shutter in `LATE_RELEASED`. Not changed here. om-emu shows none of this: it maps every section from
+  the first instruction and does not run the stills' or live view's development (no hits at any pipeline site in a
+  boot, a half-press and a shot).
+
+## Section gates G1..G3 (2026-11-17; emulator + analysis, camera test pending; branch fix/section-gates)
+- **Owner's OK** (relayed by the main chat): build the start-up gates G1 (colour mix), G2 (tone), G3 (the live-view
+  request), "Section order audit" above. G4 (the stills hooks) left out: `.ext1` has 26 B left after G1..G3.
+- **Code** (d11ecef): three gates in `.ext1` (section 1's tail, in from the first instruction), each `mov
+  (SEC_READY),d0; and 0x20,d0; beq` (the camera's ready bit for section 6), then our code; until the bit is set the
+  stock instructions. d0 is free at all three sites (each target writes it before reading it):
+  - G1 `mx_g` (0x6031ef8c): `.hook_mx` 0x6051485a `jmp mx_g` -> mx_go, else `call mx_row` (0x605144ef) and MX_BACK.
+  - G2 `tn_g` (0x6031efa8): `.hook_tone` 0x605197d7 `call tn_g,[d2,d3,a2,a3],56` -> tone (section 5, which always
+    ends in st_run, section 6), else `mov d3,a0; jmp tone_next` (the stock 0x605197d7 in the same frame).
+  - G3 `lv_g` (0x6031efbf): s_lv `jmp lv_g` -> s_lv6, else `mov 11,d0; jmp lv_skip` (the stock path for a COLOR
+    request: picture mode 11 < 100 -> 0x6046b94f with d0 = 11). A ready-bit gate rather than v0.30.3's `xp`-first
+    order: `.ext2` is one byte short of the inline form, and the check knows this pattern. Same effect: before
+    section 6 is ready the films are not loaded, so the request gets no flags either way.
+  - Hook addresses and lengths unchanged (`hooks.json` as it is). `.ext1` 1718 of 1744 B.
+  - No picture change expected: until the films load (the first half-press, or the early load, both after all ten
+    sections are copied) our three paths give the stock result anyway.
+- **`static:section-order`** keeps walking past each crossing with the later section as the new floor (it missed
+  hook_tone's tone -> st_run), decodes zero bytes (objdump `-z`: a lone `clr d0` was "..." and undecodable), and a
+  gate passes for any section up to its mask's lowest bit. `LATE_RELEASED` drops hook_mx, hook_tone, hook_lv and lists
+  the shutter path's onward targets (fopen .. pf_open, behind `hl_ok` / STATE). Main 78a809e: FAIL (hook_lv, hook_mx,
+  hook_tone x 2); v0.30.3: FAIL (hook_mx, hook_tone x 2); fix/section-gates: pass.
+- **Test `live-view-gates-wait-for-section-6`:** the three sites called directly (ncall) with the ready word at 0x1f
+  (sections 1..5) reach the stock code (lv_skip with d0 = 11), at 0x3f our code. On main 78a809e: `caught` (all
+  three reach our code with section 6 not ready). om-emu cannot show the race itself (every section mapped from the
+  start, no live-view set-up run).
+- **Suite (fix/section-gates, out-sg2, E1479999.BIN of d11ecef):** 35 / 35 pass (om-emu 0819080).
+- **Test build** (`try/section-gates-blv`, `feature/border-live-view` 27bcd0f + this branch; conflicts only where both
+  added tests and notes, both kept; build name "v0.31-alpha-dev (border preview 1 + section gates, test 1)"):
+  E1479999.BIN 37ba0343…538c, GUIDES.BIN d2db78a3…243e. Suite 44 / 44 pass (om-emu 0819080), the border preview,
+  grain and gate tests included; static:section-order passes on it. om-emu screens (start, half-press, FILM 2,
+  Picture Mode, the Border row, the RGB page) byte for byte as border preview 1's (db1fedfa…). Package
+  `test-builds/2026-11-17-section-gates-1` (private folder), go-back border preview 1 db1fedfa…a732 + its GUIDES.BIN
+  852cb6f2…. Camera test pending: start-up first (on / off several times, EVF, playback), then everyday use.
+
 ## #75: Picture Mode closes after 30 s idle, not 8 s (2026-11-17; experiment/film-page-timeout; fix camera-tested)
 
 - **Timer:** the camera's software timers sit in a table at `0x6036f984`, 10 entries of 28 B: +0 active, +4 start
@@ -5839,7 +7112,7 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
   id 500 at 8000 ms, armed from 89 sites. The super control panel uses id 510, also 8000 ms.
 - **Patch:** `PM_IDLE_SITES` in `firmware/build.py` changes `mov 8000,d1` (`2d 40 1f`) to `mov 30000,d1`
   (`2d 30 75`). The sites are all 9 id-500 arms in Picture Mode's code, `0x611c20ad..0x611c3cc2`. The immediate is
-  signed 16-bit, so a byte patch gives 32767 ms at most. No hook, nothing at start-up.
+  signed 16-bit, so a byte patch gives 32767 ms at most. Nothing at start-up. A touch also needs `.hook_tch`, below.
 - **Which code is which screen (emulator):** a factory table at `0x615025d8` pairs screen classes with screen ids.
   `0x611c20ad` (id 0x3d) builds Picture Mode. The next one, `0x611c3cc2` (id 0x3c, vtable `0x6153734c`), builds the
   white balance screen `ID_ST_DIRECT_WB`, opened from the super control panel with `right` then `ok`.
@@ -5882,6 +7155,1063 @@ still held the last photo pass's curve blocks. crombach: none of the custom sett
 - **Camera (crombach, 2026-11-17, build 9b8a861a...): passed.** A tap and every key, `up` included, give Picture
   Mode 30 s. Other touch menus and a screen opened from Picture Mode close after 8 s. The white balance screen closes
   8 s after `down`. Photo, video, sleep and start-up work as before.
+
+### Film switch cost and pf_put's unchanged writes (#72; 2026-11-17; emulator only + analysis)
+- Question (cad): a film switch in the Picture Mode list is "much slower" than a COLOR switch (#72). pf_put writes all
+  18 of COLOR k's camera settings through the settings manager on every film switch. Can it skip a value the camera
+  already has? Branch `experiment/pfput-skip-equal`.
+- **Cost, om-emu (P, the Picture Mode list, `right` from COLOR 1; om-emu instructions in one run slice, GUI task):**
+
+  | Part | COLOR k -> k+1 | FILM 1 -> FILM 2 (both COLOR 1) |
+  |---|---|---|
+  | fw_keep, fl_set | ~4k | ~4k |
+  | fl_sw capture (pf_capto, cv_cap, sd_crc) | none | ~12k (~275k from COLOR 1's own: ed_pmod) |
+  | pf_put: 18 manager writes, cv_rec | none | **6.75M** (each write ~375k; cv_rec <1k) |
+  | fw_apply (WB 1578 write) | ~32k | ~32k |
+  | stock work from the 901 write to the next gx_map | 2.72M (a real picture-mode change) | 0.96M (901 unchanged) |
+  | cm_hp -> ss_hp -> ss_wr | ~25k (ss_wr returns at once) | ~355k (ss_wr copies: ~286k to LOCK, ~46k under it) |
+
+  So a film switch on the active COLOR costs about 8M against about 2.8M for a COLOR switch, and pf_put is most of
+  it. Each manager write to the active COLOR's settings costs ~375k whether the value changes or not. None of our
+  code runs inside it (a trace of every symbol in p.elf: nothing between pf_put's calls), so it is the camera's own
+  work. The first film from COLOR 4 to FILM 1 writes COLOR 1 while COLOR 4 is still active: ~22k a write, 0.40M.
+- **What an unchanged write does** (code + om-emu, NOTES 2026-11-15 "RGB curves: live view refresh"): the manager
+  and its writer tail 0x60aea1de run, the change notifier 0x60063519 does not. The picture-mode message goes out only
+  for 111, 897..901 and 988, none of the 18. pf_put calls the manager directly, not through the facade, so none of our
+  hooks (sl_set, sx_set, cv_sv, ed_set) run. The '*' (fl_fch, ed_pmod) compares values, which do not change.
+- **ed_set's unchanged write is the only redraw** for a change of ours (our values are not camera settings).
+  pf_put does not need its writes for that: s_look ends in s_dirty2 and fl_set in the 901 write, after it.
+- Verdict, all 18 (Saturation x 12, Contrast, Sharpness, Shading, Shadows, Midtones, Highlights): skip when sget
+  already reads the value, as rc_put does (camera-tested in k1). Analysis + emulator. One open point: sd2's
+  automatic load (camera-tested 2026-11-09) got the live view to follow with unchanged writes, and why is not known.
+- **Build pfse-1:** pf_put asks `pf_eq` (ext9: sget vs the value) before each write. om-emu, same script: FILM 1 ->
+  FILM 2 writes 12 (6.75M -> 4.51M), FILM 2 -> FILM 3 11 (6.75M -> 4.13M), COLOR 4 -> FILM 1 8 (0.40M -> 0.19M).
+  The change notifier fires for the same writes as before. The 18 values and the '*' of each COLOR after each step
+  match the old build. A film switch stays at roughly 6M: the changed writes are most of what is left.
+- Test `film-switch-writes-only-changed-settings` (driver tokens `wcount:` / `expect:wcount`: the manager's writes of
+  COLOR k's 18 ids, from pf_ids, must equal the values that changed): passes on pfse-1, `caught` on main 78a809e
+  (18 writes, 8 changed).
+- Needs the camera: whether film scrolling feels faster, whether the live view follows a switch between two films with
+  the same camera settings, and whether #72's reboot still comes. Not known if the reboot is tied to the cost.
+- Camera result (2026-11-17, build cc44c55 on experiment/perf-looks, E1479999.BIN `06829c20…`, GUIDES.BIN
+  `d253ea32…`): film scrolling feels a little faster. **#72's reboot still happens** when scrolling films fast, so
+  pf_put's unchanged writes are not its cause on their own. Start-up is normal. The '*' marks behave. The live view
+  follows a film switch. The owner did not say whether the two films had the same camera settings. Not yet checked:
+  the stills (WB shift, Hue / Lightness, burst, self-timer, RAW+JPEG).
+
+## Halation without the Soft Focus passes? (2026-11-17; analysis only; branch experiment/halation-no-softfocus)
+- Question: a still with Halation on and Glow 0 sets job flag 0x80 (`xb_cap`), so the camera runs the Soft Focus
+  blur and blend at weight 1024 (`xb_wt`) only so that `xb_gs` can call `HL_RUN`. Can `HL_RUN` run from another
+  point, so the Soft Focus passes are skipped and the photo stays byte for byte the same?
+- **Stopped at step 1: the no-op can't be shown in om-emu.** om-emu has no development job and no image processor
+  blend (om-emu `emu/FIDELITY-NOTES.md` "no camera-side development job"; `research/TESTING.md` "What stays
+  camera-only"). The blend (stage 0xf005, effect 0x0402) runs on the image processor, not the CPU. So nothing was
+  built or changed in firmware.
+- Static (analysis): combiner 11's set-up 0x60504ecd takes w from the weight getter and writes +96 = w | w << 16,
+  +100 = w (sharp input A), +148 / +152 = 1024 - w (blurred input B), mode +92 / +144 = 0x2a0000, clamps from
+  0x605047c1. At w 1024 that is A x 1024 + B x 0. That is a no-op only if the hardware rounds (A x 1024 + r) >> 10
+  back to A, which we can't see. The blend also writes a new 0x1000 buffer (memHw rounded up to 64; 5184 already is).
+- Work list (builder 0x604b917f..0x604b9561, analysis): 0x604b8c45 appends a stage; 0x604b8c80 holds a pending pair
+  (a1 = the stage when more follow, d1 = the stage when it is last); 0x604b8cd7 ends the list and keeps d1 if the
+  pending stage is last. Soft Focus classes 0-3: stage 0x604be238 (blur, makes 0x1060 / 0x1061), then the pair
+  0x604be2aa / 0x604be445. Our hook (word 0x604b9288) replaces only the "more follow" stage 0x604be2aa, so on the
+  camera a Halation-only still has some stage after Soft Focus (h3 camera: the halo shows).
+- Hook candidates (analysis only, ranked by risk, none tried):
+  1. Lowest: the stage that follows Soft Focus on a plain COLOR still (likely the kind-3 stage 0x0101 pass seen in
+     the gl7 / v0.24 logs; which push in the builder is not yet known). Hook its entry word as g_sf does and run
+     `HL_RUN` first. Needs both words of its pair, the xb_rv job-type gate (#65: not on types 0x1xx / 0x4x), and a
+     check that RAW+JPEG has one main job. Halation would then run after Frame (xb_art), not before it.
+  2. Medium-high: the development stage pair at the builder's start (0x604b857b / 0x604b84c6, or 0x604bb367 /
+     0x604bb4cd on the other path). Runs on every still job, review pictures included; not known whether 0x1000 is
+     complete when the entry returns.
+  3. High: keep the current hook and skip `SF_ENT` in `xb_gs` for Halation alone. The blur stage still runs, and its
+     0x1060 / 0x1061 buffers are released only by `SF_ENT`: a leak per photo unless the blur stage is skipped too.
+- Next (owner's call): a camera probe answers step 1 in one shot. In `xb_gs`, on a Halation-only still, sum the Y and
+  C bytes of the input 0x1000 before `SF_ENT` and of the new 0x1000 after it, through `hl_open`'s window, and write
+  both sums to the debug log. Equal sums on a few scenes would justify candidate 1.
+
+## The color wheel's dial click: cost and a cheaper refresh (2026-11-17, emulator only and analysis, branch experiment/wheel-speed)
+- Owner (camera): the color wheel feels a little sluggish when turning the dial, though it catches every click.
+  Asked (cad): make each click's redraw cheaper, with the same screen.
+- **How it was measured.** A scratch copy of session_ed1.mjs traced every instruction of one token (the click and the
+  driver's 1.2 s idle after it), per PC and per call (entry, return address and sp). An idle token's count (4,507,771)
+  is taken off. Build v0.30.3 + experiment/perf-looks (b80e1d5), P, COLOR 1, the Hue page, red.
+- **Rear dial click on Hue: 1,093,353 instructions.** Saturation (the camera's own setting) costs about the same,
+  1,102,556. The split:
+
+  | Part | Instructions | Whose |
+  |---|---|---|
+  | The refresh write in ed_set (manager, writer tail 0x60aea1de) | ~375k | stock, asked for by ours |
+  | ... of which 37 more settings re-checked under the sector id (0x60400fc0, 37 x ~9k) | ~355k | stock |
+  | The screen's 23 pictures (0x610eafe0 -> 0x610f6834), 1.3k to 18.5k each | ~181k | stock (8 of them ours: icons, labels) |
+  | '*' checks (fl_isdef x 3, ed_isd0, each into stock_isdef) | ~57k | ours around stock |
+  | The wheel's drawing 0x60b1ced8, once a click (12 tn_poly reads) | ~10k | stock |
+  | Our own code (GetValue chain sl_get .. ed_get x 44, sl_slot, vl_s 78) | ~17k | ours |
+  | The rest: text, layout, the event path | ~450k | stock |
+
+  Front dial click (cursor move): 790k. Its writes are the cursor 2197 + k, ~17k each, no settings re-checked.
+- **Ranking.** (1) The refresh write's id: ed_set and tn_set hand the manager the sector id (928 + 12k + c) with its
+  unchanged Saturation value. That id re-checks 37 settings (8, 7, 0x3b, 0x82, 0x83, 0x132, 0x69, 0x70e, 0x17e,
+  0x17f, 0x189..0x18c, 0x1a7, 0x1a8, 0x24f, 0x250, 0x298, 0x299, 0x2b2, 0x363, 916..927, 0x3e6, 0x3f3, 0x3f8), a third
+  of the click. The cursor 2197 + k with its own value (k_cur's poke after a page change, camera-proven to redraw
+  the wheel) does the same redraw. (2) The '*' checks: the same stock check runs twice with the same id in one click.
+  A cache would save ~14k (1 %) and could go stale. Not done. (3) Our GetValue chain: ~1.5 %. Not done. (4) The
+  pictures are the camera's own redraw of the whole screen, as on Saturation. Not ours to cut. (5) The double step
+  of EDLR (below): ~51k once per turn past all colors. Not done.
+- **Built: `s_cur` (ext1).** ed_set's Hue / Lum path and tn_set (Shadows / Highlights) turn the sector id into
+  2197 + k before s_dirty. Saturation, sliders, Extras and the RGB row are unchanged. No new hook. ext1 1644 of 1744 B.
+- **Counts after:** Hue click 1,093,353 -> 738,009 (-32 %), Hue -1 1,073,883 -> 718,539, Lum 1,076,025 -> 720,463,
+  Shadows 1,063,754 -> 708,192, Highlights +2 (two redraws) 2,133,564 -> 1,422,440. Saturation 1,102,556 both.
+- **Same screen (om-emu):** 23 screenshots over Hue up to +5 and past it (+1, +3), down to -5 and past it (-1, -5, -4,
+  -2, -9), another color, Lum, Shadows and Highlights, and Saturation are byte for byte the same on both builds. The
+  driver's per-step state (values, pages, labels, guides, '*') is the same in all 67 steps. The wheel is drawn once a
+  click on both. om-emu does not draw the wheel diagram itself, so its picture is a camera check.
+- Test `color-wheel-dial-step-writes-the-cursor-only` (driver tokens `mids:` / `expect:mids:`, `fhash:` /
+  `expect:fsame:` / `expect:fdiff:`): on Hue and on Shadows, a click's manager write is 2197 only, the frame changes,
+  and a click back gives the frame before it. `caught` on b80e1d5 (`expect:mids: 928, not 2197`).
+- **Not known (camera):** whether the click feels faster, and whether anything on the camera listened to the sector
+  id's re-check. The live view took our values at the next half-press before (2026-11-15, "RGB curves: live view
+  refresh"). If it followed a Hue click live on the camera, this change could stop that. Check it on the camera.
+- **The vanished wheel and the green box (analysis only, not fixed here).** One camera sighting, after fast
+  counterclockwise turns on red Hue. EDLR (ed_l / ed_r) calls the camera's step handler twice when a step off
+  Saturation lands on all colors (255): 1 -> 255 -> 12 counterclockwise. In om-emu both calls run inside one event,
+  each writes the cursor (255, then 12), and the screen is drawn once, ~0.8M instructions later. A redraw that ran
+  between the two calls on the camera would draw the all-colors state on the Hue page. That fits an empty wheel and
+  the camera's all-colors guide in the bottom bar (the #66 empty holder). om-emu cannot show it. On the value side,
+  every path clamps to -5..5 (ed_set refuses, ed_get / ed_poly clamp), and the cursor indexes nothing in our code,
+  so no table read goes out of range at the hue limit.
+- **EDLR in one write: tried, not kept (2026-11-17, emulator only).** ed_l / ed_r wrote the cursor straight to 12 / 1
+  (one SetValue 2197 + k, no stock step) when a step off Saturation would land on all colors. om-emu: that step writes
+  the cursor once (`mids` 2197, was 2197,2197), but the next plain step from there writes it twice (12 -> 255 -> 11
+  path): the stock step handler keeps its own position, which the SetValue does not move. So the cursor setting alone
+  cannot stand in for a stock step. A fix needs the handler's own position (not found) or a way to keep the first
+  step's 255 write from drawing. Not done.
+
+## v0.40 alpha test 1: crop modes + section gates + PR #76 (2026-11-17; emulator + analysis, camera test pending; branch try/v0.40-alpha)
+
+- **What.** `feature/crop-modes` 1a3e6e2 (crop round 10, camera-tested) + `try/section-gates-blv` a5936e2 (gates
+  G1..G3, main 78a809e) + PR #76 de8f59a (crombach: Picture Mode waits 30 s, #75). The owner names it v0.40 alpha.
+- **Code space.** Both branches' gates in `.ext1` came to 1816 / 1744. `pf_cnt` / `pf_vbi` moved to `.ext11` next to
+  `sl_cnt` / `sl_vbi`, their only callers (the facade words point at `sl_*`): `.ext1` 1704 / 1744.
+- **Section order.** The gates branch's `static:section-order` (floor past a crossing) found `hook_shutter` ->
+  `lg_pr` / `nm_ex` -> `cr_hp` -> `cr_rst` calling `ar_getv` / `ar_setv` (section 7) unchecked; the crop branch's own
+  check did not follow a path on past section 6. Each of the three calls now checks SEC_READY bit 0x40; not ready:
+  `cr_on` back to 0, the tag kept, the next shutter event tries again. Camera-tested rounds 7b..10 started normally
+  with the unchecked calls (a half-press comes long after section 7 is in), so this is a guard, not a fix of a seen
+  fault.
+- **Suite** on 760fe6b: 61 pass, 2 known fails (`static:hook-list`: the seven crop hooks; `static:changed-bytes`:
+  crop's patch sites, both a subset of crop round 10's, waiting for the owner's OK). Package
+  `test-builds/2026-11-17-v0.40-alpha-test1` (private folder): E1479999.BIN `5f092548…d635`, rebuilt byte for byte from
+  760fe6b; go-back crop round 10 `5f910b23…23c4`.
+- **Camera, 2026-11-17 (owner: "everything worked amazing").** Test 1 `5f092548…d635` flashed; start-ups, Picture
+  Mode, crops, films, video all as expected (owner). Last power-on's log: build "v0.40-alpha-dev (crops + gates +
+  PR #76, test 1)", nothing unusual, card files match; the crop came back at the first half-press through the new
+  section 7 check (tag 43520006: XPan saved, Image Aspect 3 -> 6). Photos: 4:3 / 16:9 / 3:2 / 1:1 / 3:4 / 5:4 / XPan /
+  21:9 at their sizes. Log and photos in `card-backups/2026-11-17-v0.40-alpha-test1-tested` (private folder).
+  **Camera-tested.**
+- **v0.40-alpha release files (2026-11-17, owner: "Hell yeah!!" to preparing the pre-release):** merged `try/v0.30.4`
+  (v0.30.4-alpha as published); crop's hooks recorded (`hooks.json`); VERSION "v0.40-alpha (crop modes, start-up
+  gates, PR #76)" (48 characters as test 1's: main.bin differs only in the name, the code-block tag and the GUIDES CRC,
+  42 bytes). `releases/v0.40-alpha`: E1479999.BIN `fbef591d…72a2`, `patch.py --release v0.40-alpha` makes it byte for
+  byte; static checks (release-rebuild included), boot-smoke, video boot and patch-audit pass on it. Not pushed or
+  published yet.
+- **Published 2026-11-17 (owner: "Yes, publish it"):** `try/v0.40-alpha` pushed at a2551d0; GitHub pre-release
+  v0.40-alpha (target a2551d0; NOTES.md as its text; assets: the photo code kit, CURVES.BIN from v0.30, DEBUG.TXT,
+  LOOKS.BIN, patch.json, SHA256SUMS; patch.json and SHA256SUMS downloaded back and identical). v0.30.3 stays Latest.
+  PR #76 is still open on GitHub (not merged into main).
+## Better grain g3: a faster grain tile (2026-11-17; branch feature/better-grain; emulator only)
+- **Owner (2026-11-17): "try the faster grain tile method"** (after the film-grain research: AV1's film grain makes a
+  small template once and copies blocks of it at random offsets, blending the joins).
+- **Where g2c's ~0.4 s per tile goes (analysis):** 66.3 M instructions (om-emu) and 1536 locks + FLUSHes (each row
+  put twice, one lock each). On the camera a FLUSH is costly: xb_grain gr4 (2 rows a FLUSH instead of 1) saved 0.3 s
+  over 3888 rows, about 0.15 ms each, so about 0.23 s of the tile's 0.39..0.43 s (estimate).
+- **Try 1, AV1 as it is (Mac only, dropped):** a 96 x 80 template (fits the 16448 B malloc cap) and 32 x 32 blocks at
+  random offsets. At Coarse the same specks show in nearby blocks (a pink speck four times in a row at 300 %), and the
+  block edges show faintly: the step between neighbouring rows across an edge 18.2 against 10.5 inside (size 3).
+- **g3, the band and strips:** the template is a band of the tile itself, so it can be big: tile rows 0..127 made by
+  the box filter as before (period 128: row 128 = row 0, so the band joins itself seamlessly), then rows 128..767 from
+  20 strips of 32 band rows each, every strip turned round by a random sx (rows wrap at 1536, so no side joins) and
+  its first B = 2 x size rows crossfaded from the strip before it going on (weights 256 cos / sin of (i + 1) 90 /
+  (B + 1) degrees, so the grain keeps its strength through the join); the last strip is crossfaded into rows 0..B - 1
+  (the tile's own wrap). Strip k: h = tg_seed(k, 3), sy = 2 ((h & 0xffff) 44 >> 16) (0..86: the strip and the 10 rows
+  after it stay in the band), sx = 4 ((h >> 16) 768 >> 16) bytes. Rows 768..1535 = rows 0..767 as before.
+- **Look (Mac, the exact model; analysis):** the step between rows at the joins against inside a strip: size 1 18.6 /
+  18.6, size 2 13.3 / 12.9, size 3 10.8 / 10.5 (g2c's own wrap: 10.55 / 10.52); mean and spread as g2c (Y 47.7..48.2
+  by seed, sigma 16.0; Cb / Cr 128, 16.0). The largest repeat in a tile (autocorrelation away from 0) 0.047 (one strip's
+  share), always 118+ rows apart with a sideways shift. Side by side with g2c (flat grey at 100 % and 300 %, a photo at
+  100 %; Medium and Coarse): no joins or repeats seen.
+- **The tile across a window edge:** the fast way needs the whole tile in one 128 MB window segment (bus & 0x07ffffff)
+  + 4.7 MB <= 128 MB; otherwise tg_fill makes all 768 rows the g2c way (unchanged; tested).
+- **Locks:** every fast-path row goes through `tg_op` (hl_open of the whole tile, its cached view: the window's 0x78..
+  view or DRAM's 0x6.. alias) and `tg_cl` (FLUSH, UNLOCK). A band row: one lock, written to rows y and y + 768
+  (`tg_rc`); a crossfaded row: one lock (~61 K instructions: `tg_rc` + `tg_bl`); other strip rows 16 a lock
+  (~87 K); all under HL_LOCKN's 120 K. Locks a tile: 210 (size 1), 252 (2), 294 (3) against 1536. The band is read
+  back from the tile through the cached view (the camera's cached window view was read and written by xb_grain gd4,
+  2026-11-05). The builder's stack: 68 B deeper than g2c (tg_mix 72, tg_op 20 inside tg_fill 120).
+- **Code (editor.s, ext12):** `tg_fill` (frame 104 -> 120: U the rows made, the fast flag, a lock token; the column
+  sums wrap at U and U / 2), `tg_op`, `tg_cl`, `tg_rc`, `tg_bl`, `tg_mix` (frame 72), `tg_ra`, `tg_wi`, table `tg_wt`,
+  counter `tg_nf`. ext12 240,048 B (of 262,144). No new hook or patch site. Debug log: "Grain tiles (better grain
+  g3): made N, failed N, last size W, last time (ms) T, fast N". VERSION "v0.30.3-dev (grain g3: faster grain tile)".
+- **om-emu** (tg_fill called directly, FLUSH stubbed, tile at bus 0xb0100000 = the direct DRAM path): instructions a
+  tile 16.3 M (size 1), 18.5 M (2), 20.7 M (3), 25.2 M (5) against g2c's 66.3 M; **every tile equals the model byte
+  for byte** (`research/grain/tile_model.py`: sizes 1, 2, 3, 5 the fast way; size 2 at 0xaff00000, across an edge, =
+  g2c's tile). Estimate for the camera (analysis): about 0.1 s a tile instead of 0.4 s; the log's time will tell.
+- New suite test `grain-tile-matches-the-model` (Fine and Coarse the fast way, Medium across an edge; ~20 s);
+  `--without` the g2c build (out-g2g): caught (its tg_fill has the old frame and does not come back).
+- **Camera-only:** the window path (the band read back through the 0x78.. view, several rows a lock), the real time,
+  the look on photos, video.
+- Suite on d361b4f (its own build): **31 of 31 pass**. Package `test-builds/2026-11-17-grain-g3` (private folder):
+  E1479999.BIN `4692fc78…6089` (VERSION "v0.30.3-dev (grain g3: faster grain tile)"), go-backs v0.30.3
+  `60b6d954…f546`, border test 1c `d8ce3d89…3db3` and grain g2c `317747e1…23a6`; a g2c / g3 comparison picture made
+  from the model. Camera questions: the time per tile, no stripes / lines / repeats at Coarse, "fast N" = "made".
+
+## Grain g3 on v0.40-alpha (2026-11-17; branch try/grain-g3-v0.40; emulator only)
+- **Owner (2026-11-17), asked whether to copy g3 (built on v0.30.3) over screen info s2 (on v0.40-alpha) on the camera:
+  "Rebuild g3 on v0.40-alpha"** (so the camera keeps crop modes during the grain test). `try/grain-g3-v0.40` =
+  `try/v0.40-alpha` (492c890, which has g2c) + `feature/better-grain` merged (g3: d361b4f, 39dced6). Conflicts: VERSION
+  ("v0.40-alpha + grain g3 (faster grain tile)"), emu_test.py (both sets of tests), NOTES (both), README / ROADMAP
+  (v0.40-alpha's kept). editor.s merged cleanly. ext12 257,216 B (4,928 B left).
+- `static:changed-bytes`: four reviewed patch sites hold pointers into our code that moved with g3 (0x60e574bc the
+  table word 0x60f8bf4c -> 0x60f8c2b4; 0x610830d4, 0x6108314f, 0x610831c6 the word 0x60f63de8 -> 0x60f64154). In the
+  v0.40-alpha build their low byte equalled the stock byte by chance; now it differs, so the runs grew by one byte:
+  hooks.json 0x60e574bd:2 -> 0x60e574bc:3, 0x610830d5:3 -> 0x610830d4:4, 0x61083150:3 -> 0x6108314f:4, 0x610831c7:3
+  -> 0x610831c6:4 (by hand, not --write-hooks; no new site; v0.40-alpha's build still passes).
+- Suite on 4f9f0cb (its own build): **64 of 64 pass** (incl. `grain-tile-matches-the-model`). Package
+  `test-builds/2026-11-17-grain-g3-v0.40` (private folder): E1479999.BIN `a240921c…0ad1` (VERSION "v0.40-alpha + grain
+  g3 (faster grain tile)"), go-backs v0.40-alpha as released `fbef591d…72a2` and screen info s2 `0bb89498…b467` (on
+  the camera before). The v0.30.3-based package became `WITHDRAWN-2026-11-17-grain-g3` (never flashed).
+- **On the owner's card 2026-11-17** (owner: "Yes, copy to card"): `DCOLYMP/E1479999.BIN` = `a240921c…0ad1`, checked by
+  sha256 on the card; it replaced screen info s2 (already flashed: its log, "Build: v0.41-dev (screen info s2)", saved
+  first in `card-backups/2026-11-17-screen-info-s2-log-before-grain-g3`). Nothing else on the card changed.
+
+## Shooting-screen info: how it is drawn, and hiding single items (2026-11-14; emulator + analysis, nothing on the camera)
+Owner's wish: choose which pieces of information the shooting screens show (rear screen and viewfinder), item by item,
+instead of the camera's whole display styles. Stock 1.1 only offers per-display choices: Image Only, Information 1 / 2 /
+3 in the INFO cycle, and per Information display Histogram, Highlight&Shadow, Level Gauge and the silent icon. No
+camera build made; everything below is om-emu on the **stock** main block (plus emulator-only probes) or static reading.
+Tools: `research/screeninfo/` (probes, runner), new `session_ed1.mjs` tokens (`dbdump`, `rdump`, `w8`, `strdump`,
+`panels`, `warm`, `DEVICE=evf`).
+
+### How the camera draws it (om-emu + analysis)
+- **Screen:** GUI state 0x0108 SS_COMMON/ID_ST_CA_REQ_DISP, **panel 10** (as on the OM-1, om-emu menu spec §15;
+  ShowPanelEx = run-time 0x61296e8e, `panels` token). INFO does not change the panel: every display style is panel 10.
+- **Data path:** the camera side builds the items into **GUI variables** (the Genifa variable store, object at
+  (0x6036f6e4), 288 variables, table 0x603701a4 of 16-B {get, set, ptr, size}; set = 0x610cd5c4 (= om-emu's VAR_SET,
+  d0 id, d1 size, a0 source), get = 0x610cd5ac). Sub-panels (C++ `GCSubPanel_*` classes, "OnUpdateDB") read the variables
+  and draw. The shooting screen's **updater 0x6122fb93** (`this` = its a0, om-emu heap 0x62474a70) runs about 6 times a
+  lab second while idle: at its start it copies every buffer to a "previous" copy (memcpy calls 0x6122ffe0..0x612301b2),
+  calls the item builders, then from **0x6123043d** compares each buffer with its previous copy (memcmp 0x6004b542) and
+  sets only the changed variables (or all when forced). Buffer pointers sit in its frame: (4,sp) var 38, (72,sp) 31,
+  (8,sp) 34, (76,sp) 60, (80,sp) 32, (88,sp) 33, (104,sp) 35 grid, (112,sp) 41 AF frame, (24,sp) 129, (20,sp) 20,
+  (44,sp) 39, (60,sp) 40, (68,sp) 104, (52,sp) 105 (list of all 28 in the 0x61230448..0x6123096f chain).
+- **Items come from code, one builder per item**, not from a layout table: each builder clears its field, then fills
+  it from settings through value -> picture lookups (0x611c7738 / 0x611c7751 / 0x611c776b, {key, value} lists); e.g.
+  the picture-mode label 0x612349b4 (clears var 38 +60 at 0x612349cf), mode icon 0x61235e79 / 0x61243802, AF mode
+  0x6123344b, shutter 0x61236184 / 0x61244811, aperture 0x61236801 / 0x61244e0e, shots left 0x612301e5 / 0x61243531.
+  **Image Only is the same mechanism:** the builders leave their fields cleared (dbdump in each INFO mode).
+- **Display mode word:** `this`+6992 = 19 Information 1, 20 Information 2, 23 Information 3, 3 Image Only (om-emu
+  default cycle: Information 1 = histogram, Information 2 = level, Image Only; 2087 Information 3 off). `this`+6916 =
+  output (1 rear screen; 5 = viewfinder by the code at 0x6123d35e, not seen).
+- **A stock per-item visibility table exists:** 0x6123d135 fills `this`+6920 (18 words) with 0x01 (memset 0x50002a15),
+  then per display mode reads On/Off settings into it: [0] histogram, [4] level, [8] stabiliser, [12] picture mode,
+  [16] WB, [20] AF mode, [24..32] 797 / 795 / 798 (no menu), [36] time code, [44] 1241, [48] grid, [52] H&S, [56]
+  silent, [60] subject detection, [64] sound level meter, [68] headphone volume. **Movie** reads all of them (menu
+  lists: 0x6156c91c 787 / 786 / 794 / 799 / 796 / 790 / 2158 / 2107 / 2108 / 788 / 792 / 1242 for movie Information 1,
+  0x6156ca6c 1244.. for Information 2: the camera's movie "Info Settings" check lists). **Stills** read only histogram,
+  level, H&S, silent (rear 806 / 805 / 2088 / 2089, 812 / 811 / 2090 / 2091, 2092 / 2094 / 2095 / 2096; viewfinder
+  809 / 808 / 2098, 815 / 814 / 2099, 2100 / 2102 / 2103). Probe: the memset value 1 -> 0 (`POKE=6123d13d=8000`) hides
+  **only the picture-mode label** in stills (om-emu); stabiliser, WB, AF mode stay. So the stills builders mostly ignore
+  the table: it is not enough on its own.
+- **Viewfinder:** the same variables feed it. `DEVICE=evf` (1024 x 768): same layout in om-emu's default EVF style,
+  and every field cleared below hides the same item there (tested: aperture, picture mode, shots left, EV value, bottom
+  row). EVF styles 1 / 2 have their own sub-panels (`*_FinderStyle1and2`, `GCSubPanel_Evf_Om_*`): not checked.
+- The Super Control Panel uses its own variables (278..280) and was unchanged with the masks below; menus too.
+
+### Item map (om-emu, rear screen and viewfinder; "var N +off" = byte offset in GUI variable N)
+Found by clearing one field at a time (probe `hk_set.s` at the variable set) and diffing screenshots, then confirmed
+with the updater prototype. All of these are fields that **Image Only clears** (so "cleared" is a state the camera
+already draws as "not shown"):
+- Top row: shots left var 34 +8 (u16 803) / +12 (shown flag); movie time left var 34 +16 (shown; +1 / +2 = min / s);
+  aspect var 38 +48; still quality var 38 +49; movie quality var 38 +50. Bluetooth / Wi-Fi: var 0 +41 / +43 (var 0 is
+  set from several places, **not** by the updater).
+- Right column: AF mode var 38 +36; face / eye detection +3; drive +40; metering +35; stabiliser +38; picture mode (and
+  our "FILM N" label) +60 (u16 picture id 15706..); WB icon +39, WB block +401, Kelvin +404 (u16).
+- Bottom row: shooting-mode icon var 38 +0 (u16); shutter var 33 +0 / +4 / +7; aperture var 33 +24 / +28; exposure bar
+  var 32 +84 / +88; EV value var 32 +5 (+80 its marker); ISO var 38 +2 (+409 label, +412 value).
+- Left: touch-shutter icon var 31 +75; histogram var 129; level gauge var 60 +0 (both already stock per-display settings).
+- Not to hide: AF frame var 41, grid var 35. Group switches var 0 +74 top row, +82 left column, +84 right column, +85
+  bottom row also hide whole groups in om-emu, but Image Only never clears them: not proven safe, not recommended.
+- Not seen in om-emu (needs the camera or more settings): battery, card, flash, Live ND / GND, temperature and other
+  warnings, peaking, focus indicators. Warnings should never be hideable.
+
+### Prototype: one hook in the updater (om-emu only; `research/screeninfo/hk_upd.s`, `mkimg.py upd`)
+- At **0x6123043d** (`mov 0x62ceeb54,a0`, 6 B) `jmp` to code that walks a table {u8 frame slot, u8 length, u16 offset}
+  and clears those bytes in the updater's own buffers, then does the replaced instruction and returns to 0x61230443.
+  Uses d0 / d1 / a0 / a1 only (the stock code reloads them). 52 B of code + 4 B per field.
+- **om-emu, saved settings with more icons shown (NV_FILE):** hiding shots left, movie time, aspect, picture mode, WB
+  and the touch icon in both Information displays: those items are gone, everything else unchanged. Variable sets
+  during idle: 10 per 3.6 s with and without the hook (only var 129, the histogram): the change check still works, no
+  extra redraws. Clearing the table at run time (`w8`) brings the items back within one update (< 1.2 s), restoring
+  it hides them again: no INFO press needed.
+- Because the masked buffer becomes next cycle's "previous" copy, the compare stays quiet; and because every builder
+  clears and refills its field each cycle (as for Image Only), un-hiding needs nothing special (seen for the tested
+  items; an item whose builder skips unchanged values could lag until INFO: watch in the camera test).
+
+### What a real version would be (analysis)
+- **Firmware:** the hook above, plus a choice of table by the display mode word (`this`+6992: 19 / 20 / 23, stills
+  only; movie keeps the camera's own lists), reading the hide lists from our block P. Until P is published at the
+  first half-press the hook does nothing, so start-up stays stock (as frame lines do with `fg_on`). Code ~150-300 B in
+  an ext tail; the lists ~12 B (a 32-bit item mask per Information display, rear and viewfinder alike).
+  Bluetooth / Wi-Fi (var 0) would need a second, copy-based hook at the variable set (0x610cd5c4); leave out at first.
+- **Where the choices live:** LookLab "Screen items" with check boxes per Information display and presets (Everything,
+  Clean, Exposure only), saved with the Extras (BUNDLES) and taken into camera memory like the films. The INFO button
+  then switches between the owner's own layouts. An on-camera check-list page (a copy of the movie "Info Settings"
+  pages, our own setting ids through the facade hooks as for the films) is possible later: more menu work and rounds.
+- **Risks:** live view speed: none measurable (a few byte writes per update, the updater itself reads ~200 settings);
+  start-up: untouched (no work before the first half-press); code space: small. Unknowns for the camera test: items
+  om-emu never drew (battery, warnings), EVF styles 1 / 2, HDMI, whether a hidden touch icon still allows touch.
+- **Rough effort:** firmware hook + LookLab panel: 1 build, 1-2 camera rounds. On-camera menu page: +2-4 rounds.
+- Waiting for the owner's choice; no test firmware built.
+
+## Film Mode, step 2 of the research: frames left on the screen, and the open design points (2026-11-14; emulator + analysis)
+Follows "Film Mode (a "roll" that locks the film): feasibility" (2026-11-12, tabled) and uses "Shooting-screen info"
+above. Research lab (`experiment/screen-info`); nothing built for the camera.
+- **Frames left can use the camera's own shots-left number** (om-emu, stock main block + the `set` probe):
+  `research/screeninfo/run.sh set fm_36 '34:8:1:24,34:9:1:00' 'wait wait shot:a.png'` with `NV_SRC=` saved settings
+  (`~/om3-work/wheel/nv3.json`) puts 36 in var 34 +8 as it is set: the top row shows **36** where stock shows 803, same
+  font and place, nothing else changes. So the number is drawn from the GUI field, not from setting 803 itself.
+  **Emulator only.** A real build would write the roll's frames left into the updater's buffer (slot (8,sp), +8 u16,
+  +12 the shown flag) in the same hook as the hide lists (0x6123043d), only while a roll runs and only in stills; movie
+  time (+16) is left alone. Setting 803 and the camera's card-full logic are never touched (analysis): the camera still
+  stops at a full card, and the card's own count comes back when no roll runs.
+- **Where the roll lives (analysis, on camera-tested pieces):** a few bytes in store M's tail next to the user block
+  (on, length, shots taken, the locked selection: COLOR k / FILM j and its 897 / 901 values); M survives power-off,
+  battery pulls and card swaps (mp1, f2: camera-tested). Count in RAM in `ex_hook` (once per photo, in the capture: no
+  settings calls there); copy to M and set the changed byte 0xa32bfb32 at the next gated shutter event (`ub_try`'s
+  moment, never during capture or start-up). The camera writes M on the return from a menu and at power-off, so a
+  battery pull can lose the frames since the last save (a count a few frames short; never a corrupt block: the CRC
+  covers it). Nothing at start-up: the lock and the counter start working at the first half-press, as films do.
+- **Locked (analysis):** in `sx_set` (facade SetValue for 897 / 901) a running roll replaces any new value with the
+  locked one: the Creative Dial, the Picture Mode list, our film strip and the FILM rows all land back on the roll's film
+  (the v0.27 dial mapping did this rewrite, camera-tested). Paths not through the facade (custom-mode C1-C4 recall, menu
+  reset, power-on's direct 897 set): re-check at each half-press and set the locked film back. Not traced: whether C1-C4
+  recall goes through the facade. Film *edits* (sliders) for the locked film: open (owner choice; lock them or not).
+- **Counting (analysis; camera to confirm):** one frame per shutter release that makes a photo: RAW+JPEG = 1, each
+  burst frame = 1, deleting does not give frames back (like film). Open: does `ex_hook` run for RAW-only shots (the ORF
+  has EXIF; not checked), and for Pro Capture / High Res / Live ND / focus bracketing composites (one frame each?).
+  Fallback: the camera's file number (not traced). Video: not counted, film not changeable in video either (to decide).
+- **End of the roll (proposal):** at 0 the number shows 0 (and the FILM cell could say "END"); frames shot in a burst
+  past 0 are kept as normal photos; at the next half-press the roll is closed, the lock lifts and the card count
+  returns. Owner to choose: Film Mode stays on and the next roll starts when a film is picked, or it turns off.
+- **Setting it:** a Picture Mode choice row "Film Mode" (Off / 24 / 36 / 72) as for Film Grain, or in LookLab with the
+  Extras. Starting a roll while one runs, or turning it off early, needs a "rewind" choice (owner to decide).
+- Effort (guess): after the screen-info hook exists, 1 build and 2-3 camera rounds; alone, the counter on the screen
+  is the larger half. Status: analysis + one emulator check (the number field); nothing on the camera.
+
+## Screen info build s2 on v0.40-alpha (2026-11-17; camera-tested: works)
+Resumed (owner via cad, 2026-11-17: "Carry on"). `try/v0.40-alpha` (492c890) merged into `feature/screen-info`.
+- **Merge changes:** GetValue now goes through `cv_get` (falls through to `sl_get`, whose id check stays); GetDefault
+  `0x60e57510` -> `si_dfl` -> `cv_dflt` (was ed_default); SetValue `0x60e57478` -> `si_sv` as before.
+- **Start-up gate:** v0.30's early load sets STATE before the first half-press, so `si_upd` also waits for `el_hold`
+  to clear (the first shutter event), as border preview's `bl_gv` does. Before that: no record read (`si_ok` 0), stock
+  screen (om-emu, test `screen-info-waits-for-the-first-half-press`).
+- **Bug found and fixed in the emulator:** after the merge `si_tab` landed on an odd address and the walk's halfword
+  read faulted (om-emu trap 3 at the first screen update after a menu). `.balign 4` before it. On a camera this would
+  have frozen it: s1 only worked because its layout happened to be even.
+- **om-emu comparisons with v0.40-alpha** (rebuilt from 492c890: E1479999.BIN fbef591d…, the release's bytes), same
+  saved settings (Information 1 hides mode, shutter, EV, picture mode, shots left; 2 all 14; 3 aperture and ISO, and
+  Information 3 ticked): identical before the first half-press, in video and S&Q, in the viewfinder (style 3, 1024 x
+  768), in the menus (other pages and the viewfinder / movie Info Settings pages), in playback, with no card, and in
+  Image Only. Information 1 / 2 / 3 differ only where items were hidden, in P, A, S, M, B and C1.
+- **No card:** v0.40 loads no films without a card (STATE stays 0), so screen info stays off and the screen is stock.
+- Masks round-trip over a power-off (M + 0x3C000: 0x104b / 0x3fff / 0x14).
+- **Tests added** (`tools/test/emu_test.py`): `screen-info-hides-a-ticked-off-item`, `screen-info-waits-for-the-first-
+  half-press`, `screen-info-not-in-video`; the first two are `caught` with `--without` the v0.40-alpha build.
+- **Static checks:** `static:hook-list` (new hook `hook_si` at 0x6123043d, 6 B) and `static:changed-bytes` (SetValue
+  word 0x60e57478, the three menu item-list entries 0x6156d0a4 / bc / d4 and row-list entries 0x6152a064 / 70 / 7c)
+  fail until `tools/test/hooks.json` is updated; left for cad and the owner, as the rules say.
+- **Test build s2:** "v0.41-dev (screen info s2)", E1479999.BIN 0bb89498…b467 (GUIDES / LABELS / TONES built in);
+  suite 64 pass, 0 known, the two static FAILs above.
+- **Camera (owner, 2026-11-17): "It works amazing!!!"** Debug log (cad's backup `2026-11-17-screen-info-s2-tested`):
+  build "v0.41-dev (screen info s2)", nothing unusual, card files match, films from camera memory, 12 shutter events.
+  Rear screen only; the viewfinder pages are the possible next step (owner's choice). The no-card limit and the items
+  om-emu never drew were not reported on.
+- Not shown by om-emu: the camera's own redraw timing, the viewfinder styles 1 / 2 (s2 does not touch the viewfinder),
+  HDMI, battery / flash / Live ND icons, whether the touch shutter still works with its icon hidden.
+
+## Screen info build s1: paused by the owner (2026-11-14), resumed as s2 above
+**Where it stopped:** build s1 (rear screen, photo Information 1 / 2 / 3) is written and builds; no test package made.
+Code: `firmware/src/screeninfo.s` + `screeninfo.inc` (ids SIB 0x7d00 + 16 * page + k, the hide hook, the M record),
+small id checks in `editor.s` (sl_get, sl_cnt, sl_vbi, sl_sel; two `.include` lines), `.hook_si` at 0x6123043d in
+`editor.ld`, and in `build.py` the hook's stock bytes, `-I src`, the vtable words 0x60e57478 (SetValue -> si_sv) and
+0x60e57510 (GetDefault -> si_dfl, ext1 is full) and the copies of the three pages' item and row lists.
+**Seen in om-emu (s1 build):** the three pages show 14 more tick rows with the camera's own names, scrolling; OK ticks
+and unticks them (a tick's OK is facade SetValue mode 3, which the stock code refuses for unknown ids and which never
+reaches `.hook_set`: hence si_sv); the masks are written to M + 0x3C000 ('OM3I') and survive a power-off / on
+(Information 1 0x104b, 2 0x3fff, 3 0x14 read back); nothing of ours is read before the first half-press (si_ram
+empty until then); after it, Information 1 hid exactly the chosen items (mode icon, shutter, picture mode, shots
+left / time left), others unchanged.
+**Not tested yet (the next step):** the planned comparison runs against v0.29.3 (start-up screens before the first
+half-press, INFO cycling through every display including Information 3 and Image Only, video / S&Q, mode dial P / M /
+S and a custom mode, the viewfinder (must be unchanged in s1), other menu pages, playback, no card), pixel diffs where
+nothing should change; a held-back write (si_pend) while the camera saves M; then cad's review and a package.
+**Item map correction:** the research map was taken with other saved settings; with om-emu defaults the right column
+(stabiliser, WB, metering, drive) is drawn only after a setting changed in the menu, and the Image Only diff shows the
+fields in `si_tab` (screeninfo.s). Shutter / aperture text also lives in var 104, but clearing var 33's fields alone
+hides them (om-emu); var 39 / 40 / 104 / 105 / 20 changed nothing on the rear Information 1 screen.
+
+## Screen info, design step: the stock Info Settings menu and the INFO cycle (2026-11-14; emulator + analysis, nothing built)
+Branch `feature/screen-info` (from `experiment/screen-info` 3347e53). Owner's design (2026-11-14): a menu page like the
+camera's own info-display settings, with show / hide per item, several set-ups, INFO cycles through them.
+- **Menu (om-emu, v0.29.3 build):** Custom menu, page "4. Information" (`menu left left` from Card/Folder/File): EVF
+  Style, Camera Info Settings, Info by half-pressing, EVF Camera Info Settings, EVF Level Gauge, Movie Info Settings.
+  Each Info Settings page is a tick list: Image Only, Information 1 (always on, greyed), Information 2, Information 3,
+  each Information row with a ">" sub-page of tick rows. Stills rear and EVF sub-pages: histogram, Highlight&Shadow, Level
+  Gauge (+ Silent Operation on the rear). The movie sub-pages already have 12 per-item rows (histogram, level,
+  stabiliser, picture mode, WB, AF mode, subject detection, sound meter, headphone volume, time code, silent, grid)
+  and scroll: the stills pages can take a longer list the same way.
+- **Row records (static reading):** 28 B each, from 0x6156c5d0: `{u16 0, u16 sid, u16 4, u16 label, u32 0x6156b26c,
+  12 B 0}` (0x6156b26c = the tick-box row handler). Stills rear Info 1 `{805, 806, 807, 2089}` at 0x6156c608, Info 2
+  `{811..813, 2091}` 0x6156c678, Info 3 `{2094, 2092, 2093, 2096}` 0x6156c6e8; EVF Info 1 `{808..810}` 0x6156c7c8, Info 2
+  `{814..816}` 0x6156c81c, Info 3 `{2102, 2100, 2101}` 0x6156c870; movie Info 1 12 rows 0x6156c918, Info 2 0x6156ca68.
+  Top lists: rear `{802, 2087, ...}` 0x6156c5d0.., EVF `{803, 804, 2097}` 0x6156c774. Menu descriptors 24 B from
+  ~0x6156d088: `{u32 id, u32 rows, u32 count, u32 ?, u32 0x6156b328, u32 ?}` (e.g. rows 0x6156c60c count 4 at
+  0x6156d0a4, movie Info 1 count 12 at 0x6156d164). So a longer stills sub-page = a copy of the rows in an ext tail plus
+  new rows with our own setting ids (answered by sl_get / sl_set as the films' FLB ids are), and the descriptor's
+  rows / count pointed at the copy (as the Delete row's `dl_oks`). To check in the build: the descriptor's first word
+  (0x6156d0a0 region alignment above is read, not tested) and that the tick handler takes any sid through the facade.
+- **Row names:** the camera's text table already has Shooting Mode, Shutter Speed, Aperture Value, Exposure Comp., ISO,
+  WB, Picture Mode, Image Stabilizer, AF Mode, Subject Detection, Drive Mode, Metering, Record Mode, Image Aspect,
+  Remaining Files, Touch screen, Focal Length (strdump indices; the label ids the rows use still to be matched).
+- **INFO cycle (om-emu):** with Information 3 ticked, INFO steps Information 1 -> 2 -> 3 -> Image Only -> 1, i.e. the
+  ticked entries of the top list, as in the stock camera. Information 3's stock layout draws fewer items. So the
+  owner's "set-ups" map onto Information 1 / 2 / 3 per screen (rear and EVF separately) with the stock ticks deciding
+  the cycle; more than three would mean new display modes (not planned).
+- Plan sent to the owner; waiting for the OK before any firmware.
+
+## v0.41-dev test 1: grain g3 + screen info s2 together (2026-11-18; emulator, on the owner's card, not camera-tested)
+- Owner (2026-11-18, after grain g3 on the camera: "the new grain looks good and works well"): "combine it with the
+  screen info update". `try/v0.41-dev` = `try/grain-g3-v0.40` (d1d11c4) + `feature/screen-info` (9acc085), merge
+  b3b721a; conflicts only in VERSION and this file. editor.s is grain's plus screen info's seven lines, nothing mixed.
+- Grain g3 camera result (log of the test): 28 grain tiles made, 0 failed, all 28 the fast way, last 268 ms; nothing
+  unusual.
+- Build `58db258b…cbfc` (a second clean build matches). Suite: 65 pass, 2 FAIL = screen info's hook 0x6123043d and its
+  patch sites (0x60e57478, 0x6152a064 / 70 / 7c, 0x6156d0a4 / bc / d4), as on s2; not yet in `hooks.json` (owner's OK
+  needed). On the owner's card 2026-11-18 (sha256 checked).
+- **Camera-tested 2026-11-18** (owner: "It all looks good and works as advertised!"): log clean, build "v0.41-dev
+  (grain g3, screen info s2)", 25 photos, grain tiles made 20, failed 0, all fast, last 270 ms; play, menu and Picture
+  Mode screens visited; nothing unusual. The owner erased the photos before the card came back.
+
+## The Border at the camera's own ratios (2026-11-18; emulator, test 2 packaged)
+- **Owner's camera (v0.41-dev test 1, Border 5, one photo per ratio, level and upright): the border cut off.** Measured
+  on the photos (private card backups): 4:3 291 / 292 px all round; 3:2 top / bottom 75; 16:9 top / bottom 0; 1:1 and
+  3:4 sides 0; 5:4 / XPan / 21:9 right (crop round 7). Upright photos identical to level ones (orientation is only an
+  EXIF tag). Cause: bd_run paints the full 4:3 buffer and the camera cuts the photo out of it afterwards; cr_bdc only
+  knew 5 / 6 / 7. In the release since Borders began (v0.40-alpha too); test 1c's camera report never covered the
+  ratios one by one.
+- Fix (d24ab1d): cr_bdc takes every ratio from cr_bdt by Image Aspect id (269 = table id: 1 4:3, 2 3:2, 3 16:9, 4 1:1,
+  9 3:4, as the size tables 0x606e60c0 / 0x606e6270): 3:2 / 16:9 cut rows (W 2/3, W 9/16 up to 8), 1:1 / 3:4 cut the
+  sides (H down to 16, H 3/4 nearest 16); these give the camera's listed photo sizes for every 4:3 size it lists
+  (classes 0, 17, 19, 20, 21, 22; 1:1 at 8160 x 6120 gives 6112 wide, the camera 6112 x 6112: 4 rows of the border
+  trimmed there). B follows the photo's short side (16:9 Border 5: 218 px). a0 now kept across the call.
+- Emulator: emu_check 20 of 20 bit-exact (+ c43, c32, c169, c11, c34, c169cut), big169 / big34 exact; test 1's build
+  `caught` on border-matches-the-model. Suite on d24ab1d: 67 of 67 pass (screen info's hook approved, b0aaaa2).
+  Package `test-builds/2026-11-18-v0.41-dev-test2`: `1fae8adb…637b`, a second build matches. Camera test pending.
+- **Camera-tested 2026-11-18** (owner: "It looks good"): test 2 (`1fae8adb…`), Border 5, one photo per ratio, level and
+  upright (PB183425..440, private card backups): 4:3 291 / 292 px all round, 16:9 218, 3:2 259 / 260, 1:1 291 / 292,
+  3:4 218, 5:4 291 / 292, XPan 143 / 144, 21:9 166; no picture outside the border. Log clean ("border fix", 16 photos,
+  nothing unusual).
+
+## Black borders: one Border row -5..+5 (2026-11-18; emulator, test 3 packaged)
+- Owner: "add some sort of option to make the border black. so we could have white and black?"; of the two ways
+  (one row -5..+5, or a Border Colour row) the owner chose "One row, -5 to +5". The Border byte (slot +50 / record +48,
+  Frame's old byte, which the camera checks as -5..5) holds -5..+5: 1..5 white, -1..-5 black (BD_BLACK 0x80008000:
+  Y 0, Cb = Cr = 128), the same widths, 0 off. Row as Glow / Tone Balance (count 11, LOWCNT -5, bar 3f, readouts
+  rda_11 / rdb_11, write -5..5); xb_gs passes the signed level clamped to -5..5; bd_run sets d2 from the sign at its
+  start; bl_gv takes |level| for the live view frame line. Older builds read a black border as none (xb_gs: <= 0).
+- Emulator: emu_check 24 of 24 bit-exact (black5, black1, black3c in a 16:9 crop, levelm6 nothing);
+  border-row-minus-5-to-5-kept (three boots: 0 -> +5 -> +3, -> -5 -> -3, -> 0) and border-preview-on-for-black pass;
+  menu screenshots: the row reads -3 / +3, the bar centred. Suite on 8906f3d: 67 pass, 1 FAIL static:changed-bytes at
+  0x60e9b0d4:1 / 0x6152f8e4:1: two pointer words into our code whose first byte matched stock in test 1, so the
+  2026-11-18 --write-hooks had narrowed them by a byte (and 0x613317c0); hooks.json takes back their full words
+  (0x60e9b0d4:3, 0x613317c0:5, 0x6152f8e4:4, as before b0aaaa2); static_check then passes on tests 1, 2 and 3.
+  Package `test-builds/2026-11-18-v0.41-dev-test3`: `fa455b99…32aa`, a second build matches.
+
+## v0.41-dev test 3 on the camera; test 4 = black borders fixed + gentler Shading s1 (2026-11-18; emulator)
+- **Test 3 camera (owner): "the black borders are not showing up".** PB183441 / 442 (black Border): no border;
+  PB183443 / 444 (+2 / +5): white 116 / 291 px. Log clean. Cause: xb_cap's route check sent a still through the Soft
+  Focus passes (where xb_gs draws the border) only for Border > 0 (`bgt`): fixed to `bne` (5a8d73f). om-emu takes no
+  photos: TESTING.md past regressions row (No).
+- Merged `feature/gentler-shading` (s1, the Shading session's 212cc5a) for test 4 (owner: "yes combine them"); cad at
+  the merge (b370452): xb_sh now runs before the Glow / Halation / Border checks (s1 called it after them, so a still
+  with any of them kept the camera's strong Shading and got no vignette) and xb_cap routes on VG_LVL; xb_sh clears the
+  capture's +37722 only when it holds the setting or 0 (a burst's later frame), else the still stays stock (VG_ND).
+- Suite on b370452: the new "capture byte 7" case failed: the comment on `cmp 0,d1` swallowed the next line's
+  `bne 8f`. Scan of firmware/src: four such (xb_sh's bne; the Border write's `blt 7f`, 8906f3d; the A-B / G-M write's
+  `blt 7f`, older; a `mov d1,(4,sp)` in the disabled XB_SHG block). Put back (2671e69); new `static:comment-swallow`.
+- Test 4 `test-builds/2026-11-18-v0.41-dev-test4`: `f3e4929e…7c56` (2671e69), a second build matches; suite 71 of 71.
+
+## v0.41-dev test 4 on the camera; test 5 = the border past the cut sides (2026-11-18; test 5 emulator, on the card)
+- **Test 4 camera (owner): "on portrait orientation the border doesnt go all the way to the edge of the frame"; "the
+  shading is slowwwwww. It takes forever to save. Also, 0 to 1 is too large of a jump".** Photos PB183445..464 and the
+  log in the private card backups. Black borders right in every photo at every ratio (291 / 218 / 259 / 143 / 166 px
+  as white). The full-size photos reach every edge; the 1600 px preview the camera stores in each JPEG (the last
+  embedded JPEG: 1600 x 1200, 1536 x 864, 1584 x 1056, 1200 x 1200, 880 x 1176, 1440 x 1152, 1600 x 592, 1600 x 688)
+  has a 1 px line of picture at its cut edges at every ratio but 4:3, level and upright alike. Matching the preview
+  against the photo: it covers about 7 px more of the buffer on each cut side. Log: "Shading (gentler s1): photos 1,
+  taken over 2, capture byte differed 0, last level -1, last time (ms) 2328" -> the Shading session (s2: faster,
+  gentler low levels, the 1 vs 2).
+- Test 5 (d709d91): cr_bdc gives bd_run a margin past a crop's cut sides (cr_mr rows / cr_mp pairs, at most 32 px,
+  as far as the buffer goes); bd_run widens the painted area and B / Bp by it, so the photo keeps its widths and the
+  preview's edge is border. emu_check 24 of 24 exact; test 4's build `caught`. Suite 71 of 71. Package
+  `test-builds/2026-11-18-v0.41-dev-test5` `1e0d279e…6a9` (second build matches), on the owner's card.
+- **Test 5 camera-tested 2026-11-18** (owner: "it looks good!"): PB183465..485, black borders at every ratio, level
+  and upright (orientation 1 and 6): the photo and its 1600 px preview both bordered to every edge (no picture line);
+  the photos keep their widths (4:3 291, 16:9 218, 3:2 259, 1:1 291, 3:4 218, XPan 143, 21:9 166, Border -1 58). Log
+  clean (21 photos, Shading 0 throughout).
+
+## Shading speed: what grain and halation did, and the hardware route (2026-11-18; analysis only)
+- Owner, after s2's estimates (±1 0.15 s, ±2 0.55 s, ±3 1.1 s, ±4 1.8 s, ±5 free): "Look into how we made grain fast an
+  halation fast. Apply that to shading."
+- **Grain** is fast because the CPU makes a small thing (the 1536-row tile, 4.7 MB) and the image processor (combiner
+  1, Grainy Film's blend) lays it over the whole photo; g3 made the tile itself from a 128-row band and cut the locks /
+  FLUSHes (1536 -> ~250). **Halation (h7)** is fast because it reads a sample (pass A: 4 rows a 64-px cell), works on
+  cells, and writes only pixels that change (g >= 2), many rows a lock. **Shading s2 already uses halation's tricks**
+  (only the outer part, rows skipped, many rows a lock); what is left is the area: through the bus window each pixel
+  read and written costs ~27 ns a byte each way (s2's calibration on s1's camera 2.33 s), ~2.2 s for a whole 20 MP
+  frame, so a broad vignette (±3, ±4) cannot be fast on the CPU. Grain's lesson is the one that applies: let the image
+  processor do the per-pixel work.
+- **The hardware route:** the development parameters carry a 64-point radial lens-shading gain table,
+  `ausEffectiveShadingCoefficient[64]`: u16 at +124..+251 of the parameter block, `ucShadingCancel` at +252 (the
+  camera's own dump 0x61a316ff..0x61a3175b prints them; two more dumpers print the same names for other parameter
+  blocks: 0x61a3cfd7, 0x61a41ef6). Our Vignette Correction row (VigFix, v0.21, camera-tested) already switches the
+  camera's lens vignetting correction per look (setting 0x8c21 -> request flag 0x2000). If this table is the gain that
+  correction applies, a gentler (or any) vignette is a different table per still: drawn by the image processor at no
+  time, smooth, in the photo and its previews alike. Not known yet: who fills the table and when, whether it is a plain
+  gain (and its scale), whether it is applied to the RAW data (before WB / colour) or later, and whether the camera's
+  own Shading effect already uses it (the Nov 12 probes found no strength in the request: this table would explain it).
+- **Next if the owner wants it (probes, camera):** p1 logs the table and +252 at a still with Vignette Correction on and
+  off and Shading 0 / -2 (debug log; no change to the photo); p2 scales the table by a fixed factor per still (plain
+  wall photos at Shading 0); then the real gentle curves. s2 stays the fallback.
+
+
+## WB Compensation <-> Highlight & Shadow: the one-frame flash (2026-11-18, emulator trace + analysis; fix built on experiment/perf-040, emulator only)
+
+- **Camera (owner):** moving between the WB Compensation row and the Highlight & Shadow row shows one frame where the
+  table area is empty. Seen on the earlier main-based perf test build.
+- **Cause (emulator trace, build of 866e7fd):** our holder swap draws the screen once too early.
+  - A stock row move (Contrast <-> Sharpness) runs the screen update in the key event. Only then does it run the row
+    refresh, the property 275 handler 0x611356e6 (its publish at 0x6113577d). The screen is drawn once after that
+    (draw pass from 0x610d88f3).
+  - From WB to H&S, gr_end's `sc_set` (holder 456) sends full-screen redraw requests (0x610c8e75 with 899 / 599)
+    inside the key event. The GUI then draws a pass straight after the event returns (0x610f6016), before the row
+    refresh. That pass has the new cursor in the left column, no grid and no curve. The curve's pictures (4145,
+    4192, 4147) and the Sh / Mid / Hi labels come only in a second pass after 0x6113577d.
+  - From H&S to WB, gr_upd's `sc_set` (holder 498) does the same. The first pass still has H&S's Sh / Mid / Hi
+    labels, with no curve and no grid. The grid's pictures (10904, 10327 ..) come in the second pass.
+  - Check: with gr_cont poked to 0 (no swap), WB -> H&S draws once, after the row refresh, as stock.
+  - Status: emulator trace for the extra pass. Analysis: the camera shows that first pass as a frame. The row refresh
+    and the second pass take about 0.9M instructions after it. This fits the camera report, and #66 showed the
+    camera can show a pass drawn between an update and its refresh.
+- **om-emu cannot show the frame.** Both passes run inside the key event's pump, before om-emu composes its next frame.
+  Frames 2 ms apart after the key are all the final screen. SHOTAT composes a new frame from inside the trace and
+  crashes ("a continue is paused"). Composing the last latched bank from the trace crashes too, and aborting the run
+  from the trace hangs it. Past regressions row added in research/TESTING.md.
+- **Why there is no fix here.** Any `sc_set` during the key event triggers the early pass. The hooks we have on this
+  screen (0x611d04ec, 0x611d059c, 0x610f6016) all run in the key event. A clean fix makes the swap in the row refresh,
+  so the one pass after it draws the new holder scene. That needs a new hook. Proposal, not built:
+  - Hook the 275 handler's entry, 0x611356e6, stock bytes `cf b0 f8 fe f0 92`: `movm [d2,a2,a3],(sp)`,
+    `add -16,sp`, `mov a0,a2`.
+  - gr_upd / gr_end set a pending scene (456 or 498) instead of calling `sc_set`. The hook calls `sc_set` for it,
+    then runs the stock bytes.
+  - Start-up rule: the hook does nothing unless Picture Mode's update set the pending scene (analysis only).
+  - Open: whether a swap inside that handler is safe for the scenes it walks, and whether the handler runs on every
+    row move. It ran on all four moves traced.
+  - A new hook fails `static:hook-list` until the owner's OK (hooks.json), so it is not done in this session.
+- **Fix built (2026-11-18, `experiment/perf-040`, emulator only; not camera-tested).** The swap moved into the row
+  refresh, as proposed.
+  - New hook `hook_rr` at 0x611356e6, the entry of property 275's handler (section 7). Stock bytes checked in the
+    decoded firmware: `cf b0 f8 fe f0 92` (`movm [d2,a2,a3],(sp)`, `add -16,sp`, `mov a0,a2`). It jumps to `rr_g`.
+  - `rr_g` (section 1's tail, `.ext1`): a gate on section 6's ready bit (SEC_READY & 0x20). Not ready: the stock
+    bytes (`rr_st`), then back to 0x611356ec. d0 is free there: the handler clears it before reading it.
+  - `rr_go` (`.ext11`): `gr_due` 0 runs the stock bytes only. Else it keeps d1, a0, a1 and MDR, and `rr_set` clears
+    `gr_due`, calls `sc_set` on the holder (`gr_cont`) and, for 498, `gr_ref`. Then the stock bytes.
+  - `gr_upd` sets `gr_due` = 498 where it called `sc_set`, and 0 when the holder already shows the grid. `gr_end`
+    sets it to 456 when the holder shows the grid, else 0. Leaving Picture Mode clears it. The leave path's own
+    `sc_set` is unchanged.
+  - **Start-up rule:** `gr_due` is 0 from the load and is set only by `gr_upd` / `gr_end`, which run only in Picture
+    Mode's screen update. At power-on the hook runs the stock bytes and nothing else. Before section 6 is ready it
+    does not read `gr_due` at all.
+  - **Re-entrancy and stack (om-emu trace):** every handler hit, `rr_go`, `rr_set` and `sc_set` ran on task 168, the
+    key event's. No handler entry between `rr_set` and its return: `sc_set` does not re-enter the handler, and
+    `gr_due` is cleared before the call anyway. `sc_set` runs at sp 0x6245c450, 0x40..0x54 bytes shallower than from
+    `gr_upd` / `gr_end` (0x6245c410 / 0x6245c3fc).
+  - **Draw passes (om-emu, hits at 0x610d88f3 per key):** a stock row move 10. Before the fix, WB -> H&S 14 and
+    each later switch 17: two passes. With the fix 7 and 10: one pass, after the refresh.
+  - **Screens:** screenshots after WB -> H&S, back, and after fast `down up down up down` / `up` / `down` are byte
+    for byte the same before and after the fix.
+  - Not shown: om-emu runs the row refresh after every key, so a key that comes before the last key's refresh (a
+    scene still due) is analysis only. `gr_upd` and `gr_end` reset `gr_due` from the holder's real scene, so the
+    last key wins.
+  - `.ext1` is now full, 1744 / 1744 B (+28 B for `rr_g`).
+  - Test: `wb-to-highlight-shadow-sets-the-scene-in-the-row-refresh`. Status: emulator only. The owner's camera
+    test decides.
+
+
+### Perf branch on v0.40 alpha: first camera test (2026-11-18; camera-tested)
+- Build aef99af on experiment/perf-040 (E1479999.BIN `d816d437…`, GUIDES.BIN `63cbc41e…`). Log:
+  "Look at: nothing unusual", 3 photos, 18 shutter events.
+- Start-up normal. Film scrolling a little faster than before. #72's reboot does not come back (v0.30.4's fix).
+- Borders render right on photos. Crop modes work (shooting, review, playback).
+- Not yet checked on this build: the color wheel pages and the live view after a click, the '*' marks, a WB shift
+  look, a Hue / Lightness look, burst, self-timer, RAW+JPEG. The one-frame flash fix (ddec3cd) came after this build.
+
+## The Mix page's dial click: cost and a cheaper click (2026-11-18, emulator only, branch experiment/rgb-cal-speed)
+
+- Owner (camera): the "R/G/B color calibration" editor feels sluggish when turning the dial. That is the Mix row
+  (MX_IT 5377), the first row under the film in Picture Mode: hue and strength of red, green and blue (colour mix).
+  Its page is the RGB page's code with cv_on = 2. A dial click runs cv_ev -> mx_ev (the value), then the camera's H&S
+  panel (pm_ev), whose write of 976 / 978 + 3k cv_sv refuses and hands the manager with the camera's own value. The
+  screen then redraws, and cv_ic -> cv_pic -> cv_draw draws our 300 x 300 picture once (mx_line row by row, then the
+  run encoder).
+- **How it was measured.** A scratch copy of session_ed1.mjs counted every instruction of one token (the click and
+  1.2 s idle after it), with a call tree from the call instructions. An idle token (4,511,789) is taken off. Build
+  b356d66, P, COLOR 1.
+- **Before: Mix click 2,625,625 instructions** (sub dial 2,598,602), RGB page 2,706,708. The camera's own H&S row,
+  same panel: 1,312,400. The split of a Mix click:
+
+  | Part | Instructions | Whose |
+  |---|---|---|
+  | cv_draw (our picture: mx_line 140k, row clear 90k, run encoder ~770k) | 999k | ours |
+  | The refresh write, 978 with its own value (37 more settings re-checked under 0x60400fc0) | 374k | stock, asked for by ours |
+  | '*' checks: the film row's profile '*' (ed_pmod, 17 x ed_isd0) 264k, the other rows (13 x fl_isdef) 189k | 449k | stock through ours; page 1 of the list, not ours to cut |
+  | The rest of the redraw and the event path | ~800k | stock |
+
+- **Built (ext12, no new hook):**
+  - cv_sv: on our pages the refresh write is 2191 (the H&S panel's mode, its own value), not the H&S id. om-emu:
+    2191 and 2197 redraw the page the same, so the redraw does not need the H&S id. -355k a click.
+  - cv_draw's encoder: a run of colour 0 is found word by word (aligned), then cut into the same 16-pixel tokens.
+    Other colours as before. The row clear stores three words a turn. cv_draw 999k -> 530k (RGB 1,086k -> 598k).
+- **After: Mix click 1,801,390 (-31 %)**, sub 1,775,882, a 4-click burst 1,785,211; RGB 1,863,795 (-31 %). H&S row
+  unchanged.
+- **Same screen (om-emu):** 33 screenshots over a sequence on Mix and RGB (both dials, both ends and past them, bursts
+  of 3 / 9 / 20, INFO through the colours, OK held reset) are byte for byte the same on b356d66 and the new build. So
+  are the drawn picture stream after each step, the curves / mix slots (cv_ram) after each step and after the
+  half-press.
+- Test `mix-and-rgb-dial-step-writes-the-panel-mode-only`: on Mix (both dials) and RGB, a click's manager write is
+  2191 only, the frame changes, a click back gives the frame before it.
+- **Not known (camera):** whether the click feels faster. Live view takes our values at the next half-press either
+  way (2026-11-15, "RGB curves: live view refresh"). The held-OK reset now refreshes through 2191 as well (om-emu: same
+  screens). Next candidates, not done: cv_tok's call per token (~6,000 tokens a picture, ~180k), mx_line (140k).
+
+## Border row: the dials step it the wrong way (2026-11-18; emulator + analysis, camera test pending; branch experiment/border-dial-direction)
+- Owner (camera, v0.40 alpha): on the Border row the rear dial clockwise moves the dot right. Owner expects the other
+  way, as on the camera's own sliders. Owner also believes the front dial does nothing on that row.
+- om-emu, one click from the same value. `main` is the rear dial (0x9032), `sub` the front one (0x9031). om-emu does
+  not know which way is clockwise, so the rows are compared with each other:
+
+  | Row | Whose | main+1 (rear) | sub+1 (front) |
+  |---|---|---|---|
+  | Contrast | stock | value +1, dot right | value -1, dot left |
+  | Shading | stock | value +1, dot right | not run |
+  | Sharpness (our values, stock row) | ours | goes up (clamped at +2) | not run |
+  | Glow | ours | value -1, dot left | not run |
+  | Halation | ours | value -1 (clamped at 0) | not run |
+  | Film Grain | ours | value -1, dot left | not run |
+  | Border | ours | value -1, dot left | value +1, dot right |
+
+- So Border runs opposite to Contrast on both dials. Glow, Halation and Film Grain do the same (not changed here: the
+  owner's call). In om-emu the front dial does step Border, one value per click. Camera: not known whether it does.
+- Upstream a2551d0 (try/v0.40-alpha) behaves the same: main+1 2 -> 1, sub+1 x2 1 -> 3. Not caused by perf-040.
+- Cause (trace + disassembly): both rows end in the same SetValue call (0x611b4572: value = list[index]). The dial
+  step is 0x611b41f8. With the control's +152 = 1 it steps one fixed way. With +152 = 0 it takes a list's way, which
+  setting 307 = 16 flips. 0x611b77b2 sets +152 = 1 for the camera's own sliders after the list build (0x611b20ea).
+  Our bar rows get their list from the same builder but never get +152 = 1.
+- Fix: rv_chk (.ext11, already hooked from 0x611b21e8 inside the builder) writes 1 to the Border bar's control +152.
+  No new hook, no .ext1 bytes (.ext11 65072 -> 65088). After the fix, om-emu: main+1 2 -> 3 dot right, sub+1 x2
+  3 -> 1, left / right as before (2 -> 3, 1 -> 0 -> 1). Values and screens otherwise the same.
+- Not known: what else +152 changes for our bar (touch, other methods at 0x611b9243..). Nothing seen in om-emu.
+- Test: `border-dial-steps-as-contrast` (Contrast first, then Border, the same clicks). Caught on the b356d66 build.
+- **All our controls (2026-11-18, experiment/perf-040; emulator only, camera test pending):** owner asked that every dial
+  click steps as on Contrast. om-emu, one click of each dial on each row and page, compared with Contrast (rear +1 =
+  value up, dot right; front +1 = value down, dot left) or, for pages that are not bars, with the closest stock page:
+
+  | Control | Compared with | Before | After |
+  |---|---|---|---|
+  | Glow (screen +2) | Contrast | rear +1 -> +1, front +1 -> +3 | rear -> +3, front -> +1 |
+  | Halation 2 | Contrast | rear -> 1, front -> 3 | rear -> 3, front -> 1 |
+  | Split Tone Balance 2 | Contrast | rear -> 1, front -> 3 | rear -> 3, front -> 1 |
+  | Film Grain 2 | Contrast | rear -> 1, front -> 3 | rear -> 3, front -> 1 |
+  | Noise Filter, Vignette, Grain Size, the film row | Contrast | rear right, front left (both wrap at the ends) | same |
+  | Mix page (Sat / Hue) | stock Highlight & Shadow page | rear Sat +1, front Hue -1 | same |
+  | RGB page (Level / Pt) | stock Highlight & Shadow page | rear Level +1, front Pt -1 | same |
+  | Wheel: Hue, Lum, Shadows, Highlights, Extras | stock Saturation page | rear value +1, front the same next colour | same |
+  | Blacks / Whites grid | stock WB compensation grid | front +1 left (Blacks -1), rear +1 up (Whites +1) | same |
+  | WB grid row | is the camera's own WB screen | front +1 to B, rear +1 to G | same |
+
+- So only the bar rows ran opposite. Same cause as Border. Fix: rv_chk writes +152 = 1 for the Glow, Halation, Tone
+  Balance and Film Grain bars too (all its bar ids except Blacks / Whites, whose bars Picture Mode no longer shows:
+  their row is the grid). No new hook, no .ext1 bytes, .ext11 65088 (unchanged). Stored values the same per value;
+  left / right as before.
+- Film Grain: only the direction. Its byte +53 is the level (strength 1, 2, 3 -> level 1, 1, 2), so the test also
+  reads the strength from the debug log.
+- Tests: `glow-`, `halation-`, `tone-balance-`, `grain-dial-steps-as-contrast`, each caught on the f319a02 build.
+
+### Perf branch on v0.40 alpha: second camera test (2026-11-18; camera-tested, build d180028)
+- E1479999.BIN d1bfcf8a…, GUIDES.BIN 6f679bd4….
+- **Dials:** Border, Glow, Halation, Tone Balance and Film Grain step the right way.
+- **WB <-> Highlight & Shadow:** the one-frame flash is gone.
+- **Mix (R/G/B calibration):** feels faster. Values look right. The held-OK reset works.
+- **Color wheel:** feels a bit faster. Live view follows a click on Hue and Light.
+- **Shadows / Highlights tint:** the live view shows it only after the next autofocus. The owner sees this on AF,
+  which the half-press drives by default. Most likely not a regression: the tint is our st_run stage, which runs only
+  when the camera builds a live-view development job. Hue and Light go through the camera's own colour tables.
+  The 2026-11-15 notes ("RGB curves: live view refresh") found no refresh path for st_run under the old sector-id
+  write either, and the owner chose to keep the half-press for curves. Owner: not new, no fix now.
+
+## 2026-11-18 — Focus stacking lens unlock fs1 (Bensonson fork)
+
+Status: analysis and emulator only; no camera result. Target: M.Zuiko 17mm f/1.8 II and other otherwise eligible AF lenses. Upstream main e32363a lists this as Planned; no matching implementation found in its archive, history or current branch names. A related E-M1 II implementation is credited in docs/FOCUS_STACKING.md.
+
+Official OM-3 1.1 package SHA-256 8c133084414533159f587bf46bfb4152714c4074312a47c8d8503e33d605696d; decoded main SHA-256 5e8d376e9111a44ac0352f26030d7c1b17026d42c45f3600cfa02a0e8c5b7d59. The diagnostic string at 0x60a3c8cc identifies fcs_check_focus_stacking_enable at 0x60901988. First query 0x602f3671 → nonzero rejects at 0x60901992 (unchanged). Second query 0x602fdc68 → lens-record stacking flag at +119091; not 1 rejects at 0x6090199e. The sole behavior edit is the latter two-byte branch to NOPs. The routine still returns through its original diagnostic and register/stack epilogue. No added startup work or code space. Reviewed patch site 0x6090199e:2 added explicitly to hooks.json; no baseline regeneration.
+
+Test driver tools/emulator/focus_stacking.mjs runs this routine with controlled query results, checks four decision cases and preservation of d2/d3/a2/a3/sp. Real lens commands, focus travel and composite generation remain camera-only. Build identity fs1 makes this distinguishable from the camera-tested upstream release. See docs/FOCUS_STACKING.md for the pending camera checks.
+
+## v0.41-dev test 6: PR #82 + PR #79 merged (2026-11-18; emulator only)
+- Owner (2026-11-18, after a look at the open PRs): "Yes, both" (#82 and #79 into a v0.41 test build). Merged as their
+  authors wrote them: #82 (crombach, 6a18e0a, based on v0.40-alpha) at 073770d, #79 (Bensonson, 42a5beb, based on main
+  e32363a) at 18cca79. Text conflicts only (emu_test.py lists and constants, NOTES, hooks.json, VERSION).
+- At #82's merge (cad): its new bl_gv pre-check ("some COLOR slot with a Border 1..5?", `add -1; cmp 5; bcs`) read only
+  1..5, so black borders (-1..-5) would have lost the live view frame line: now -5..5 but 0 (extb, +5, < 11, != 5).
+  The comment first written for it swallowed the `mov 4,d1` after it; static:comment-swallow caught it before the
+  build.
+- Build `f032d80e…c02c` (a second build matches); static checks all pass (hook_rr from #82 in the list, #79's patch
+  site 0x6090199e:2); suite **88 of 88**. Package `test-builds/2026-11-18-v0.41-dev-test6`. Camera test pending.
+- **Test 6 camera-tested 2026-11-18** (owner: "this looks good, except turn the shading back to standard so it is as
+  quick as normal (the +2, -2)"); log clean; s1 at -5 took 2737 ms. **Test 7** (eaf07c7): XB_SH 0, the camera's own
+  Shading at every level (as p1 / p3 ran on the camera); build `94fbd976…2fab` (a second build matches), suite 88 of
+  88; package `test-builds/2026-11-18-v0.41-dev-test7`.
+- **Test 7 camera-tested 2026-11-18** (owner: "whatever I just flashed on my card is perfect"): log clean (5 photos,
+  the Shading pass never ran). On the way the owner asked for the Shading row "back to ... -2 to +2"; om-emu showed the
+  row runs -5..+5 on v0.40-alpha as released (rebuilt byte for byte, `fbef591d…`) and on test 7 alike, the camera's own
+  range, never changed by Caduceus; the owner then: "sorry I was wrong". Test 7 stays as it is.
+
+## #83: the crop back at start-up, crop round 11 (2026-11-18; emulator + analysis, camera test pending; branch fix/83-crop-at-start)
+- **Issue #83 (crombach):** after a power-off in XPan or 21:9 the camera starts in 16:9 (5:4: in 4:3) until the first
+  half-press. Owner (2026-11-18): "yes. lets fix #83": the crop there when the camera has started, as the films and
+  colour profiles already are. Branch from `try/v0.41-dev` 23116f3 (v0.40b = test 7, the build on the owner's camera).
+- **Why it waited (crop round 1):** the camera's saved settings never hold 5 / 6 / 7 (cr_sin / cr_sbuf save the base
+  ratio and our tag), and cr_rst ran only from cr_hp (nm_ex at a half-press load, lg_pr at a shutter event), never from
+  v0.30's early load (el_go, el_nc 1).
+- **Round 11:** `cr_el` (crop.s), called from gx_map right after the el_go block at every GUI state change while
+  `cr_on` is 0 (the GUI task: the state dispatcher, 0x610f6016), runs cr_rst. The camera's first state change is the
+  end of its start-up, where the early load already puts the films in (camera-tested since v0.30; bp1: after the
+  settings task's start-up writes, before the shooting screen asks for its label). Its gates: all ten sections copied
+  (SECBITS 0x3ff, as el_go; else the next state change tries again) and a photo mode, read as el_ok does (ss_photo once
+  rc_in is seen, else the photo / movie / S&Q switch UI_PSW 2): the camera's settings written while video live view
+  starts freeze it (#53, rc_go's rule). In video, a later state change in a photo mode or the first half-press (cr_hp,
+  the fallback, unchanged) puts the crop back. cr_rst keeps its three section-7 checks (SEC_READY 0x40; not ready:
+  cr_on back to 0, the next call tries again).
+- **cr_rst:** claims cr_on under LOCK first (cr_el in the GUI task and cr_hp in the HLS_EVENT task could meet: the
+  first one in does the work); notes where it ran in `cr_dwh` (1 start-up, 2 a shutter event). Its frame is now 24:
+  with `[d2,d3,a2,a3],20` its local (4) was the slot of a saved register (the frame rule, "locals only below N - 4 x
+  regs"); harmless before because cr_hp's own frame restored that register for its callers.
+- **Not changed:** the camera still never saves 5 / 6 / 7 (the save hooks as they were); nothing runs during the boot
+  itself (the restore waits for the GUI's first state change, which on the camera comes about 1.1 s after power-on,
+  bp1 timing); no new hook or patch site (gx_map's own code gains the call; static:hook-list and changed-bytes as
+  test 7). ar_setv is the call the dial handler makes in the GUI task (0x6109356f), the task cr_el runs in.
+- **Debug log:** the CROP MODES line now reads "CROP MODES (crop round 11): tag 43520006 at start-up, Image Aspect then
+  3, set to 6, after 6, now 6; ..." ("at the first half-press" for the fallback, "(not read yet)" before either).
+- **Tests:** `crop-xpan-back-at-start-up` replaces `crop-xpan-starts-as-16-9-and-comes-back`: boot 1 picks XPan,
+  power-off; boot 2: Image Aspect (M + 0x2c2) 6 and cr_on 1 before any half-press, the log line "at start-up";
+  `--without` test 7's build (94fbd976…): caught ("629209c2: 03, not 06"). `crop-start-up-restore-photo-only` calls
+  cr_el and cr_hp directly (12 cases: P; video code; code 0 with the movie, S&Q or photo switch; no manager handle with
+  the movie or photo switch; section 10 not copied; already put back; the half-press fallback; the half-press after a
+  start-up restore; the half-press load inside the early load): cr_rst runs only in the photo cases and the fallback.
+  om-emu cannot show a boot started in video: its driver sets the photo / movie switch (PSET0) only after its start-up
+  has passed the GUI's first state change, so a "video" boot 2 had already put XPan back in photo (a boot test tried
+  first, dropped for the direct one). `--without` test 7: caught (no cr_el). `crop-stock-ratio-left-alone`: the log
+  line now says "at start-up".
+- **Camera-only:** the timing (the restore adds an ar_setv at the GUI's first state change, after the films' 46..96 ms;
+  the live view is switched to the strip there, before the shooting screen's first label), start-ups in video with a
+  crop saved, several start-ups for lag or a black screen.
+- **User docs** (`docs/USING.md` "Switching on", CHANGELOG, release notes) still say the crop comes back at the first
+  half-press: to change at the release that takes this fix.
+- **Build** of d86fade: E1479999.BIN `3864267e…f185a` (a second clean build matches), VERSION "v0.41-dev crop83-1 (#83:
+  the crop back at start-up)". Suite **89 of 89 pass** (88 of test 7, the start-up test replacing the old one, plus
+  the direct test; static checks all pass: no new hook or patch site). Package `test-builds/2026-11-18-crop83-1`
+  (private folder), go-back v0.40b = test 7 `94fbd976…2fab`. Camera test pending.
+
+## #83 crop83-1 on the camera; crop83-2: the crop kept after its start-up restore (2026-11-18; crop83-1 camera, crop83-2 emulator + analysis)
+- **Camera, crop83-1** (owner: "the xpan fix on lasts through 1 power cycle. after the second power cycle it resets to
+  16.9"). Log of the failing power-on (private, `card-backups/2026-11-18-crop83-1-tested`): "tag 43520006 at
+  start-up, Image Aspect then 3, set to 6, after 6, now 3"; display 3, 900 x 506; histogram area 900 x 506, trimmed 1;
+  6 shutter events, 0 photos; the first look at event 1 with edits waiting (one films-block write, M's changed byte
+  still 1 at event 6). So the restore ran at start-up, the live view's histogram was set up once at XPan, and later
+  Image Aspect was 3 again: something put the base back after us, with no SetValue we made.
+- **Ruled out in om-emu (crop83-1's build):** power cycles with and without half-presses, a menu in and out, no
+  half-press at all (4 cycles each): XPan every time. ar_setv(269) updates both copies in M (+0x2c2 and +0x32458). The
+  stock store write 0x60061183 is called from 0x60063afc (the store task's message handler: command 1 saves the stores
+  whose flags are set, M without a callback at 0x60063c2c, which is where cr_sin patches the live value) and from
+  0x60063da9 (the GUI's save, with a callback: cr_sbuf patches only the buffer); om-emu sends command 1 only at
+  power-off.
+- **Order (om-emu trace, WTID):** the settings task (165) writes 15258, 15319 x2, 15313, then 897, 2188, 679, 680, 897,
+  15312, 15322, 897, 2136 before the GUI's (168) first state change, where el_go and cr_el run. On the camera (bp1)
+  that state change came after 897 and 2188, and task 167 still wrote 897 twice after the first label: the camera's
+  start-up goes on after our restore, om-emu's does not. A scratch build restoring at the GUI's first dispatcher pass
+  (before 897 .. 2136, the camera's order) still kept XPan in om-emu, so those writes alone do not undo it; om-emu runs
+  no live view. Cause on the camera: **not known**; most likely the rest of the camera's start-up (the live view's set-up or
+  the settings task's tail), racing our restore: crop83-1 held at one start, not the next.
+- **crop83-2 (crop round 12):** `cr_chk` keeps the crop set at start-up. It runs from `si_upd` (the shooting screen's
+  updater, GUI task 168 as cr_el; om-emu: about 6 passes a second) while `cr_rch` is 1, and once more from cr_hp at the
+  first shutter event, which closes it. If Image Aspect (M + 0x2c2) is back at the crop's base it sets the crop again
+  (ar_setv behind the SEC_READY 0x40 gate, cr_self around it), at most 3 times, photo modes only. It stops at the next
+  GUI state change (gx_map: any screen opened), at a ratio set through the facade from the GUI task (`cr_sv` in sx_set),
+  or at a ratio that is neither crop nor base. **Found while testing:** a ratio picked on the control panel does not go
+  through sx_set (om-emu: "others set Image Aspect 0 times"), and the updater does not run while the panel is open, so
+  without the state-change stop a pick of 16:9 from XPan was taken back.
+- cr_rst opens the window only after a start-up restore. Its not-ready exit (7) moved within short reach of its three
+  gates: with crop83-2's added lines the assembler had made the first `beq 7f` into `bne; jmp`, which
+  `static:section-order` (rightly) no longer reads as a gate.
+- **Log** (CROP MODES, crop round 12): "...; kept after start-up: checks N, base back at check K (tag in memory then T),
+  set again R; others set Image Aspect W times (last V, task X, GUI task G); save patches S". T is 4352000x only if our
+  own save patch cr_sin wrote it again after cr_rst cleared it (a no-callback save of M during the power-on); S counts
+  those patches; W / X show a write of 269 by the camera through the facade.
+- **Tests:** `crop-kept-when-the-camera-puts-the-base-back` (boot 2: after the restore, both copies poked to 3 as a
+  block copy would; XPan back before any half-press, "set again 1"; crop83-1's build: caught, "03, not 06"),
+  `crop-xpan-21-9-5-4-kept-over-power-cycles` (XPan at three start-ups with and without a half-press, then 21:9 and 5:4
+  back at the next start-up; passes on crop83-1 too: om-emu does not show the camera's revert),
+  `crop-user-pick-after-start-up-kept` (16:9 picked on the control panel right after start-up stays through a
+  half-press, "set again 0"), and cr_chk's limits as direct calls in `crop-start-up-restore-photo-only` (stopped at
+  ar_setv: in place, base back, 3 times already, video, a pick through the facade, 3:2).
+- **Camera-only:** whether the revert still comes, how soon after the restore (the check number), and whether the
+  updater runs before the first half-press on the camera (the checks count). If it shows "set again 3" with the base
+  back, the camera undoes it each time: a later restore point is the next try.
+- **Build** of cf91e1a: E1479999.BIN `2b48d6c1…bdf8` (a second clean build matches), VERSION "v0.41-dev crop83-2 (#83:
+  the crop kept after start-up)". Suite **92 of 92 pass** (static checks included; no new hook or patch site).
+  Package `test-builds/2026-11-18-crop83-2` (private folder), go-back v0.40b = test 7 `94fbd976…2fab`; TEST-STEPS
+  cover several power cycles in a row with and without a half-press, in XPan, 21:9 and 5:4. Camera test pending.
+
+## Live look: our tone rows follow live view at once (2026-11-18; emulator + analysis, camera test pending; branch feature/live-look-refresh)
+- Owner (2026-11-18): "get all the picture profile settings (especially split toning) applied immediately instead of on
+  half-press if possible. These should update in live view as we adjust them." Branch `feature/live-look-refresh` from
+  `try/v0.41-dev` 23116f3 (v0.40b = test 7, `94fbd976…`, rebuilt byte for byte here first).
+- **The rows, and how each reaches live view** (status words per row):
+
+  | Row | Where it acts | Live view before this branch |
+  |---|---|---|
+  | Picture Mode (film) | camera setting 111 / 901: the camera's own picture-mode change | at once (camera-tested 2026-11-17) |
+  | Color Mix | mx_go in the matrix function 0x605147a2, the development function's first stage; no mask test, runs every pass | most likely at once (analysis; not checked on the camera) |
+  | RGB | st_run / st_all on the tone tables | **next half-press** (camera-tested 2026-11-15, curves test 4) |
+  | HSL: Saturation | the camera's own setting per colour | at once (stock) |
+  | HSL: Hue, Luminance | hl_pp after the colour builder 0x60518381, which runs every pass for key 11 | at once (camera-tested 2026-11-18, perf branch test 2) |
+  | HSL: Shadows / Highlights (split toning) | st_run on the tone tables | **next AF / half-press** (camera-tested 2026-11-18) |
+  | Split Tone Balance | st_run | **next half-press** (analysis: same stage) |
+  | WB Compensation | wb_get at the camera's WB fine-tune reads (the pipeline parameter reads 0x604631b2 / c5 among them) | most likely at once (analysis) |
+  | Highlight & Shadow, Contrast, Shading | the camera's own settings | at once (stock) |
+  | B/W (Blacks / Whites) | `tone`: remaps the luminance LUT 0x60518db2 builds | **next half-press** (analysis: the LUT builder is mask-gated) |
+  | Sharpness, Noise Filter, Vignette Correction | capture reads only (hook_sh / nr1 / nr2, xb getter) | never: photos only (live view shows the camera's own values) |
+  | Glow | xb_lv in each live-view request (s_lv6) | Glow at once (analysis); Clarity never (invisible on combiner 12) |
+  | Halation, Film Grain, Grain Size, Border (image) | the still's development | never: photos only. Border's frame line is the screen's (border preview), not touched |
+
+- **Cause (analysis + om-emu).** Each live-view job (the request floods, gl2c camera log 2026-11-06) runs the development
+  function 0x605196b4 (both dispatcher wrappers 0x60519e3c / 0x60519e63 call it). Its stages read a mask in the job's
+  context C at C+60 and rebuild only when it asks: the RGB gamma stage 0x60516ad9 (copies the picture mode's curve into
+  O+1252.. unless its cache of the three curve pointers at (R+1524)+5220 matches and C+60 & 0x2230001e is 0), the
+  luminance LUT 0x60518db2 (0x4134063e), the tone curve 0x60518fa4 (0x3024ae); also 0x60515e64 (0x302006), 0x60517c71
+  (0x41300826), the colour stage's non-key-11 path 0x6051863f (0x3020ae), 0x6051958c (0xa00e). The colour builder (Hue /
+  Luminance) and the matrix function (Mix) have no mask test. Our split toning, Tone Balance and curves (st_run) bend the
+  gamma stage's tables and only when R = G = B (fresh), and Blacks / Whites (`tone`) remap the LUT, so a change of ours
+  waited for the camera's next own rebuild (a half-press, AF, a tone setting of its own).
+- **om-emu, the development function run whole** on a fake live-view job (research/splittone's fake COLOR job, R+14
+  0x0030, R+1524 pointing at a cache): first pass ~50k instructions, tables split-toned; after a split toning change a
+  pass with C+60 0 takes ~3.2k and keeps the old tables (the camera's symptom); with C+60 8 it takes ~50k and the
+  tables carry the new look; the next pass with 0 keeps them (~3.2k).
+- **Bit choice.** Bit 3 (8) is in the gamma stage's, the LUT's and the tone curve's masks, and otherwise only in
+  0x6051863f (not taken by a COLOR job) and 0x6051958c (0xa00e, after the tone curve). Bits 1, 2, 20, 21 are in nearly
+  every stage's mask (a full rebuild): not used.
+- **Built (`lv_ref`, colourmix.inc, ext12; no new hook, no hook moved).** mx_go (hook_mx, the development function's
+  first stage) calls it after its existing gates: SEC_READY (mx_g), cv_ok (the films read at the first half-press, so
+  nothing at power-on), the caller 0x605196fb, key 11 (or 12 with no filter), mx_photo (photos only: video and S&Q stay
+  stock, #68). It finds C through the development function's own frame ((24,sp) = C+12, at (108,F) from the matrix
+  function's frame F; R at (96,F) as mx_go already used). Not on still development (R+14 0x1000, built fresh). It
+  hashes the tone inputs of COLOR 1-4 (P slot +33, +47, +48, +55..+58; cv_ram live[k]'s 18 curve bytes, not the mix)
+  and keeps the hash per output O (C+12) in a 4-entry table (round robin; a new output is only recorded). When O's hash
+  changed since its last pass: C+60 |= 8, so that one pass rebuilds O's tone tables as the camera's own tone settings
+  do. The camera's own bits stay.
+- **Cost (om-emu).** An unchanged live-view pass: ~3,570 instructions (was ~3,200: +~380 for the hash and table). A pass
+  after a change: 50k..85k once per output (the camera's own build; 85k with curves and Blacks / Whites on). It runs on
+  the picture task, not in the dial click: the click (cv_ev, ed_set, tn_set, s_cur) is unchanged.
+- **Test `live-view-tone-tables-follow-a-change`** (direct call, the development function whole, 12 passes on one
+  output): first pass recorded only; unchanged and Hue-only passes keep C+60 0 and the tables; split toning, curves,
+  Tone Balance and Blacks change set 8 and rebuild (Blacks: O+3828 = O+3832, the LUT remapped); the camera's own bit
+  0x40 kept; a still pass leaves C+60 alone and the next live pass catches its change; video leaves it alone; a fresh job
+  with the last look gives the same tables as the bit-set pass. Passes on this branch (full suite 89 of 89, build
+  `3f9dc989…4c9f`, package `test-builds/2026-11-18-live-look-1`); `caught` on test 7 (`94fbd976…`:
+  "split-toning: C+60 after the pass is 0x0, want 0x8 ... the tables were not rebuilt with the new look").
+- **Not known (camera only):** whether the camera's live-view contexts take C+60 per pass as the fake job does (if the
+  camera kept it between passes, its own tone changes would rebuild forever, so most likely per pass); whether live view
+  uses more than 4 outputs (then a change could miss one until the next half-press: no harm); how smooth it looks while
+  turning; Color Mix and WB Compensation (expected at once already: analysis). Test build: live look 1.
+
+## v0.41-dev test 8: crop83-2 + live look 1 (2026-11-18; emulator only)
+- Owner: "lets also combine them into one test build" (after crop83-1 held XPan one power cycle only). Merged
+  fix/83-crop-at-start (crop83-2, 13a615a) at ab867bf and feature/live-look-refresh (live look 1, cb1c865) at e08828d;
+  text conflicts only (VERSION, NOTES, emu_test.py: DIRECT takes CROPEL and LIVE). Build `af37586c…5f4c` (a second build
+  matches); static checks all pass, no new hook; suite **93 of 93**. Package `test-builds/2026-11-18-v0.41-dev-test8`,
+  go-back v0.40b. Camera test pending.
+- **Test 8 camera 2026-11-18:** live look **camera-tested** (owner: "the live view updates work flawlessly!!!"). The crop
+  not kept even one power cycle (owner: "xpan doesnt even last through one power cycle"); log: "tag 00000000 at
+  start-up ... kept after start-up: checks 0 ... save patches 2": the tag in M was gone by the power-off, so nothing
+  to restore -> crop83-3 (the #83 session).
+
+## #83 crop83-3: the crop put back after the camera's own save of M (2026-11-18; test 8 camera, crop83-3 emulator + analysis)
+- **Camera, test 8** (crop83-2 + live look 1, `af37586c…`; owner: "xpan doesnt even last through one power cycle"). Log
+  of the last power-on (private, `card-backups/2026-11-18-v0.41-dev-test8-tested`): "tag 00000000 at start-up ... now
+  2; ... histogram trimmed 5; kept after start-up: checks 0 ...; save patches 2". The previous power-off sealed no
+  tag, and in this power-on cr_sin patched the live value twice: **the camera saves M without a callback while it runs**
+  (the store task's command 1, 0x60063afc -> 0x60063c2c), not only at power-off. When is not known (3 photos in that
+  power-on); om-emu does it only at power-off (and once on a blank camera's first start).
+- **Why that loses the crop (stock code, 0x60061183):** without a callback the write compares the RAM image with
+  flash, then counts, seals and writes the RAM image itself (0x60061214: d3 stays the image; only the callback path
+  copies to the buffer 0xa373d280). So cr_sin must patch the live Image Aspect to the base for the saved bytes, and
+  nothing put the crop back: the screen went to 16:9, and the power-off save then found no crop and sealed tag 0.
+  Most likely crop83-1's revert after its start-up restore too (its log had no save counter yet).
+- **crop83-3:** when cr_sin patches a crop, it saves the caller's return address ((32,sp): all four callers use
+  `call 0x60061183,[d2,d3,a2,a3],32`, and every exit is `ret [d2,d3,a2,a3],32`) and puts `cr_sinr` there.
+  `cr_sinr` puts the crop back into both copies if the live value is still the base it wrote, then returns
+  to the caller with the write's result (d1 / a0 / a1 / MDR free; d2 / d3 / a2 / a3 already the caller's). The
+  saved image keeps the base and the tag; the RAM image's checksum is stale until the next save, as after any setting
+  change. cr_rst and cr_chk do not call ar_setv while such a write is out (cr_sra: the write goes out of RAM). No new
+  hook or patch site. crop83-2's cr_chk stays as a safety net; drop it if camera logs keep "set again 0".
+- **Reproduced in om-emu:** XPan set, then the camera's own write called directly (ncall: `call 0x60061183`, a0 = M's
+  handle, a1 = 0; it returns after ~2.9 M instructions in S-NVRAM mode): crop83-2 leaves both copies at 3 ("03, not
+  06", test 8's failure); crop83-3 has 6, 6 and tag 43520006 in RAM right after it, and the next start comes up in
+  XPan. Test `crop-kept-over-a-save-of-m-while-on` (crop83-2's build: caught).
+- **Log** (crop round 13): "...; saves of M this power-on: from memory N (crop put back after R), after a menu M, last
+  tag written T". N counts every save of M without a callback (crop or not), M those through the buffer; the next
+  start's "tag ... at start-up" is what the power-off save kept.
+- **Branch:** fast-forwarded to try/v0.41-dev 3c2ee5c (crop83-2 + live look 1, test 8) first; crop83-3 = test 8 + this.
+- **Build** of 83d2fba: E1479999.BIN `39634ace…cc08` (a second clean build matches), VERSION "v0.41-dev crop83-3 (#83:
+  the crop kept over saves of M)". Suite **94 of 94 pass** (static checks and live look's tests included). Package
+  `test-builds/2026-11-18-crop83-3` (private folder), go-backs test 8 `af37586c…5f4c` and v0.40b `94fbd976…2fab`;
+  TEST-STEPS: XPan set and switched off at once, cycles with and without a half-press and with photos, 21:9, 5:4.
+  Camera test pending.
+- **crop83-3 camera-tested 2026-11-18** (owner: "the xpan fix worked!!!!"): `39634ace…cc08` = test 8 + the crop put back
+  after each save of M while on (cr_sinr). Log of the last power-on: "saves of M this power-on: from memory 8 (crop
+  put back after 8), after a menu 7, last tag written 43520006", now 6 (XPan), nothing unusual. try/v0.41-dev
+  fast-forwarded to fix/83-crop-at-start (17b1d73): #83 fixed in the v0.41 line; issue #83 not answered yet.
+
+## Our version on the Firmware Version screen: fwver 1 (2026-11-18; emulator only, camera test pending; branch feature/firmware-version-screen)
+- Owner (2026-11-18): "getting our firmware version listed where you can see the other firmware version in the menu".
+  Picked up from the 2026-11-12 first look (above). Result: the page shows "Caduceus : v0.41-dev" (firmware/VERSION's
+  first word) under "Body : 1.1"; emulator only.
+- **How the "0.0" was found:** dumps of RAM before / after OK, searched for UTF-16 "0.0"; write probes on the new copies
+  (om-emu `Debugger.probes` mem ranges) caught the wide sprintf 0x610fc42c writing it, with the format "%X.%X" at
+  0x61595ada next to debug strings "Menu_Version_Viewer::part_guide", "inside /* Body if */", "VerInfo = %d". The
+  2026-11-12 note that 0x610fc42c is not used for this page was wrong (that trace watched the draw, not the build).
+- **The build:** Menu_Version_Viewer's method 0x6120af34 (a0 the viewer; frame 84: (20,sp) the block = viewer + 2460,
+  (24,sp) block + 608, (28,sp) the viewer, (32,sp) a line index, (36,sp) the label table 0x61595a28). The block:
+  +0 the line count; +4 + 124 k line k's record (0x611c782f(a0 viewer, d0 record, a1 label) copies a label
+  {u16 type, u16 id, ptr}: type 4 = a string id, kept at record +4; types 1/2/5/6 carry an ASCII text, made wide at
+  record +12); +516 + k / +560 + k the ":" / value widgets' look (5 at the start, 0 for a line with an update);
+  +520 + 10 k the value text ("%X.%X", 10 bytes a line, to +560); +564 + k / +568 + 10 k a second value ("1.1 -> 1.2",
+  the update view); +608 + 2 k two style bytes. Labels 0x615959d8.. = {4, 0x6c3 "Body"}, {4, 0x6c4 "Lens"},
+  {4, 0x6c5 "Flash"}, {4, 0x6c6 "Acc"}. Body: "if" branch (0x6120b110, a new version readable: the update view, the
+  line highlighted with an arrow and a second value) or "else if" (0x6120b1c4: label and value only); om-emu takes
+  "else if" ("Body : 0.0"). Then Lens (0x6120b217, vtable +16 with 7), Flash (12), Acc (9), each added at index a3.
+  **Every path ends at 0x6120b698** (mov (20,sp),a0; mov a3,d0; movbu d0,(a0); ret [d2,d3,a2,a3],84).
+- **The page:** the GUI copies the block's first 616 bytes (a DMA / native copy: CPU write probes see nothing) and its
+  binder 0x6115e98d switches on the count (1 -> 0x6115e9af, 2 -> 0x6115ebb4, 3 -> 0x6115ee43, 4 -> 0x6115f057): one
+  layout per count, rows at y 269 / 237, 301 / 205, 269, 333 / 173, 237, 301, 365 (om-emu's 900 x 600 screen). Per line:
+  label widget (0x6128b0fd from the record; type 4 -> the string getter 0x610f56a6, so st_get answers our ids), ":"
+  (0x614213e0), value (0x610e2165: compares, then copies the text up to its 0 into a heap string: any length).
+  Geometry table 0x61420000..0x614201b8, (x, y, w, h) shorts, two places per item (the item records 0x6142095c + 0x60 n
+  point at the first): label 213 / 263 (w 160, right-aligned), ":" 393 / 443, value 427 / 477 (**w 80**), second value
+  537 / 587. The second places (263 / 443 / 477) are the plain lines; the first the update view's (shifted 50 px left
+  for the arrow and second value).
+- **fwver 1 (firmware/src/fwver.s):** hook_fv at 0x6120b698 -> fv_add (ext13): with 1..3 camera lines, line k = the
+  count gets our label {4, ST_FWV 0x7f64} through 0x611c782f and the name copied to +520 + 10 k, running on into the
+  free slots after it (14 letters with 1 camera line, 9 with 2, 4 with 3); a name that does not fit is left out whole.
+  The looks bytes are left as the build's start set them, as the camera's own "else if" lines: plain, never the update
+  view's highlight (a first try copied line 0's looks: in the update view our line came out highlighted with the
+  Body line, so that was dropped). st_get's end (st_stk) jumps to fv_chk (ext13; same 5-byte jmp, nothing in ext11
+  moves) for "Caduceus", then crop.s cr_str as before. build.py DATA widens the 7 plain value boxes 80 -> 300 px (x 477
+  + 300 = 777 of 900): at 80 px "v0.41-dev" showed as "v0.4" (clipped). The camera's "1.1" stays at the box's left;
+  the update view's boxes (x 427) are left alone.
+- **Emulator (forcing branches with pokes on the build's code: 0x6120b10b c8 -> ca the Body "if" branch, 0x6120b22b
+  -> the Lens line, 0x6120b3ac -> the Flash line):** Body + ours; update view: Body highlighted with "0.0 -> 0.0", ours
+  plain below; Body, Lens, ours; Body, Lens, Flash: no line of ours (4 letters of room); update view + Lens + ours.
+  OK goes back to the same menu screen. **Not known:** the camera's look (font, colours) and which Body branch the
+  camera takes with no update file (expected: "else if", the plain line).
+- **Tests (tools/test/emu_test.py):** firmware-version-page-shows-our-line, -long-name-shows-whole (14 letters poked
+  into fv_ver, which build.py pads to 16; ink right of the old 80-px edge: a build without the wider boxes fails it,
+  "no ink"), -our-line-after-a-lens, -name-too-long-left-out, -line-not-at-start-up (fv_add never reached by a boot
+  with no menu). Driver tokens: `atmem:PC:REG+OFF*+OFF=HEX` (memory checked when the code reaches PC; several add up:
+  om-emu has one exec trace) / `expect:atmem`, `expect:ink:` / `expect:noink:` (a screen box with / without drawing).
+- Start-up rule: hook_fv runs only inside the page's build (a menu key); the hook is in section 7, our code in ext13
+  (section 6), section-order passes. hooks.json: hook_fv and the 7 width runs 0x614200ec..0x6142014c:2, reviewed.
+
+## v0.41-dev test 9: crop83-3 + fwver 1 (2026-11-18; emulator, on the owner's card)
+- Owner approved fwver 1's hook ("Yes, approve it"); merged feature/firmware-version-screen at 41d3087 on top of the
+  camera-tested crop83-3 (try/v0.41-dev at 01eefc9). Conflicts: VERSION, NOTES. Build `ac702af7…3065` (a second build
+  matches); static checks all pass; suite **99 of 99**. On the owner's card 2026-11-18 ("copy it to the card when
+  ready"), sha256 checked. Camera test pending.
+
+## framelines-1: the camera's aspect frame lines at the crop's edges (2026-11-18; emulator + analysis, camera test pending)
+- **Owner (2026-11-18, photo of the rear screen in XPan):** "Can we get the frame lines (the green lines in the photo I
+  attached) to match the crop mode like it does on the default crop modes." The green lines sat at 16:9's edges at
+  XPan (the leftover noted in crop round 2), at 21:9 too, and at 4:3's at 5:4.
+- **om-emu draws them** (very faint, no live view): rear 900 x 600, 4:3 columns 50 / 850, 16:9 rows 47 / 552, 3:2 none;
+  viewfinder (`DEVICE=evf`, 1024 x 768 = the GUI's 800 x 600 x 1.28) 16:9 rows 97 / 672, 4:3 none. On test 9 XPan and
+  21:9 showed 16:9's, 5:4 4:3's.
+- **Where they come from (om-emu bisect + analysis):** the 16 shooting-screen reads of 269 go through cr_gv (crop ->
+  the ratio it sits in); pointing groups of them back at the stock getter at XPan (runtime pokes) showed site 5,
+  **0x612385d1**, alone decides the lines (raw 6: no lines, a lookup miss). It sits in **0x6123853c**
+  (`movm [d2,d3,a2,a3]; add -36,sp`, frame 52), which writes a **frame style** u16 into the shooting screen object at
+  +2962 (a3) from the ratio: rear 4:3 8, 16:9 10 (13 in one mode), 1:1 11, 3:4 12, 17:9 13, 3:2 32 (none); viewfinder
+  ((12,sp) 3) 3:2 15, 16:9 16 / 19, 1:1 17, 3:4 18, 4:3 32; a third display's path writes 2..7 (no table entry). A
+  second writer, 0x61238902 (+2960, site 7), writes 8..18 and 9 / 14 for another item: left alone (its site did not
+  move the rear lines).
+- **The table:** 0x60377760 (section 2), 24 entries of 20 B {u32 style, u32 on, u16 kind, i16 x0, y0, x1, y1, u16 0},
+  styles 8..31; **lookup 0x61176b7a** (sub-panel +1098 = the style; the first entry that is on and matches -> its
+  rectangle to the frame widget, 0x6128acd1, kind to method 432; style 0 or >= 32: hidden). The lines are the
+  rectangle's edges: 8 (50, -1, 850, 600), 10 (-1, 47, 900, 552), 11 (150, -1, 750, 600), 13 (-1, 62, 900, 537),
+  16 (-1, 75, 800, 524). Off (rectangle 0) and never written by either writer: 22, 26, 27, 29, 30, 31.
+- **framelines-1:** crop.py (4b) fills those six with the crops' rectangles (crop round 2's areas): rear XPan
+  (-1, 134, 900, 465), 21:9 (-1, 107, 900, 492), 5:4 (75, -1, 825, 600) = 26, 27, 29; viewfinder XPan
+  (-1, 152, 800, 447), 21:9 (-1, 129, 800, 470), 5:4 (25, -1, 775, 600) = 30, 31, 22. Site 0x612385d1 calls
+  `cr_gvf` (crop.s, in .ext13: .ext12 was 32 B short): as cr_gv, and with a crop set (cr_on, 269 = 5..7, a photo mode,
+  none pending) it puts `cr_fst` in place of 0x6123853c's return ((80,sp): its 52 + the getter call's 28), as cr_sinr
+  does for the save. cr_fst: 10 -> 26 / 27, 16 -> 30 / 31, 8 -> 29, 32 with (6916,this) 5 (the viewfinder) -> 22, any
+  other style as it is; back through MDR with d0 / d1 / a0 / a1 as the function left them. Before the first restore of
+  a power-on and in video: cr_gv's path. Log (crop round 14): "frame lines set to the crop N".
+- **Not covered:** the third display's styles (2..7, 20..28: its own family, field 2), and 13 / 19 (16:9 in the mode
+  that gives the 17:9 frame): those keep the base's frame.
+- **om-emu (build of dcb0f2e):** rear XPan rows 134 / 465, 21:9 107 / 492, 5:4 columns 75 / 825, none at 16:9's 47 or
+  4:3's 50; 4:3, 16:9, 3:2, 1:1 as before; viewfinder XPan 195 / 573, 21:9 166 / 603, 5:4 columns 32 / 993, 16:9 97 /
+  672 as before; video with XPan saved: no line at 134. Tests `crop-frame-lines-at-the-crop-edges`,
+  `crop-frame-lines-stock-ratios-unchanged`, `crop-frame-lines-in-the-viewfinder` (the driver takes `DEVICE=evf` now:
+  `session_ed1.mjs` runs and shoots that device), `crop-frame-lines-not-in-video`; test 9's build: caught.
+- **New patch sites (owner's OK needed to record them in hooks.json; static:changed-bytes fails until then):** the six
+  table entries 0x60377878 (22), 0x603778c8 (26), 0x603778dc (27), 0x60377904 (29), 0x60377918 (30), 0x6037792c (31),
+  20 B each, data in section 2 read only by the GUI's frame lookup (section 7) while it draws the shooting screen; the
+  camera never selects these styles, only cr_fst does, after the first restore of a power-on. No new code hook.
+- **Build** of dcb0f2e: E1479999.BIN `9b8efa91…0116` (a second clean build matches), VERSION "v0.41-dev framelines-1
+  (frame lines at the crop edges)". Suite **102 of 103**: the one FAIL is `static:changed-bytes` for the six table
+  entries above (hooks.json not changed: the owner's OK first). Package `test-builds/2026-11-18-framelines-1`
+  (private folder), go-back test 9 `ac702af7…3065`, with an emulator before / after picture. Camera test pending.
+- **framelines-1 camera-tested 2026-11-18** (owner: "that works!!!!"): the aspect frame lines at the crop's edges.
+
+## v0.40-beta: the release (2026-11-18; camera-tested, GitHub pre-release)
+- try/v0.40-beta = try/v0.41-dev 2a86f1e (v0.40b, live look, #83, the version screen, the frame lines) + VERSION
+  "v0.40-beta (crops at switch-on, live looks, black borders)" + releases/v0.40-beta + docs. The first package
+  (741c17da…fee1; suite 103 of 103) showed no line of ours on the Firmware Version page with a lens on (owner: "our
+  firmware isnt listed in the firmware section on the menu anymore"): 10 letters where 9 fit beside a Lens line. Fix
+  3e01717: the page shows VERSION's first word without its "v" ("0.40-beta"); build.py asserts 9 letters at most; test
+  firmware-version-build-name-fits-after-a-lens (caught on the first package). Second package `f5771793…8c73`
+  (patch.py --release v0.40-beta rebuilds it), suite **104 of 104**. **Camera-tested 2026-11-18** (owner: ".40 beta
+  looks good. lets push the beta to github"). Published as a GitHub pre-release from try/v0.40-beta, as v0.40-alpha.
 
 ## LookLab matched to the camera: calibration cards 1-3 (2026-11-18; branch feature/looklab-camera-match; camera photos)
 - Owner: "the goal here is to perfectly (as possible) match looklab to the camera"; "shading is way way to subtle in

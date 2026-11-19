@@ -34,7 +34,6 @@ export const OM3_CAL = {
    *  old symmetric S-curve (white patch +4 L a step); films left out of the fit 4.70 -> 4.37 and 3.99 -> 3.95.
    *  Contrast -1 / -2 (no shots) are taken as the mirror. */
   contrast: [0, -0.0042, -0.0216, -0.0039, 0.0053, 0.0265, 0.0442, 0.0684, 0],
-  satRamp: 0,   // chroma (0..~0.5) below which a colour gets only part of its sector's saturation change (0 = all of it)
 };
 export type SectorCal = Pick<typeof OM3_CAL, 'gainPos' | 'gainNeg' | 'hueDown' | 'hueUp' | 'light'>;
 const L_LUT = [-300, -250, -200, -150, -100, -50, -25, 0, 25, 50, 100, 150, 200, 250, 300];
@@ -205,6 +204,8 @@ export function renderLook(src: ImageData, dst: ImageData, look: Look, opt: Prev
     const t = mw[0] + mw[1] + mw[2];
     mw = [mw[0] / t, mw[1] / t, mw[2] / t];
   }
+  const cosS = new Float64Array(BINS), sinS = new Float64Array(BINS);
+  for (let b = 0; b < BINS; b++) { cosS[b] = lut.satMul[b] * Math.cos(lut.shift[b]); sinS[b] = lut.satMul[b] * Math.sin(lut.shift[b]); }
   for (let i = 0; i < n; i++) {
     const q = i * 3;
     const r = img[q], g = img[q + 1], b = img[q + 2];
@@ -217,11 +218,9 @@ export function renderLook(src: ImageData, dst: ImageData, look: Look, opt: Prev
       let hd = (Math.atan2(cr, cb) * 180) / Math.PI;
       if (hd < 0) hd += 360;
       const bin = Math.min(BINS - 1, (hd * (BINS / 360)) | 0);
-      const ang = (hd * Math.PI) / 180 + lut.shift[bin];
-      const sm = lut.satMul[bin], ramp = om3 ? OM3_CAL.satRamp : 0;
-      const ch = chroma * (ramp > 0 ? 1 + (sm - 1) * Math.min(1, chroma / ramp) : sm);
       y += lut.lsum[bin] * Math.min(1, chroma / 0.25);
-      cb = ch * Math.cos(ang); cr = ch * Math.sin(ang);
+      const c0 = cb;
+      cb = c0 * cosS[bin] - cr * sinS[bin]; cr = c0 * sinS[bin] + cr * cosS[bin];
     }
     let R = y + 1.402 * cr, G = y - 0.344136 * cb - 0.714136 * cr, B = y + 1.772 * cb;
     R = clamp01(R); G = clamp01(G); B = clamp01(B);

@@ -33,6 +33,7 @@
  * The COLOR hook reads the published block only; STATE 0 / 0xFFFF -> stock output.
  * No store into the loaded image; stores: STATE (2x), the heap block, stack frames.
  */
+ .include "screeninfo.inc"        /* screen info: ids, SICHK */
 .section .hook_color,"ax"
  jmp hl_pp
 .section .hook_shutter,"ax"
@@ -40,7 +41,7 @@
 .section .hook_set,"ax"
  call cv_sv,[d2,d3,a2,a3],68      /* stock: call 0x60bb528f,[d2,d3,a2,a3],68 (settings manager); cv_sv (rgb-curves page) -> sl_set -> ed_set */
 .section .hook_tone,"ax"
- call tone,[d2,d3,a2,a3],56       /* stock 0x605197d7: mov d3,a0; call 0x60518fa4,[d2,d3,a2,a3],56 */
+ call tn_g,[d2,d3,a2,a3],56       /* stock 0x605197d7: mov d3,a0; call 0x60518fa4,[d2,d3,a2,a3],56. tn_g: tone once section 6 is in */
 .section .hook_rng,"ax"
  jmp sl_rng                       /* v0.23 stock 0x611d1041: call facade; mov 7,d0; bra (the Sharpness slider's -2..+2) */
  .byte 0xcb,0xcb,0xcb,0xcb,0xcb,0xcb
@@ -83,6 +84,10 @@
  .byte 0xcb
 .section .hook_pe,"ax"
  jmp gr_end                       /* stock 0x611d059c (Picture Mode update's end): mov (12,sp),d0; cmp 0,d0; bne 0x611d05b2 */
+ .byte 0xcb
+.section .hook_rr,"ax"
+ jmp rr_g                         /* stock 0x611356e6 (property 275's handler, the row refresh): movm [d2,a2,a3],(sp);
+                                   * add -16,sp; mov a0,a2 */
  .byte 0xcb
 .section .hook_ic,"ax"
  jmp cv_ic                        /* rgb-curves cv_ic, then v0.27: ar_ic (▲ / ◀ pictures), then ic_get. v0.23 stock 0x610f5611 (picture id -> its slot in the picture table): mov d0,d1;
@@ -214,10 +219,19 @@
 74:
  .endm
 
+ .set SEC_READY, 0xa32de58c       /* bit id - 1: section id is ready (crop.s sets the same) */
+
 hl_pp:
  call color_builder,[d2,d3,a2,a3],96
- movhu (STATE),d0
+hl_pp_cb:                         /* tools/test/emu_test.py enters here */
+ mov 0x202,d1                     /* want 2 << 8 | mask 2 */
+ mov 32 + 31,a0
+ mov (SEC_READY),d0               /* section 6 (slot_any) ready? Before it STATE is 0: the same exit */
+ and 0x20,d0
+ beq 8f                           /* short, so the gate stays right before the call; Z still set at 8 */
+ call slot_any,[d2,d3,a2],16      /* P valid and some COLOR slot with H/L on (+31 & 2)? Else no getter call */
  cmp 0,d0
+8:
  beq hl_out
  mov 63153,d0                     /* effective COLOR profile number (as capture population) */
  clr d1
@@ -228,17 +242,10 @@ hl_pp:
  cmp 4,d0
  bcc hl_out                       /* not COLOR1..4 */
  mov d0,d1                        /* d1 = slot 0..3 */
- movhu (STATE),d0
- add -1,d0                        /* h - 1 */
- cmp HMAX,d0
- bcc hl_out                       /* 0 (-1 wraps), 0xFFFF and out-of-pool handles */
- btst 3,d0
- bne hl_out
+ movhu (STATE),d0                 /* P, valid since slot_any: STATE and the header change only before publish */
+ add -1,d0
  mov d0,a1
  add POOL,a1                      /* a1 = block (uncached) */
- mov (a1),d0
- cmp MAGIC,d0
- bne hl_out
  asl 6,d1
  add d1,a1
  add 32,a1                        /* a1 = slot entry */
@@ -441,8 +448,8 @@ d_stock:
 
 /* ed_set <- 0x60b8798b `call 0x60bb528f,[d2,d3,a2,a3],68` in the facade SetValue (mode 0): entered exactly like
  * the settings manager (d0 id, d1 value, a0 inner, a1 mode; d2/d3/a2/a3 saved by the call; return address at
- * (68,sp)). H/L hit: value -5..5 into the table, slot H/L bit, dirty; then the manager runs for the id with its
- * unchanged Saturation value, so its listeners refresh the screen as after a stock edit. */
+ * (68,sp)). H/L hit: value -5..5 into the table, slot H/L bit, dirty; then the manager runs for COLOR k's cursor
+ * 2197 + k with its unchanged value (s_cur), so its listeners refresh the screen. */
 ed_set:
  WHERE s_stock
  cmp -5,d1
@@ -466,7 +473,12 @@ ed_set:
  movbu (d2,a2),d1
  or 2,d1
  movbu d1,(d2,a2)                 /* ... then the slot's H/L enable bit ... */
-s_dirty:                          /* test 16: hand edits belong to the selected bank profile (saved back at the half-press) */
+s_cur:                            /* wheel pages: d2 = P offset of a byte in slot k, 64k + 32 + x (x < 64) -> the refresh */
+ mov d2,d0                        /* writes COLOR k's cursor 2197 + k (~17k instructions; the sector id's write re-checks */
+ add -32,d0                       /* 37 more settings, ~375k). The cursor write redraws the wheel (k_cur's poke). */
+ lsr 6,d0
+ add 2197,d0
+s_dirty:                        /* test 16: hand edits belong to the selected bank profile (saved back at the half-press) */
 s_dirty2:
  mov 1,d1
  movbu d1,(DIRTY,a2)              /* ... then dirty (saved to the card on the next half-press) */
@@ -518,7 +530,7 @@ s_x:                              /* Extras page: d2 = 64*slot + slice, d1 = val
  and 0x7f,d1
  movbu d1,(d2,a2)
 7:
- bra s_dirty
+ bra s_cur
 s_bad:
  clr d0
  ret [d2,d3,a2,a3],68
@@ -551,6 +563,15 @@ wb_get:
  mov d0,d2                        /* key (d2/d3 saved by the site's call) */
  call getter,[d2,d3],12           /* the stock value */
  mov d0,d3
+ mov 0x181,d1                     /* want 1 << 8 | mask 0x81 */
+ mov 32 + 25,a0
+ mov (SEC_READY),d0               /* section 6 (slot_any) ready? Before it STATE is 0: the same exit */
+ and 0x20,d0
+ beq 8f                           /* short, so the gate stays right before the call; Z still set at 8 */
+ call slot_any,[d2,d3,a2],16      /* P valid and some COLOR slot with the WB flag? (else no more getter calls) */
+ cmp 0,d0
+8:
+ beq 9f
  mov 38017,d0                     /* picture mode (6 -> 40209), as capture population reads it */
  clr d1
  mov 0,a0
@@ -575,17 +596,10 @@ wb_get:
  cmp 4,d0
  bcc 9f
  mov d0,d1                        /* slot 0..3 */
- movhu (STATE),d0
+ movhu (STATE),d0                 /* P, valid since slot_any: STATE and the header change only before publish */
  add -1,d0
- cmp HMAX,d0
- bcc 9f
- btst 3,d0
- bne 9f
  mov d0,a1
  add POOL,a1
- mov (a1),d0
- cmp MAGIC,d0
- bne 9f
  asl 6,d1
  add d1,a1
  add 32,a1                        /* slot entry */
@@ -626,66 +640,6 @@ wb_get:
  mov d3,d0
  ret [d2,d3],12
 
-/* pf_cnt <- facade vtable +28 word 0x60e57490 (count, stock 0x60b86e09): d0 id, a0 facade -> d0 count. COLOR1-4
- * cell ids 928..975 ask code block +96 (xb_cv: the Looks page's 12 o'clock 0..5; v0.21 an Extras cell its own range,
- * so the dial stops at the ends); anything else, or no answer: stock. */
-pf_cnt:
- movm [d2,d3,a2],(sp)
- add -4,sp
- mov d0,d2
- exthu d0
- add -928,d0
- cmp 48,d0
- bcc 9f
- call xp,[],0
- beq 9f
- add 96,a1
- mov d2,d0
- calls (a1)                       /* -> d0 count, d1 1 hit / 0 miss */
- cmp 0,d1
- bne 8f
-9:
- mov d2,d0
- add 4,sp
- movm (sp),[d2,d3,a2]
- jmp stock_cnt
-8:
- add 4,sp
- movm (sp),[d2,d3,a2]
- rets
-
-/* pf_vbi <- facade vtable +32 word 0x60e57494 (value by index, stock 0x60b87031): d0 id, d1 index, a0 facade,
- * a1 out (or 0) -> d0 value (-1 = no such index), (a1) = the same. Cell ids 928..975: code block +104 (xb_vb,
- * d3 = out); anything else, or no answer: stock. */
-pf_vbi:
- movm [d2,d3,a2],(sp)
- add -4,sp
- mov d0,d2
- mov a1,d3
- mov d1,a2
- exthu d0
- add -928,d0
- cmp 48,d0
- bcc 9f
- call xp,[],0                     /* keeps d1 */
- beq 9f
- add 104,a1
- mov d2,d0
- calls (a1)                       /* d0 id, d1 index, d3 out -> d0 value, d1 1 hit / 0 miss */
- cmp 0,d1
- bne 8f
-9:
- mov d2,d0
- mov a2,d1
- mov d3,a1
- add 4,sp
- movm (sp),[d2,d3,a2]
- jmp stock_vbi
-8:
- add 4,sp
- movm (sp),[d2,d3,a2]
- rets
-
 .balign 2
 hl_lut:                           /* +0: hue raw[ui+7] (15 hw); +30: lightness raw[ui+7]; +60: perm[12] */
  .hword 7000,6000,5000,4000,3000,2000,1000,0,-1000,-2000,-3000,-4000,-5000,-6000,-7000
@@ -709,6 +663,13 @@ sd_z:
  cmp 1024,d2
  bne sd_z
  call sd_def,[d2],8               /* built-in defaults into the block */
+ mov (SEC_READY),d0               /* section 6 (ub_chk) ready? Else the read, as before */
+ and 0x20,d0
+ beq 7f
+ call ub_chk,[d2,d3,a2,a3],20     /* a valid block: ub_bun overwrites the whole file, so no read */
+ cmp 0,d0
+ bne sd_pub
+7:
  mov sd_path,a0
  mov sd_mode,a1
  call fopen,[],4
@@ -1383,6 +1344,9 @@ e_rst:
  mov (12,sp),d0                   /* colour mix: and its mix off */
  add -2197,d0
  call mx_zk,[d2],8
+ mov (12,sp),d0                   /* g2: and its Film Grain strength / size follow the level (0 now): G 0 */
+ add -2197,d0
+ call gs_zk,[d2],8
  mov 1,d0
  movbu d0,(DIRTY,a2)              /* saved to the card on the next half-press */
  cmp 0,d2
@@ -2092,15 +2056,31 @@ pf_put1:                          /* v0.24 (fl_sw): (4) a0, (8) a1, (12) k set, 
  movbu (d2,a1),d1
  extb d1
 6:
+ call pf_eq,[d2,d3,a2,a3],28      /* the camera's value already this one: no write (as rc_put) */
+ cmp 0,a0
+ beq 62f
  mov (4,sp),a0
  mov (8,sp),a1
  call manager,[d2,d3,a2,a3],68
+62:
  mov (20,sp),d3
  inc d3
  mov d3,(20,sp)
  cmp 18,d3
  bne 5b
  ret [d2,d3,a2,a3],40
+
+/* pf_eq: `call pf_eq,[d2,d3,a2,a3],28` from pf_put, d0 = setting id, d1 = value -> d0, d1 kept, a0 = 0 when the
+ * camera's value (sget) is already d1. Locals (4) id, (8) value. */
+pf_eq:
+ mov d0,(4,sp)
+ mov d1,(8,sp)
+ call sget,[],4
+ mov (8,sp),d1
+ sub d1,d0
+ mov d0,a0
+ mov (4,sp),d0
+ ret [d2,d3,a2,a3],28
 
 .section .ext1,"ax"
 /* lk_hold (v0.21) <- ed_event on the Looks page (axis 4), in its frame (a2 = P, a3 = parent, d2 = 4, (12,sp) cursor
@@ -2578,7 +2558,7 @@ xp:                               /* also Z = (a1 == 0) for the ext2 stubs (v0.2
  retf [],0
 
 s_lv:                             /* d0 = 11, a2 = request, a3 = record+248; d3 live */
- jmp s_lv6                        /* #68: the body is in .ext11 (.ext2 is full) */
+ jmp lv_g                         /* #68: the body is in .ext11 (.ext2 is full), s_lv6, through lv_g (section 6 in) */
 
 s_nr:                             /* the site's `call ...,[d2,d3],12` frame; d0 key, d1, a0 as for the getter */
  mov d0,d3
@@ -2599,8 +2579,50 @@ s_cl:                             /* v0.21 grain: request configuration 0x604955
 9:
  jmp SEL                          /* 0x6052cf39, in the same frame as the stock call */
 
+/* ---- Section gates (fix/section-gates, 2026-11-17; research/NOTES.md "Section order audit"). Live view's picture
+ * set-up runs these three section-2 sites, also at power-on, and they lead into section 6 (.ext11 / .ext12). The loader
+ * copies the sections while the camera starts and the camera marks each one ready (SEC_READY, bit id - 1, set at
+ * 0x60046064); no stock wait puts live view's first set-up after section 6's. Each gate tests section 6's bit and,
+ * until it is set, runs the stock instructions: the same picture as now (our looks need the films, which load
+ * later). d0 is free at all three sites (each target writes it before reading it). Section 1's tail: always in. */
+.section .ext1,"ax"
+mx_g:                             /* G1: jmp from .hook_mx (0x6051485a), in the matrix function's frame */
+ mov (SEC_READY),d0
+ and 0x20,d0
+ beq 1f
+ jmp mx_go
+1:
+ call mx_row,[d2,d3,a2,a3],20     /* the stock instruction at 0x6051485a */
+ jmp MX_BACK
+tn_g:                             /* G2: `call tn_g,[d2,d3,a2,a3],56` from .hook_tone (0x605197d7); tone (section 5) */
+ mov (SEC_READY),d0               /* always ends in st_run (section 6) */
+ and 0x20,d0
+ beq 1f
+ jmp tone
+1:
+ mov d3,a0                        /* the stock 0x605197d7: mov d3,a0, then 0x60518fa4 in this call's frame */
+ jmp tone_next
+rr_g:                             /* G5: jmp from .hook_rr (section 7); rr_go reads section 6 */
+ mov (SEC_READY),d0               /* d0 is free: the handler clears it before reading it */
+ and 0x20,d0
+ beq rr_st
+ jmp rr_go
+rr_st:                            /* the stock 0x611356e6 */
+ movm [d2,a2,a3],(sp)
+ add -16,sp
+ mov a0,a2
+ jmp rr_back
+lv_g:                             /* G3: jmp from s_lv (the live view / movie request at a COLOR mode, d0 = 11) */
+ mov (SEC_READY),d0
+ and 0x20,d0
+ beq 1f
+ jmp s_lv6
+1:
+ mov 11,d0                        /* the stock path: picture mode 11 (< 100) -> 0x6046b94f with d0 = 11 */
+ jmp lv_skip
+
 .section .ext5,"ax"
-s_wt:                             /* leaf: MDR = return, a0 = combiner context; keep a0 for the stock getter */
+s_wt:                            /* leaf: MDR = return, a0 = combiner context; keep a0 for the stock getter */
  mov (48,a0),a1
  cmp 11,a1                        /* job key 11: COLOR */
  bne 9f
@@ -2675,7 +2697,7 @@ pm_list:                          /* item ids, in the order the owner reads them
                                    * the colour wheel), tone (Contrast, Highlight & Shadow, Blacks, Whites), white balance
                                    * (A-B, G-M), detail (Sharpness, Noise Filter = NR), lens (Vignette Correction =
                                    * VigFix, Shading), finish (Film Grain Effect = Grain) */
- .long 111, MX_IT, RG_IT, 5397, TB_IT, AB_IT, 5398, BK_IT, 8, 7, NR_IT, VF_IT, 5399, GL_IT, HL_IT, 5400   /* colour menu (test 7, owner-approved spec): pages of five: the film and its colour in the camera's order (mix, curves, wheel, split tone balance), white balance and tone, detail / lens / light, grain. v0.25: Shading back,
+ .long 111, MX_IT, RG_IT, 5397, TB_IT, AB_IT, 5398, BK_IT, 8, 7, NR_IT, VF_IT, 5399, GL_IT, HL_IT, GS_IT, SZ_IT, FR_IT   /* better grain g2: Film Grain Effect (5400, Off / Low / Med / High) -> our strength slider GS_IT and the Grain Size row SZ_IT. borders: + Border (last).  colour menu (test 7, owner-approved spec): pages of five: the film and its colour in the camera's order (mix, curves, wheel, split tone balance), white balance and tone, detail / lens / light, grain. v0.25: Shading back,
                                     Glow / Clarity and Frame rows; AB_IT = the WB grid (no G-M row) */
 .set PM_N, (. - pm_list) / 4
 
@@ -2702,7 +2724,8 @@ pm_list:                          /* item ids, in the order the owner reads them
 .set GLB, 0x7ea0                  /* v0.25 Glow / Clarity slider row (class 9, slot +49, -5 Glow .. +5 Clarity) */
 .set WGB, 0x7ec0                  /* v0.25 WB grid row: its one option's id + k (class 11, value 0; the left cell draws
                                    * the values, wb_draw) */
-.set FRB, 0x7eb0                  /* v0.25 Frame choice row (class 10, slot +50: 0 Off / 5 Frame) */
+.set FRB, 0x7eb0                  /* borders: the Border slider row (class 10, slot +50, 0..5; v0.25..v0.30 the Frame
+                                   * choice row on the same byte: 0 Off / 5 Frame) */
 .set NR_IT, 5394
 .set VF_IT, 5389
 .set BK_IT, 5386
@@ -2710,10 +2733,14 @@ pm_list:                          /* item ids, in the order the owner reads them
 .set AB_IT, 5384
 .set GM_IT, 5383
 .set GL_IT, 5382
-.set FR_IT, 5381
+.set FR_IT, 5381                  /* borders: the Border row (was Frame's) */
 .set HL_IT, 5380                  /* v0.28 Halation slider row (class 12, slot +30, 0..5) */
 .set HLB, 0x7ed0                  /* its bar ids + k (row 13; row 12 is WGB) */
 .set TB_IT, 5379                  /* v0.28 split-tone Balance slider row (class 13, slot +33, -5..+5) */
+.set GS_IT, 5388                  /* better grain g2: the Film Grain strength slider (class 15, 0..5; gs_eff / gs_wr) */
+.set SZ_IT, 5387                  /* g2: the Grain Size choice row (class 16: 0 Fine, 1 Medium, 2 Coarse) */
+.set GSB, 0x7e90                  /* g2: their bar ids + k (row 9: the films' FLB rows end at 0x7e83) */
+.set SZB, 0x7e98
 .set RG_IT, 5378                  /* rgb-curves: the RGB curves row (the H&S row's cases; rgbcurves.inc) */
 .set MX_IT, 5377                  /* colour mix: the Mix row (the H&S row's cases too; colourmix.inc) */
 .set TBB, 0x7ee0                  /* its bar ids + k (row 14) */
@@ -2727,9 +2754,14 @@ pm_list:                          /* item ids, in the order the owner reads them
 .set ST_AB, 0x7f04                  /* "A-B" */
 .set ST_GM, 0x7f05                  /* "G-M" */
 .set ST_GLC, 0x7f06                 /* "Glow / Clarity" */
-.set ST_FRM, 0x7f07                 /* "Frame" */
+.set ST_BDR, 0x7f07                 /* borders: "Border" (was "Frame") */
 .set ST_HAL, 0x7f08                 /* v0.28 "Halation" */
 .set ST_TBL, 0x7f09                 /* v0.28 "Tone Balance" */
+.set ST_GZT, 0x7f0a                 /* g2: "Grain Size", then "Grain Size: Fine" / "... Medium" / "... Coarse", "Coarse" (the last one
+                                   * only the tail of the "Coarse" title) */
+.set ST_GZ0, 0x7f0b
+.set ST_CRS, 0x7f0e
+.set ST_FWV, 0x7f64                 /* fwver: "Caduceus", our line's label on the Firmware Version screen (fwver.s) */
 .set IC_BK, 0x7f80                /* our picture ids (ic_get answers them; the camera's table has ~20000 slots) */
 .set IC_WH, 0x7f81
 .set IC_AB, 0x7f82
@@ -2746,7 +2778,11 @@ pm_list:                          /* item ids, in the order the owner reads them
 .set IC_F1, 0x7f8d
 .set IC_HL, IC_F0                 /* v0.28 "Halo" slider icon (mkicons PICTURES[12], Frame's old place) */
 .set IC_TB, IC_F1                 /* v0.28 "Bal" slider icon (mkicons PICTURES[13], Frame On's old place) */
+.set IC_BD, IC_GM                 /* borders: the Border icon (mkicons border_icon, PICTURES[3], G-M's unused place),
+                                   * ic_list 8. b1b tried the camera's Frame picture 832: 82 x 62, too big for the 46 x 46
+                                   * slot (owner: "too large and already cut off"); the camera has no smaller one */
 .set IC_END, 0x7f8e
+.set IC_GR, 0x7f78                /* g2: the Film Grain slider icon (mkicons PICTURES[14]): ic_ent entry 14 */
 .set IC_WB, 0x7f8f                 /* v0.25 the WB grid row's left cell (wb_desc, drawn at run time) */
 .set FV0, 100                     /* v0.24 film list: picture-mode values FV0 + j for film j (COLOR k = j / 5, look j % 5 + 1) */
 .set NF, 20
@@ -2814,6 +2850,10 @@ hl_tab:
  .long 54, HLB, 55, HLB + 1, 56, HLB + 2, 64, HLB + 3
 tb_tab:
  .long 54, TBB, 55, TBB + 1, 56, TBB + 2, 64, TBB + 3
+gs_tab:                           /* g2 */
+ .long 54, GSB, 55, GSB + 1, 56, GSB + 2, 64, GSB + 3
+sz_tab:
+ .long 54, SZB, 55, SZB + 1, 56, SZB + 2, 64, SZB + 3
 .balign 8
 sw11_tab:                         /* the row switches 0x615511cc and 0x6155134c (16 entries, full with our rows) */
  .space 32 * 8                    /* re-hashed by build.py into 32 entries */
@@ -2828,9 +2868,12 @@ it_tab:                           /* the stock 17 item entries (filled by build.
  .long AB_IT, ab_title, wb_l0, 1, 0, wb_l1, 1, 0, wb_l2, 1      /* v0.25 WB grid row: one option (as test 12) */
  .long GM_IT, 0, 0, 0, gm_title, 0, 8 << 16, 0, 0, 0
  .long GL_IT, 0, 0, 0, gl_title, 0, 9 << 16, 0, 0, 0           /* v0.25: icon 9 = IC_GL */
- .long FR_IT, fr_title, fr_l0, 2, 0, fr_l1, 2, 0, fr_l2, 2      /* v0.25: as Vignette Correction */
+ .long FR_IT, 0, 0, 0, fr_title, 0, 8 << 16, 0, 0, 0          /* borders: a slider as Halation; icon 8 = IC_BD (was the
+                                                                   * Frame choice row, as Vignette Correction) */
  .long HL_IT, 0, 0, 0, hl_title, 0, 10 << 16, 0, 0, 0          /* v0.28: icon 10 = IC_HL */
  .long TB_IT, 0, 0, 0, tb_title, 0, 11 << 16, 0, 0, 0          /* v0.28: icon 11 = IC_TB */
+ .long GS_IT, 0, 0, 0, gs_title, 0, 12 << 16, 0, 0, 0          /* g2: a slider as Halation; icon 12 = IC_GR */
+ .long SZ_IT, sz_title, sz_l0, 3, 0, sz_l1, 3, 0, sz_l2, 3    /* g2: a choice row as Noise Filter */
  .long RG_IT, 0, 0, 0, 0x6154bd18, 0x1b, 0, 0, 0, 0             /* rgb-curves: as H&S's entry (item 5398) */
  .long MX_IT, 0, 0, 0, 0x6154bd18, 0x1b, 0, 0, 0, 0             /* colour mix: the same */
 bk_title:
@@ -2849,13 +2892,19 @@ gl_title:
  .short 4, ST_GLC
  .long 0x6154b480
 fr_title:
- .short 4, ST_FRM
+ .short 4, ST_BDR
  .long 0x6154b480
 hl_title:
  .short 4, ST_HAL
  .long 0x6154b480
 tb_title:
  .short 4, ST_TBL
+ .long 0x6154b480
+gs_title:                         /* g2: the camera's own "Film Grain Effect" (string 2778), the row's title until now */
+ .short 4, 2778
+ .long 0x6154b480
+sz_title:
+ .short 4, ST_GZT
  .long 0x6154b480
 nr_title:
  .short 4, 188                    /* string 188 "Noise Filter" */
@@ -2896,15 +2945,6 @@ vf_l1:                            /* the left column: "Vignette" over Off / On *
 vf_l2:                            /* the strip: the camera's Off / On icons */
  OPT 0, 3, VF_I0
  OPT 1, 3, VF_I1
-fr_l0:                            /* v0.25 Frame: the title stays "Frame" */
- OPT 0, 4, ST_FRM
- OPT 1, 4, ST_FRM
-fr_l1:                            /* the left column: "Frame" over Off / On */
- OPT 0, 3, IC_F0
- OPT 1, 3, IC_F1
-fr_l2:                            /* the strip: the camera's Off / On icons */
- OPT 0, 3, VF_I0
- OPT 1, 3, VF_I1
 bw_l0:                            /* v0.28 Blacks / Whites grid row: the title "Blacks / Whites" */
  OPT 0, 4, ST_BKS
 bw_l1:                            /* the left column: "Blk/Wht" over the values (wb_draw; before it: "Blk" / "Wht") */
@@ -2917,6 +2957,20 @@ wb_l1:                            /* the left column: the WB± picture over the 
  OPT 0, 3, IC_WB
 wb_l2:                            /* the strip (under the grid): the camera's WB± picture */
  OPT 0, 3, 12545
+sz_l0:                            /* g2 Grain Size: the title with its value */
+ OPT 0, 4, ST_GZ0
+ OPT 1, 4, ST_GZ0 + 1
+ OPT 2, 4, ST_GZ0 + 2
+sz_l1:                            /* the left column: Film Grain Effect's own Low / Med / High pictures (item 5400's lists,
+                                     the row these replace; owner, 2026-11-16: "reuse the current grain pictures for low,
+                                     med, high"): Fine = Low, Medium = Med, Coarse = High */
+ OPT 0, 3, 14561
+ OPT 1, 3, 14563
+ OPT 2, 3, 14565
+sz_l2:                            /* the strip: the same row's strip pictures */
+ OPT 0, 3, 14562
+ OPT 1, 3, 14564
+ OPT 2, 3, 14566
 nr_s2v:                           /* NR slot value 1..4 (index 0..3) -> Noise Filter value; 0 Camera: the camera's own */
  .byte 0, -1, -2, 1
 nr_v2s:                           /* Noise Filter value -2..+1 (index + 2) -> slot value */
@@ -2986,8 +3040,20 @@ gr_lc:
  bra 9f
 11:
  cmp TB_IT,d0                     /* v0.28 Tone Balance */
- bne 9f
+ bne 12f
  mov tb_tab,a3
+ mov 4,d2
+ bra 9f
+12:
+ cmp GS_IT,d0                     /* g2 Film Grain strength */
+ bne 13f
+ mov gs_tab,a3
+ mov 4,d2
+ bra 9f
+13:
+ cmp SZ_IT,d0                     /* g2 Grain Size */
+ bne 9f
+ mov sz_tab,a3
  mov 4,d2
 9:
  jmp lc_back                      /* 0x611d19b4: cmp 0,a3 */
@@ -2995,6 +3061,18 @@ gr_lc:
 /* st_get <- jmp from the string getter 0x610f56a6 (its frame: `call ..,[d2],8`; d0 id -> a0 the UTF-16 string):
  * our own strings, else as stock (language index 0x610f56bd, then the table lookup at 0x610f56ac). */
 st_get:
+ cmp ST_GZT,d0                    /* g2: "Grain Size" .. "Coarse" (gs_strs) */
+ bcs 50f
+ cmp ST_CRS + 1,d0
+ bcc 50f
+ mov d0,d2
+ add -ST_GZT,d2
+ asl2 d2
+ mov gs_strs,a0
+ add d2,a0
+ mov (a0),a0
+ ret [d2],8
+50:
  cmp ST_VIG,d0
  bne 1f
  mov vig_str,a0
@@ -3030,9 +3108,9 @@ st_get:
  mov glc_str,a0
  ret [d2],8
 7:
- cmp ST_FRM,d0
+ cmp ST_BDR,d0                    /* borders */
  bne 8f
- mov frm_str,a0
+ mov bdr_str,a0
  ret [d2],8
 8:
  cmp ST_HAL,d0                    /* v0.28 */
@@ -3078,6 +3156,8 @@ st_get:
 4:
  jmp fl_tt
 st_stk:
+ jmp fv_chk                        /* fwver: "Caduceus" (fwver.s), then crop modes: our labels (crop.s cr_str), then cr_stk */
+cr_stk:
  mov d0,d2
  call str_lang,[],0
  jmp str_back
@@ -3092,12 +3172,26 @@ gms_str:                          /* "G-M" */
  .short 71, 45, 77, 0
 glc_str:                          /* "Glow" (v0.25 owner: + Glow, - Clarity; the row is named for its + side); test 7 "Glow Effect" */
  .short 71, 108, 111, 119, 32, 69, 102, 102, 101, 99, 116, 0
-frm_str:                          /* "Frame" */
- .short 70, 114, 97, 109, 101, 0
+bdr_str:                          /* borders: "Border" (was "Frame") */
+ .short 66, 111, 114, 100, 101, 114, 0
 hal_str:                          /* v0.28 "Halation"; colour menu (test 7): "Halation Effect" */
  .short 72, 97, 108, 97, 116, 105, 111, 110, 32, 69, 102, 102, 101, 99, 116, 0
 tbl_str:                          /* v0.28 "Tone Balance"; colour menu (test 7): "Split Tone Balance" */
  .short 83, 112, 108, 105, 116, 32, 84, 111, 110, 101, 32, 66, 97, 108, 97, 110, 99, 101, 0
+gzt_str:                          /* g2: "Grain Size", then ": Fine" / ": Medium" / ": Coarse", "Coarse" */
+ .short 71, 114, 97, 105, 110, 32, 83, 105, 122, 101, 0
+gz0_str:
+ .short 71, 114, 97, 105, 110, 32, 83, 105, 122, 101, 58, 32, 70, 105, 110, 101, 0
+gz1_str:
+ .short 71, 114, 97, 105, 110, 32, 83, 105, 122, 101, 58, 32, 77, 101, 100, 105, 117, 109, 0
+gz2_str:
+ .short 71, 114, 97, 105, 110, 32, 83, 105, 122, 101, 58, 32
+crs_str:
+ .short 67, 111, 97, 114, 115, 101, 0
+ .balign 4
+gs_strs:
+ .long gzt_str, gz0_str, gz1_str, gz2_str, crs_str
+ .balign 2
  .balign 16
 std_str:                          /* "Std" */
  .short 83, 116, 100, 0
@@ -3151,6 +3245,13 @@ ch_id:
  CHC gl_f, GLB, f2c_obj           /* v0.25 Glow / Clarity slider */
  CHC hl_f, HLB, f2c_obj           /* v0.28 Halation slider */
  CHC tb_f, TBB, f2c_obj           /* v0.28 Tone Balance slider */
+ CHC fr_f, FRB, f2c_obj           /* borders: the Border slider (was the Frame choice row) */
+ CHC gs_f, GSB, f2c_obj           /* g2: the Film Grain strength slider */
+ CHC sz_a, SZB, cha_back          /* g2: the Grain Size choice row (as Noise Filter) */
+ CHC sz_b, SZB, chb_back
+ CHC sz_c, SZB, chc_back
+ CHC sz_d, SZB, chd_back
+ CHC sz_f, SZB, chf_back
  CHC bw_a, BWB, cha_back          /* v0.28 Blacks / Whites grid row: as the WB grid row */
  CHC bw_b, BWB, chb_back
  CHC bw_c, BWB, chc_back
@@ -3161,11 +3262,6 @@ ch_id:
  CHC wg_c, WGB, chc_back
  CHC wg_d, WGB, chd_back
  CHC wg_f, WGB, chf_back
- CHC fr_a, FRB, cha_back          /* v0.25 Frame choice row */
- CHC fr_b, FRB, chb_back
- CHC fr_c, FRB, chc_back
- CHC fr_d, FRB, chd_back
- CHC fr_f, FRB, chf_back
 
 /* lc_nr / lc_vf <- row switch 0x6155124c (the left column's cell): as Film Grain's case 0x611d0b57 (cell type 1, the
  * icon of the value from the item's list) but GetValue of our row's own id instead of 998 -> 0x611d0b72. */
@@ -3175,14 +3271,14 @@ lc_nr:
 lc_vf:
  mov VF_IT,d2
  bra 1f
-lc_fr:
- mov FR_IT,d2
- bra 1f
 lc_wg:
  mov AB_IT,d2
  bra 1f
 lc_bw:
  mov BK_IT,d2
+ bra 1f
+lc_sz:                            /* g2 Grain Size */
+ mov SZ_IT,d2
 1:
  mov (20,sp),a3
  mov 1,d0
@@ -3271,6 +3367,16 @@ sl_slot:
  add -BWB,d2
  cmp 4,d2
  bcs 2f
+ mov 15,d1                        /* g2 Film Grain strength, Grain Size */
+ mov d3,d2
+ add -GSB,d2
+ cmp 4,d2
+ bcs 2f
+ mov 16,d1
+ mov d3,d2
+ add -SZB,d2
+ cmp 4,d2
+ bcs 2f
  mov 1,d1
  cmp 7,d3
  beq 1f
@@ -3303,6 +3409,12 @@ sl_slot:
  beq 1f
  mov 12,d1                        /* v0.28 Halation */
  cmp HL_IT,d3
+ beq 1f
+ mov 15,d1                        /* g2 */
+ cmp GS_IT,d3
+ beq 1f
+ mov 16,d1
+ cmp SZ_IT,d3
  beq 1f
  mov 13,d1                        /* v0.28 Tone Balance */
  cmp TB_IT,d3
@@ -3339,6 +3451,18 @@ sl_slot:
 
 /* sl_val: d1 class, a0 slot -> d0 the row's value (Sharp -5..+2, Grain 0..3, NR -2..+1, VigFix -1..0). */
  .macro SL_VAL
+ cmp 15,d1                        /* g2: Film Grain strength 0..5 / Grain Size 0..2 (gs_eff: the slot's level and the
+                                     curves record's spare byte) */
+ bcs 80f
+ cmp 17,d1
+ bcc 80f
+ mov d1,d3
+ call gs_eff,[d2,d3,a2],16        /* keeps a3; d0 strength, d1 size */
+ cmp 15,d3
+ beq 99f
+ mov d1,d0
+ bra 99f
+80:
  cmp 14,d1                        /* v0.28 Blacks / Whites grid row: draw its left cell (mode 1); value 0 */
  bne 85f
  mov 1,d0
@@ -3375,13 +3499,8 @@ sl_slot:
 83:
  cmp 10,d1
  bne 84f
- movbu (50,a0),d0                 /* v0.25 Frame: Art Effect 5 -> 1 On, anything else 0 Off */
- cmp 5,d0
- beq 85f
- clr d0
- bra 99f
-85:
- mov 1,d0
+ movbu (50,a0),d0                 /* borders: Border -5..+5 (slot +50; v0.25 Frame's byte) */
+ extb d0
  bra 99f
 84:
  cmp 7,d1
@@ -3450,6 +3569,7 @@ sl_slot:
 sl_get:
  cmp 0,a1
  beq 9f
+ SICHK si_get                     /* screen info (screeninfo.s): our tick rows */
  cmp DL_SID,d0
  beq 5f
  cmp DL_MSID,d0
@@ -3602,6 +3722,18 @@ sl_gb:
  exthu d2
  add -BWB,d2
  cmp 4,d2
+ bcs 90f
+ mov 15,a3                        /* g2 Film Grain strength */
+ mov d0,d2
+ exthu d2
+ add -GSB,d2
+ cmp 4,d2
+ bcs 90f
+ mov 16,a3                        /* g2 Grain Size */
+ mov d0,d2
+ exthu d2
+ add -SZB,d2
+ cmp 4,d2
  bcc \miss
 90:
  .if \p
@@ -3616,6 +3748,7 @@ sl_gb:
 
 /* sl_cnt <- facade +28 word 0x60e57490 (d0 id, a0 -> d0 count); else pf_cnt. Sharp 8, Grain 4, NR 4, VigFix 2. */
 sl_cnt:
+ SICHK si_cnt                     /* screen info (screeninfo.s) */
  movm [d2,d3,a2,a3],(sp)
  mov mdr,d2                       /* v0.25 grid: the WB grid's ids -> our A-B / G-M bars (gr_id; MDR kept) */
  mov d2,a3
@@ -3630,8 +3763,13 @@ sl_cnt:
  beq 6f
  cmp 14,a3
  beq 6f
- mov 6,d0                         /* v0.28: 12 Halation 0..5 */
+ mov 6,d0                         /* v0.28: 12 Halation 0..5; g2: 15 Film Grain 0..5 */
  cmp 12,a3
+ beq 6f
+ cmp 15,a3
+ beq 6f
+ mov 3,d0                         /* g2: 16 Grain Size Fine / Medium / Coarse */
+ cmp 16,a3
  beq 6f
  mov 11,d0                        /* v0.28: 13 Tone Balance -5..+5 */
  cmp 13,a3
@@ -3639,7 +3777,7 @@ sl_cnt:
  mov 11,d0                        /* v0.25: 9 Glow / Clarity -5..+5 */
  cmp 9,a3
  beq 6f
- mov 2,d0                         /* 10 Frame Off / On */
+ mov 11,d0                        /* borders: 10 Border -5..+5 (2026-11-18: - black, + white; was 0..5) */
  cmp 10,a3
  beq 6f
  mov 15,d0                        /* 7 A-B, 8 G-M: -7..+7 */
@@ -3671,20 +3809,23 @@ sl_cnt:
  beq 99f
  cmp 14,a3
  beq 99f
- clr d0                           /* v0.28: 12 Halation 0, 6 */
+ clr d0                           /* v0.28: 12 Halation 0, 6; g2: 15 Film Grain 0, 6 */
  mov 6,d1
  cmp 12,a3
+ beq 99f
+ cmp 15,a3
+ beq 99f
+ mov 3,d1                         /* g2: 16 Grain Size 0, 3 */
+ cmp 16,a3
  beq 99f
  mov -5,d0                        /* v0.28: 13 Tone Balance -5, 11 */
  mov 11,d1
  cmp 13,a3
  beq 99f
- mov -5,d0                        /* v0.25: 9 Glow / Clarity -5, 11; 10 Frame 0, 2 */
+ mov -5,d0                        /* v0.25: 9 Glow / Clarity -5, 11; borders: 10 Border -5, 11 (2026-11-18) */
  mov 11,d1
  cmp 9,a3
  beq 99f
- clr d0
- mov 2,d1
  cmp 10,a3
  beq 99f
  mov -7,d0
@@ -3713,6 +3854,7 @@ sl_cnt:
 
 /* sl_vbi <- facade +32 word 0x60e57494 (d0 id, d1 index, a0, a1 out or 0 -> d0 value, -1 none); else pf_vbi. */
 sl_vbi:
+ SICHK si_vbi                     /* screen info (screeninfo.s) */
  movm [d2,d3,a2,a3],(sp)
  mov mdr,d2                       /* v0.25 grid: the WB grid's ids -> our A-B / G-M bars (gr_id; MDR kept) */
  mov d2,a3
@@ -3742,8 +3884,71 @@ sl_vbi:
  mov (gr_oid),d0
  jmp pf_vbi
 
+/* (v0.40 alpha: pf_cnt and pf_vbi moved here from .ext1, to make room there for the section gates. Only sl_cnt /
+ * sl_vbi, just above in section 6, reach them; the facade words point at sl_cnt / sl_vbi.) */
+/* pf_cnt <- facade vtable +28 word 0x60e57490 (count, stock 0x60b86e09): d0 id, a0 facade -> d0 count. COLOR1-4
+ * cell ids 928..975 ask code block +96 (xb_cv: the Looks page's 12 o'clock 0..5; v0.21 an Extras cell its own range,
+ * so the dial stops at the ends); anything else, or no answer: stock. */
+pf_cnt:
+ movm [d2,d3,a2],(sp)
+ add -4,sp
+ mov d0,d2
+ exthu d0
+ add -928,d0
+ cmp 48,d0
+ bcc 9f
+ call xp,[],0
+ beq 9f
+ add 96,a1
+ mov d2,d0
+ calls (a1)                       /* -> d0 count, d1 1 hit / 0 miss */
+ cmp 0,d1
+ bne 8f
+9:
+ mov d2,d0
+ add 4,sp
+ movm (sp),[d2,d3,a2]
+ jmp stock_cnt
+8:
+ add 4,sp
+ movm (sp),[d2,d3,a2]
+ rets
+
+/* pf_vbi <- facade vtable +32 word 0x60e57494 (value by index, stock 0x60b87031): d0 id, d1 index, a0 facade,
+ * a1 out (or 0) -> d0 value (-1 = no such index), (a1) = the same. Cell ids 928..975: code block +104 (xb_vb,
+ * d3 = out); anything else, or no answer: stock. */
+pf_vbi:
+ movm [d2,d3,a2],(sp)
+ add -4,sp
+ mov d0,d2
+ mov a1,d3
+ mov d1,a2
+ exthu d0
+ add -928,d0
+ cmp 48,d0
+ bcc 9f
+ call xp,[],0                     /* keeps d1 */
+ beq 9f
+ add 104,a1
+ mov d2,d0
+ calls (a1)                       /* d0 id, d1 index, d3 out -> d0 value, d1 1 hit / 0 miss */
+ cmp 0,d1
+ bne 8f
+9:
+ mov d2,d0
+ mov a2,d1
+ mov d3,a1
+ add 4,sp
+ movm (sp),[d2,d3,a2]
+ jmp stock_vbi
+8:
+ add 4,sp
+ movm (sp),[d2,d3,a2]
+ rets
+
 /* sl_sel <- facade +40 word 0x60e5749c (selectable: d0 id, d1 value, a0 -> d0 1 / 0); else stock 0x60b86a01. */
 sl_sel:
+ SICHK si_sel                     /* screen info (screeninfo.s) */
  cmp 901,d0                       /* v0.24: the COLOR picture mode, our film values FV0 + j */
  bne sl_sel0
  cmp FV0,d1
@@ -3819,6 +4024,15 @@ sl_set0:
  beq 7f
  cmp 14,a3                        /* v0.28 Blacks / Whites grid row: nothing either */
  beq 7f
+ cmp 15,a3                        /* g2 Film Grain strength / Grain Size -> gs_row */
+ bcs 41f
+ cmp 17,a3
+ bcc 41f
+ call gs_row,[d2,d3,a2,a3],40     /* keeps d0, a0, a1, a2 -> d1 0 stored */
+ cmp 0,d1
+ bne 7f
+ jmp s_dirty
+41:
  cmp 12,a3
  bne 14f
  cmp 0,d1                         /* v0.28 Halation 0..5 -> +30 */
@@ -3853,23 +4067,22 @@ sl_set0:
 12:
  cmp 10,a3
  bne 13f
- cmp 0,d1                         /* v0.25 Frame 0 Off / 1 On -> +50 = 0 / 5 */
+ /* borders: Border -5..+5 -> +50 (v0.25 Frame's byte; the camera checks it as -5..5); 2026-11-18: - black,
+  * + white (was 0..5) */
+ cmp -5,d1
  blt 7f
- cmp 1,d1
+ cmp 5,d1
  bgt 7f
- clr d3
- cmp 0,d1
- beq 14f
- mov 5,d3
-14:
  mov d2,a3
- movbu d3,(82,a3)
+ movbu d1,(82,a3)
  jmp s_dirty
 13:
  cmp 7,a3
  bcs 10f
- cmp -7,d1                        /* A-B / G-M -7..+7 -> +26 / +27, then wb_flags (+25): bit0 on, bit7 off (as the
- blt 7f                           * Extras wheel) */
+ /* A-B / G-M -7..+7 -> +26 / +27, then wb_flags (+25): bit0 on, bit7 off (as the Extras wheel). 2026-11-18: this
+  * comment used to swallow the `blt 7f` below (the low end went unchecked; the row never offers below -7) */
+ cmp -7,d1
+ blt 7f
  cmp 7,d1
  bgt 7f
  mov 58,d3
@@ -4017,6 +4230,10 @@ rw_bar:
  beq 3f
  cmp HL_IT,d0                     /* v0.28 Halation: 0..5 (h6: its own ends, so the bar starts at the left) */
  beq 5f
+ cmp FR_IT,d0                     /* borders: Border -5..+5 (2026-11-18; was 0..5 as Halation) */
+ beq 3f
+ cmp GS_IT,d0                     /* g2: Film Grain 0..5, as Halation */
+ beq 5f
  cmp TB_IT,d0                     /* v0.28 Tone Balance: -5..+5 */
  beq 3f
  cmp AB_IT,d0
@@ -4135,15 +4352,28 @@ rv_chk:
  movhu (a0),d0
  add -GLB,d0
  cmp 4,d0
- bcs 1f
+ bcs 4f
  movhu (a0),d0
  add -HLB,d0
  cmp 4,d0
- bcs 1f
+ bcs 4f
  movhu (a0),d0
  add -TBB,d0
  cmp 4,d0
+ bcs 4f
+ movhu (a0),d0
+ add -GSB,d0                      /* g2: the Film Grain bar */
+ cmp 4,d0
+ bcs 4f
+ movhu (a0),d0
+ add -FRB,d0                      /* borders: the Border bar */
+ cmp 4,d0
  bcc 2f
+4:                                /* dial direction: Glow, Halation, Tone Balance, Film Grain and Border */
+ mov (24,sp),a0                   /* border-dial-direction: the bar's control +152 = 1, as 0x611b77b2 sets it for */
+ mov 1,d0                         /* the camera's own sliders: a dial click steps it as on Contrast (else the dial */
+ mov d0,(152,a0)                  /* step 0x611b41f8 takes the list's way, reversed by setting 307) */
+ mov (16,sp),a0
 1:
  mov 1,a2
 2:
@@ -4253,6 +4483,16 @@ ic_get:
  add d1,a0
  retf [],0
 20:
+ cmp IC_GR,d1                     /* g2: IC_GR -> ic_ent entry 14 */
+ bcs 24f
+ cmp IC_GR + 1,d1
+ bcc 24f
+ add 14 - IC_GR,d1
+ asl2 d1
+ mov ic_ent,a0
+ add d1,a0
+ retf [],0
+24:
  cmp IC_BK,d1
  bcs ic_stk
  cmp IC_END,d1
@@ -4324,6 +4564,11 @@ gx_sh:
  .long 0
 gr_cont:                          /* the holder of Picture Mode's layer 457, captured at start-up (sc_cap) */
  .long 0
+gr_due:                           /* the scene the holder takes in the next row refresh (rr_go), 0: none. Set only in
+                                   * Picture Mode, cleared when it closes */
+ .long 0
+rr_sv:
+ .long 0, 0, 0, 0
 gr_sv:
  .long 0, 0, 0, 0
 gr_st:                            /* v0.26: the GUI state gx_map last sent the screen to */
@@ -4750,10 +4995,13 @@ gr_upd:
 71:
  mov (gr_mode),d0
  mov d0,(gr_lmode)
- mov (gr_cont),a0
- mov 498,d0
- call sc_set,[d2,d3,a2,a3],28     /* the holder takes the WB grid scene */
+ mov 498,d0                       /* the holder takes the WB grid scene in the row refresh: a swap here draws a pass
+                                   * without grid or curve before the refresh */
+ mov d0,(gr_due)
+ bra 9f
 7:
+ clr d0
+ mov d0,(gr_due)
  call gr_ref,[d2,d3,a2,a3],20
  bra 9f
 8:
@@ -4772,11 +5020,11 @@ gr_end:
  bne 1f
  mov (gr_cont),a0
  call gr_is,[d2],8
- cmp 1,d0
- bne 1f
- mov (gr_cont),a0
- mov GLY,d0
- call sc_set,[d2,d3,a2,a3],28
+ cmp 0,d0
+ beq 3f
+ mov GLY,d0                       /* in the row refresh (rr_go), as gr_upd's grid */
+3:
+ mov d0,(gr_due)
 1:
  add 4,sp
  mov (12,sp),d0
@@ -4785,6 +5033,44 @@ gr_end:
  jmp pe_ret
 2:
  jmp pe_back
+
+/* rr_go <- jmp from rr_g, the row refresh's entry with section 6 ready: the holder takes the scene gr_upd / gr_end
+ * left due, then the stock entry. The camera draws once after the refresh, so that pass has the new scene. */
+rr_go:
+ mov (gr_due),d0
+ cmp 0,d0
+ bne 1f
+ jmp rr_st
+1:
+ mov d1,(rr_sv)
+ mov a0,(rr_sv + 4)
+ mov a1,(rr_sv + 8)
+ mov mdr,d0
+ mov d0,(rr_sv + 12)
+ add -4,sp                        /* our call's slot (the handler's return address stays at (0,sp)) */
+ call rr_set,[d2,d3,a2,a3],20
+ add 4,sp
+ mov (rr_sv + 12),d0
+ mov d0,mdr
+ mov (rr_sv),d1
+ mov (rr_sv + 4),a0
+ mov (rr_sv + 8),a1
+ jmp rr_st
+
+rr_set:
+ mov (gr_due),d2
+ clr d0
+ mov d0,(gr_due)                  /* before sc_set: a refresh inside it takes rr_go's stock path */
+ mov (gr_cont),a0
+ cmp 0,a0
+ beq 9f
+ mov d2,d0
+ call sc_set,[d2,d3,a2,a3],28
+ cmp 498,d2
+ bne 9f
+ call gr_ref,[d2,d3,a2,a3],20
+9:
+ ret [d2,d3,a2,a3],20
 
 /* gr_is: `call gr_is,[d2],8`, a0 = the holder (or 0) -> d0 = 1 when its scene is the WB grid (element 24813) */
 gr_is:
@@ -5005,6 +5291,35 @@ gx_map:
  mov d3,mdr
  add 16,sp
 2:
+ movbu (cr_rch),d1                /* crop83-2: the next GUI state change (a screen the user opens) stops crop.s cr_chk */
+ cmp 0,d1
+ beq 84f
+ mov d0,d1
+ exthu d1
+ cmp 0,d1
+ beq 84f
+ clr d1
+ movbu d1,(cr_rch)
+84:
+ movbu (cr_on),d1                 /* #83: the crop back at the GUI's first state change, after the films (crop.s cr_el) */
+ cmp 0,d1
+ bne 85f
+ mov d0,d1
+ exthu d1
+ cmp 0,d1
+ beq 85f
+ mov mdr,d3
+ add -16,sp
+ mov d3,(4,sp)
+ mov d0,(8,sp)
+ mov a1,(12,sp)
+ call cr_el,[d2,d3,a2,a3],20
+ mov (12,sp),a1
+ mov (8,sp),d0
+ mov (4,sp),d3
+ mov d3,mdr
+ add 16,sp
+85:
  movbu (rc_pend),d1               /* v0.30-dev k1 (#41): the shooting mode changed with the films in: put each */
  cmp 0,d1                         /* COLOR's film back into the camera's settings (GUI task, between events) */
  bne 01f
@@ -5034,6 +5349,22 @@ gx_map:
  movbu (el_pk),d1                 /* after a picture-mode change, once the first look is done: the group keeps */
  cmp 0,d1                         /* what it shows now (cm_hp, as at a shutter event), so a power-off keeps it */
  beq 03f
+ mov (8,sp),a0                    /* v0.30.4 (#72): not while the Picture Mode list (0x0418) or the super control */
+ movhu (a0),d1                    /* panel (0x0403, its dials step the films too) stays open (no state change, or */
+ cmp 0x1804,d1                    /* one between the two): at every step it changed a COLOR's film in the record */
+ beq 77f                          /* many times a second and rebooted the camera (probe J, camera: none without */
+ cmp 0x0304,d1                    /* it). It runs once as they close (OK, MENU, a half-press). */
+ bne 76f
+77:
+ mov d0,d1
+ exthu d1
+ cmp 0,d1
+ beq 03f
+ cmp 0x0418,d1
+ beq 03f
+ cmp 0x0403,d1
+ beq 03f
+76:
  movbu (cm_init),d1
  cmp 0,d1
  beq 03f
@@ -5095,6 +5426,8 @@ gx_map:
  bne 6f                           /* to the fine-tune screen from our row: keep the look */
  movbu d1,(gr_flag)
 6:
+ clr d1
+ mov d1,(gr_due)
  mov (gr_cont),a0                 /* and give the holder its own layer back */
  cmp 0,a0
  beq 9f
@@ -5137,13 +5470,15 @@ ic_list:
  .long 0xffff, 7, 7, IC_BK
  .long 0xffff, 7, 7, IC_WH
  .long 0xffff, 7, 7, 12545         /* v0.25: 7 = the camera's WB± picture (the WB grid row) */
- .long 0xffff, 7, 7, IC_GM
+ .long 0xffff, 7, 7, IC_BD         /* borders: 8 = Border (G-M's slider icon before v0.25) */
  .long 0xffff, 7, 7, IC_GL         /* v0.25: 9 = Glow / Clarity */
  .long 0xffff, 7, 7, IC_HL         /* v0.28: 10 = Halation */
  .long 0xffff, 7, 7, IC_TB         /* v0.28: 11 = Tone Balance */
+ .long 0xffff, 7, 7, IC_GR         /* g2: 12 = Film Grain */
 ic_lend:
 ic_ent:                           /* the slot word of each of our pictures, in firmware/mkicons.py PICTURES order */
  .long ic_d0, ic_d1, ic_d2, ic_d3, ic_d4, ic_d5, ic_d6, ic_d7, ic_d8, ic_d9, ic_d10, ic_d11, ic_d12, ic_d13
+ .long ic_d14                     /* g2: id IC_GR (ic_get) */
 /* descriptors <6H3I> as the stock pictures': format 14, w, h, 8, 0, 0, size, payload, flags; build.py fills w, h,
  * size and payload (the streams from firmware/mkicons.py, packed into ic_pay, by their uncached address 0xa...) */
  .macro ICD n
@@ -5165,6 +5500,7 @@ ic_d\n:
  ICD 11
  ICD 12
  ICD 13
+ ICD 14
 .balign 8
 /* ------------------------------------------------------------------ v0.28 film WB (w3)
  * Owner: a film (and each COLOR's own settings) remembers the camera's WB last used with it, as its HSL does; one
@@ -5357,10 +5693,10 @@ fw_apply:
  call manager,[d2,d3,a2,a3],68
  ret [d2,d3,a2,a3],32
 
-.section .ext12,"ax"               /* v0.28: moved out of the full ext11 */
+.section .ext13,"ax"               /* g2: moved to ext13 (the GX4-proven reserve; ext12 is nearly full); v0.28: out of the full ext11 */
  .balign 8
 ic_pay:
- .space 16640                     /* v0.25: 14 pictures (build.py checks the fit; A-B / G-M blank; v0.28: "Halo" in Frame's place; colour menu test 7: + 256 for the pictures) */
+ .space 18024                     /* v0.25: 14 pictures (build.py checks the fit; A-B blank; v0.28: "Halo" in Frame's place; colour menu test 7: + 256 for the pictures; borders: + 512 for the Border icon in G-M's place); g2: + 872 for the Film Grain icon */
 ic_pend:
 .section .ext11,"ax"
 
@@ -5400,6 +5736,14 @@ st_chk:
  add -TBB,d0
  cmp 4,d0
  bcs 1f
+ movhu (a1),d0
+ add -FRB,d0                      /* borders: the Border bar */
+ cmp 4,d0
+ bcs 1f
+ movhu (a1),d0
+ add -GSB,d0                      /* g2: the Film Grain bar */
+ cmp 4,d0
+ bcs 1f
  clr d0
  mov d0,(a0)
  jmp stp_back
@@ -5436,7 +5780,10 @@ rd_a:
  clr d3
 5:
  cmp HL_IT,d0                     /* v0.28 h6 Halation 0..5: +-0, then +1..+5 (no -1..-5 entries) */
+ beq 51f
+ cmp GS_IT,d0                     /* g2: Film Grain 0..5, as Halation */
  bne 6f
+51:
  mov rd6_a,a0
  mov 6,d3
  jmp rda_none
@@ -5459,6 +5806,8 @@ rd_a:
  cmp WH_IT,d0
  beq 1f
  cmp GL_IT,d0
+ beq 1f
+ cmp FR_IT,d0                     /* borders: Border -5..+5 (2026-11-18) */
  beq 1f
  cmp TB_IT,d0                     /* v0.28 Tone Balance */
  beq 1f
@@ -5493,7 +5842,10 @@ rd_b:
  clr d3
 5:
  cmp HL_IT,d0                     /* v0.28 h6 Halation (as rd_a) */
+ beq 51f
+ cmp GS_IT,d0                     /* g2: Film Grain (as rd_a) */
  bne 6f
+51:
  mov rd6_b,a0
  mov 6,d3
  jmp rdb_none
@@ -5516,6 +5868,8 @@ rd_b:
  cmp WH_IT,d0
  beq 1f
  cmp GL_IT,d0
+ beq 1f
+ cmp FR_IT,d0                     /* borders: Border -5..+5 (2026-11-18) */
  beq 1f
  cmp TB_IT,d0                     /* v0.28 Tone Balance */
  beq 1f
@@ -6516,6 +6870,9 @@ fl_mk:
  mov d0,(12,a0)
  movbu d0,(TW_LEN,a0)
  movbu d0,(TW_LEN + 1,a0)
+ movbu (ub_ok),d0                 /* a valid block: ub_pfl overwrites the whole image, so no read */
+ cmp 0,d0
+ bne 95f
  mov tw_path,a0
  mov sd_mode,a1
  call fopen,[],4
@@ -7983,6 +8340,19 @@ fl_isdef:
  inc d2
  cmp 18,d2
  bcs 1b
+ mov (4,sp),d0                    /* g2: the Film Grain / Grain Size bars -> gs_def */
+ exthu d0
+ mov d0,d1
+ add -GSB,d1
+ cmp 4,d1
+ bcs 46f
+ add GSB - SZB,d1
+ cmp 4,d1
+ bcc 47f
+46:
+ call gs_def,[d2,d3,a2,a3],28
+ ret [d2,d3,a2],24
+47:
  mov (4,sp),d0                    /* film test 8: our rows (Grain, NR, VigFix, Blacks, Whites, A-B, G-M: base + k) */
  exthu d0
  add -GRB,d0
@@ -8238,8 +8608,8 @@ s_sel2:                           /* the selector's frame; a0 = context */
 9:
  jmp SEL
 
-/* #75: a touch re-arms the open screen's idle timer through shared code (0x612a8db3), with id 500 at 8000 ms for
- * every touch screen. In Picture Mode (GUI state 0x0418) it gets 30000 ms, as Picture Mode's own arms. */
+/* #75: a touch re-arms the open screen's idle timer through shared code (0x612a8db3), with the screen's own id and
+ * time. Only Picture Mode's touch layout gives id 500 at 8000 ms. In Picture Mode (GUI state 0x0418) it gets 30000 ms, as Picture Mode's own arms. */
 .section .hook_tch,"ax"
  call s_tch,[d2,d3],12            /* stock 0x612a8db3: call 0x612970e8,[d2,d3],12 (d0 timer id, d1 ms) */
 
@@ -8308,6 +8678,1248 @@ s_wl:
 9:
  jmp wl_back
 
+/* ---- better grain g1 (2026-11-15, feature/better-grain): our own grain tile, in colour, for the fast route.
+ * The texture builder 0x604cf0b9 (TXGET's cache miss) loads the camera's grain tile (resource 0x8001: 1536 x 1536,
+ * format 0x0c04 = grey) into a fresh buffer and lets the image processor repeat it over the whole texture.
+ * While the code block's xb_tex asks for our texture (tg_own = size 1..5), two call sites in the builder are ours:
+ * 0x604cf156 (the tile's size: ours is 1536 x 1536 in 0x0c02, YCbYCr, 3072 B a row, and the source format becomes
+ * 0x0c02) and 0x604cf1a4 (the load: tg_fill writes our tile into the buffer instead). Grainy Film's own texture and
+ * every other caller are untouched (tg_own 0 -> the stock calls). research/NOTES.md "Better grain g1". */
+ .set TG_BYTES, 1536 * 1536 * 2   /* our tile: 1536 x 1536, 0x0c02 */
+ .set TG_YM, 48                   /* our tile's Y mid level (the blend adds texture Y as it is: rc1 / rc2a) */
+ .set USCLK, 0x98900284           /* the us counter (grain diagnostics gd1-gd4) */
+.section .hook_trs,"ax"
+ call tr_sz,[d2,d3,a2],16         /* stock 0x604cf156: call 0x601d7546,[d2,d3,a2],16 (the tile's size) */
+
+.section .hook_trl,"ax"
+ jmp tr_ld                        /* stock 0x604cf1a4: call 0x604ce6c9,[d2,d3,a2,a3],24 (load the tile) */
+
+.section .ext12,"ax"
+tr_sz:                            /* 0x601d7546's frame: the builder's (k,sp) = (16 + k,sp) */
+ movbu (tg_own),d2
+ cmp 0,d2
+ beq 9f
+ mov 0x0c02,d2
+ movhu d2,(120,sp)                /* the builder's (104,sp): the source's format (0x0c04 grey -> 0x0c02 colour) */
+ mov TG_BYTES,d0
+ ret [d2,d3,a2],16
+9:
+ jmp RES_SZ
+
+tr_ld:
+ call tr_ld2,[d2,d3,a2,a3],24
+ jmp TLD_BACK
+tr_ld2:                           /* 0x604ce6c9's frame: the builder's (4,sp) / (8,sp) = (28,sp) / (32,sp), the
+                                     buffer's bus address (lo / hi); returns it in d0 / d1 as the stock load does */
+ movbu (tg_own),d2
+ cmp 0,d2
+ bne 1f
+ jmp RES_LD
+1:
+ mov (28,sp),d0
+ mov (32,sp),d1
+ cmp 0,d1
+ bne 2f
+ call tg_fill,[d2,d3,a2,a3],120
+ bra 3f
+2:
+ mov 1,d0
+ movbu d0,(tg_bad)
+3:
+ mov (28,sp),d0
+ mov (32,sp),d1
+ ret [d2,d3,a2,a3],24
+
+/* tg_fill: `call tg_fill,[d2,d3,a2,a3],120`, d0 = the tile buffer's 32-bit bus address. Our tile: Y = 48 + noise
+ * (sigma 16), Cb / Cr = 128 + noise (sigma 16), each a w x w box of uniform random bytes (w = tg_own for Y, (w + 1) / 2
+ * for Cb / Cr, which are half width and here also half height), seamless: rows repeat every 768 (row y + 768 = row
+ * y), columns every 1536. The box sums: column sums C (one per pixel, kept from row to row: + the row entering,
+ * - the row leaving, both made again from their own seed, tg_seed) and a running sum along the row (tg_row). Rows go
+ * to the buffer through the bus window (hl_open; tg_put). tg_bad = 1 when anything fails (the code block then gives
+ * the texture no weight: no grain rather than a wrong one). Time (1/1024 s units, about ms) -> tg_ms, count tg_n.
+ * g3 (2026-11-17, faster): when the whole tile fits one bus window (tg_op), only a band of TG_BAND = 128 rows is made
+ * this way (period 128: row 128 = row 0), each row in one lock to rows y and y + 768 (tg_rc); tg_mix makes the rest
+ * from strips of the band. Otherwise (the tile across a window edge) all 768 rows as in g2c.
+ * Locals: (0) call slot, (4) bus, (8) work (malloc), (12) R row (cached), (16) CY, (20) CB, (24) CR (cached),
+ * (28) y, (32) w, (36) wc, (40) start, (44) failed; (48) Y params, (64) chroma params (tg_row: N, w, K, add),
+ * (80) counter, (84) a seed; (88) U, the rows made (128 band / 768), (92) 1 = band + strips, (96) lock token. */
+ .set TG_ROWB, 3072
+ .set TG_WORK, 3072 + 2 * (1536 + 8) + 4 * (768 + 8)
+ .set TG_CYB, 2 * (1536 + 8)
+ .set TG_CBB, 2 * (768 + 8)
+ .set TG_SUMW, (TG_WORK - TG_ROWB) / 4
+ .set TG_HALF, 768 * TG_ROWB
+ .set TG_YADD, (TG_YM << 16) + 32768
+ .set TG_CADD, (128 << 16) + 32768
+ .set TG_BAND, 128
+ .set TG_YRND, (48 << 8) + 128   /* tg_bl: mid << 8 + the rounding */
+ .set TG_CRND, (128 << 8) + 128
+tg_fill:
+ mov d0,(4,sp)
+ clr d0
+ mov d0,(8,sp)
+ mov d0,(28,sp)
+ mov d0,(44,sp)
+ movbu d0,(tg_bad)
+ mov (USCLK),d0
+ mov d0,(40,sp)
+ mov (tg_n),d1
+ xor d1,d0
+ mov 0x9e3779b9,d1
+ mul d1,d0
+ mov d0,(tg_sb)
+ movbu (tg_own),d0
+ cmp 6,d0
+ bcs 1f
+ mov 5,d0
+1:
+ cmp 0,d0
+ bne 1f
+ mov 1,d0
+1:
+ mov d0,(32,sp)
+ movbu d0,(tg_w)
+ inc d0
+ lsr 1,d0
+ mov d0,(36,sp)
+ mov (4,sp),d0                    /* g3: band + strips when the whole tile is in one 128 MB window segment */
+ mov 768,d1
+ clr d2
+ cmp 0x08000000,d0
+ bcs 2f
+ and 0x07ffffff,d0
+ add TG_BYTES,d0
+ cmp 0x08000001,d0
+ bcc 2f
+ mov TG_BAND,d1
+ mov 1,d2
+2:
+ mov d1,(88,sp)
+ mov d2,(92,sp)
+ mov sp,a2                       /* Y params: N 1536, w, K = 14189 / w (sigma 16 from w^2 bytes of sigma 73.9),
+                                     add = (48 << 16) + 32768 - 127.5 w^2 K */
+ add 48,a2
+ mov (32,sp),d0
+ call tg_par,[d2,d3],12
+ mov 1536,d0
+ mov d0,(a2)
+ mov (12,a2),d1
+ add TG_YADD,d1
+ mov d1,(12,a2)
+ mov sp,a2                        /* chroma params: N 768, wc, its K, add = (128 << 16) + 32768 - 127.5 wc^2 K */
+ add 64,a2
+ mov (36,sp),d0
+ call tg_par,[d2,d3],12
+ mov 768,d0
+ mov d0,(a2)
+ mov (12,a2),d1
+ add TG_CADD,d1
+ mov d1,(12,a2)
+
+ mov TG_WORK,d0
+ call malloc,[],4
+ cmp 0,a0
+ beq 90f
+ mov a0,(8,sp)
+ call FLUSH,[d2,d3],16            /* no stale lines for the work buffer's cached alias */
+ mov (8,sp),d0
+ cmp 0xa0000000,d0
+ bcs 1f
+ cmp 0xb8000000,d0
+ bcc 1f
+ add -0x40000000,d0
+1:
+ mov d0,(12,sp)                   /* R: the row, 3072 B */
+ add TG_ROWB,d0
+ mov d0,(16,sp)                   /* CY: 1536 + 8 halfwords */
+ add TG_CYB,d0
+ mov d0,(20,sp)                   /* CB: 768 + 8 */
+ add TG_CBB,d0
+ mov d0,(24,sp)                   /* CR: 768 + 8 */
+ mov (16,sp),a0                   /* the sums start at 0 */
+ mov TG_SUMW,d1
+ clr d0
+2:
+ mov d0,(a0)
+ inc4 a0
+ add -1,d1
+ bne 2b
+ clr d0                           /* the first w rows into CY */
+ mov d0,(80,sp)
+3:
+ mov (80,sp),d0
+ clr d1
+ call tg_seed,[],0
+ mov d0,d2
+ clr d3
+ mov (16,sp),a0
+ mov 1536,d1
+ call tg_col,[d2,d3,a2,a3],16
+ mov (80,sp),d0
+ inc d0
+ mov d0,(80,sp)
+ mov (32,sp),d1
+ cmp d1,d0
+ bcs 3b
+ clr d0                           /* the first wc chroma rows into CB and CR */
+ mov d0,(80,sp)
+4:
+ mov (80,sp),d0
+ mov 1,d1
+ call tg_seed,[],0
+ mov d0,d2
+ clr d3
+ mov (20,sp),a0
+ mov 768,d1
+ call tg_col,[d2,d3,a2,a3],16
+ mov (80,sp),d0
+ mov 2,d1
+ call tg_seed,[],0
+ mov d0,d2
+ clr d3
+ mov (24,sp),a0
+ mov 768,d1
+ call tg_col,[d2,d3,a2,a3],16
+ mov (80,sp),d0
+ inc d0
+ mov d0,(80,sp)
+ mov (36,sp),d1
+ cmp d1,d0
+ bcs 4b
+
+10:                               /* row y = 0 .. 767 */
+ mov (28,sp),d0
+ btst 1,d0
+ bne 20f
+ mov (20,sp),a0                   /* even y: Cb / Cr from chroma row y / 2 (odd y keeps them) */
+ mov (12,sp),a1
+ add 1,a1
+ mov sp,a2
+ add 64,a2
+ call tg_row,[d2,d3,a2,a3],16
+ mov (24,sp),a0
+ mov (12,sp),a1
+ add 3,a1
+ mov sp,a2
+ add 64,a2
+ call tg_row,[d2,d3,a2,a3],16
+ mov 1,d0
+ mov d0,(80,sp)
+11:                               /* Cb (1), Cr (2): + chroma row (y / 2 + wc) mod U / 2, - chroma row y / 2 */
+ mov (28,sp),d0
+ lsr 1,d0
+ mov (36,sp),d1
+ add d1,d0
+ mov (88,sp),d1
+ lsr 1,d1
+ cmp d1,d0
+ bcs 12f
+ sub d1,d0
+12:
+ mov (80,sp),d1
+ call tg_seed,[],0
+ mov d0,(84,sp)
+ mov (28,sp),d0
+ lsr 1,d0
+ mov (80,sp),d1
+ call tg_seed,[],0
+ mov d0,d3
+ mov (84,sp),d2
+ mov (20,sp),a0
+ mov (80,sp),d0
+ cmp 1,d0
+ beq 13f
+ mov (24,sp),a0
+13:
+ mov 768,d1
+ call tg_col,[d2,d3,a2,a3],16
+ mov (80,sp),d0
+ inc d0
+ mov d0,(80,sp)
+ cmp 3,d0
+ bcs 11b
+20:
+ mov (16,sp),a0                   /* Y of row y */
+ mov (12,sp),a1
+ mov sp,a2
+ add 48,a2
+ call tg_row,[d2,d3,a2,a3],16
+ mov (28,sp),d0                   /* + row (y + w) mod U, - row y */
+ mov (32,sp),d1
+ add d1,d0
+ mov (88,sp),d1
+ cmp d1,d0
+ bcs 21f
+ sub d1,d0
+21:
+ clr d1
+ call tg_seed,[],0
+ mov d0,(84,sp)
+ mov (28,sp),d0
+ clr d1
+ call tg_seed,[],0
+ mov d0,d3
+ mov (84,sp),d2
+ mov (16,sp),a0
+ mov 1536,d1
+ call tg_col,[d2,d3,a2,a3],16
+ mov (92,sp),d0
+ cmp 0,d0
+ beq 22f
+ mov (4,sp),d0                    /* g3: the row to tile rows y and y + 768 in one lock, through the cached view */
+ call tg_op,[d2,d3,a2,a3],20
+ mov d0,(96,sp)
+ cmp 0,a0
+ beq 78f
+ mov (28,sp),d0
+ mov TG_ROWB,d1
+ mul d1,d0
+ add d0,a0
+ mov (12,sp),a1
+ clr d0
+ call tg_rc,[d2,d3,a2,a3],16
+ mov (96,sp),d0
+ call tg_cl,[d2,d3,a2,a3],20
+ bra 23f
+22:
+ mov (28,sp),d0                   /* the row to tile rows y and y + 768 */
+ mov TG_ROWB,d1
+ mul d1,d0
+ mov (4,sp),d1
+ add d1,d0
+ mov d0,d2
+ mov (12,sp),a0
+ mov TG_ROWB,d1
+ call tg_put,[d2,d3,a2,a3],40
+ cmp 0,d0
+ bne 80f
+ mov d2,d0
+ add TG_HALF,d0
+ mov (12,sp),a0
+ mov TG_ROWB,d1
+ call tg_put,[d2,d3,a2,a3],40
+ cmp 0,d0
+ bne 80f
+23:
+ mov (28,sp),d0
+ inc d0
+ mov d0,(28,sp)
+ mov (88,sp),d1
+ cmp d1,d0
+ bcs 10b
+ mov (92,sp),d0                   /* g3: rows 128..767 from strips of the band */
+ cmp 0,d0
+ beq 85f
+ mov (4,sp),d0
+ mov (32,sp),d1
+ call tg_mix,[d2,d3,a2,a3],72
+ cmp 0,d0
+ bne 80f
+ mov (tg_nf),d0
+ inc d0
+ mov d0,(tg_nf)
+ bra 85f
+78:
+ mov (96,sp),d0
+ call UNLOCK,[d2],8
+80:
+ mov 1,d0
+ mov d0,(44,sp)
+85:
+ call FLUSH,[d2,d3],16            /* the work buffer's lines out of the cache before it goes back */
+ mov (8,sp),a0
+ call free,[],4
+ mov (44,sp),d0
+ cmp 0,d0
+ bne 90f
+ mov (40,sp),d0                   /* g1b: the start; 0x98900284 counts DOWN (NOTES, timing 2026-11-14), so the time */
+ mov (USCLK),d1                   /* is start - end (g1 logged end - start: 2^22 - 380 on the camera, 2026-11-16) */
+ sub d1,d0
+ and 0x7fffffff,d0                /* a 31-bit counter (the firmware's clock = 0x7fffffff - it) */
+ lsr 4,d0
+ mov 1049,d1
+ mul d1,d0                        /* (us / 16) x 1049 / 65536 = us / 999.6: milliseconds (to 65 s) */
+ lsr 16,d0
+ mov d0,(tg_ms)
+ mov (tg_n),d0
+ inc d0
+ mov d0,(tg_n)
+ ret [d2,d3,a2,a3],120
+90:
+ mov 1,d0
+ movbu d0,(tg_bad)
+ mov (tg_nb),d0
+ inc d0
+ mov d0,(tg_nb)
+ ret [d2,d3,a2,a3],120
+
+/* tg_par: `call tg_par,[d2,d3],12`, d0 = box width w (1..5), a2 = params -> +4 w, +8 K = 14189 / w,
+ * +12 = -(127.5 w^2 K) (the caller adds its base and the rounding). */
+tg_par:
+ mov d0,(4,a2)
+ mov d0,d2
+ add -1,d0
+ asl2 d0
+ mov tg_kt,a0
+ add d0,a0
+ mov (a0),d0
+ mov d0,(8,a2)
+ mov d2,d1
+ mul d2,d1                        /* w^2 */
+ mul d0,d1                        /* w^2 K */
+ mov 255,d0
+ mul d0,d1
+ asr 1,d1                         /* 127.5 w^2 K */
+ clr d0
+ sub d1,d0
+ mov d0,(12,a2)
+ ret [d2,d3],12
+
+/* tg_seed: `call tg_seed,[],0`, d0 = row, d1 = channel (0 Y, 1 Cb, 2 Cr) -> d0 = that row's stream seed, never 0
+ * (a 0 stream stays 0: tg_col's "no row leaving"). Uses d0, d1 and MDR (so `ret`, not `retf`). */
+tg_seed:
+ asl 28,d1
+ xor d1,d0
+ mov 0x9e3779b9,d1
+ mul d1,d0
+ mov (tg_sb),d1
+ xor d1,d0
+ mov d0,d1
+ lsr 16,d1
+ xor d1,d0
+ mov 0x7feb352d,d1
+ mul d1,d0
+ mov d0,d1
+ lsr 15,d1
+ xor d1,d0
+ mov 0x846ca68b,d1
+ mul d1,d0
+ mov d0,d1
+ lsr 16,d1
+ xor d1,d0
+ cmp 0,d0
+ bne 1f
+ mov 1,d0
+1:
+ ret [],0
+
+/* tg_col: `call tg_col,[d2,d3,a2,a3],16`, a0 = sums (halfwords), d1 = N (a multiple of 4), d2 = the entering row's
+ * stream, d3 = the leaving row's (0: none). sums[x] += byte_in(x) - byte_out(x); bytes = xorshift32 words, low byte
+ * first. */
+tg_col:
+ add d1,d1
+ mov a0,d0
+ add d0,d1
+ mov d1,a1                        /* the end */
+1:
+ mov d2,d0
+ asl 13,d0
+ xor d0,d2
+ mov d2,d0
+ lsr 17,d0
+ xor d0,d2
+ mov d2,d0
+ asl 5,d0
+ xor d0,d2
+ mov d3,d0
+ asl 13,d0
+ xor d0,d3
+ mov d3,d0
+ lsr 17,d0
+ xor d0,d3
+ mov d3,d0
+ asl 5,d0
+ xor d0,d3
+ mov d2,d0
+ extbu d0
+ mov d3,d1
+ extbu d1
+ sub d1,d0
+ movhu (a0),d1
+ add d0,d1
+ movhu d1,(a0)
+ mov d2,d0
+ lsr 8,d0
+ extbu d0
+ mov d3,d1
+ lsr 8,d1
+ extbu d1
+ sub d1,d0
+ movhu (2,a0),d1
+ add d0,d1
+ movhu d1,(2,a0)
+ mov d2,d0
+ lsr 16,d0
+ extbu d0
+ mov d3,d1
+ lsr 16,d1
+ extbu d1
+ sub d1,d0
+ movhu (4,a0),d1
+ add d0,d1
+ movhu d1,(4,a0)
+ mov d2,d0
+ lsr 24,d0
+ mov d3,d1
+ lsr 24,d1
+ sub d1,d0
+ movhu (6,a0),d1
+ add d0,d1
+ movhu d1,(6,a0)
+ add 8,a0
+ cmp a1,a0
+ bcs 1b
+ ret [d2,d3,a2,a3],16
+
+/* tg_row: `call tg_row,[d2,d3,a2,a3],16`, a0 = sums (N + 8 halfwords), a1 = the first output byte, a2 = params
+ * {N, w, K, add}: out[x] = clamp((K * (sums[x] + .. + sums[x + w - 1]) + add) >> 16) for x < N (wrapping round:
+ * sums[N + i] = sums[i] first), every 2nd byte for N = 1536 (Y), every 4th for N = 768 (Cb / Cr). */
+tg_row:
+ mov (0,a2),d0
+ add d0,d0
+ mov a0,a3
+ add d0,a3                        /* &sums[N] */
+ mov (4,a2),d1
+ clr d2
+1:
+ movhu (d2,a0),d0
+ movhu d0,(d2,a3)
+ add 2,d2
+ add -1,d1
+ bne 1b
+ clr d2                           /* s = sums[0] + .. + sums[w - 1] */
+ mov (4,a2),d1
+ mov a0,a3
+2:
+ movhu (a3),d0
+ add d0,d2
+ add 2,a3
+ add -1,d1
+ bne 2b
+ mov (8,a2),d3                    /* K */
+ mov (0,a2),d1
+ cmp 1536,d1
+ bne 30f
+ add d1,d1
+ mov a0,d0
+ add d0,d1                        /* the end of the sums */
+ mov (12,a2),a2                   /* add */
+3:
+ mov d2,d0
+ mul d3,d0
+ add a2,d0
+ asr 16,d0
+ cmp 0,d0
+ bge 4f
+ clr d0
+4:
+ cmp 255,d0
+ ble 5f
+ mov 255,d0
+5:
+ movbu d0,(a1)
+ add 2,a1
+ movhu (a3),d0
+ add d0,d2
+ movhu (a0),d0
+ sub d0,d2
+ add 2,a0
+ add 2,a3
+ mov a0,d0
+ cmp d1,d0
+ bcs 3b
+ ret [d2,d3,a2,a3],16
+30:
+ add d1,d1
+ mov a0,d0
+ add d0,d1
+ mov (12,a2),a2
+31:
+ mov d2,d0
+ mul d3,d0
+ add a2,d0
+ asr 16,d0
+ cmp 0,d0
+ bge 32f
+ clr d0
+32:
+ cmp 255,d0
+ ble 33f
+ mov 255,d0
+33:
+ movbu d0,(a1)
+ add 4,a1
+ movhu (a3),d0
+ add d0,d2
+ movhu (a0),d0
+ sub d0,d2
+ add 2,a0
+ add 2,a3
+ mov a0,d0
+ cmp d1,d0
+ bcs 31b
+ ret [d2,d3,a2,a3],16
+
+/* tg_put: `call tg_put,[d2,d3,a2,a3],40`, d0 = bus address, a0 = source (cached), d1 = bytes (a multiple of 4)
+ * -> d0 = 0 written / 1 not. Through hl_open (the firmware's lock and this CPU's bus window), the window's cached
+ * view and FLUSH, as halation; pieces split at the window's 128 MB edges. Locals: (4) bus, (8) source, (12) left,
+ * (16) token, (20) this piece. */
+tg_put:
+ mov d0,(4,sp)
+ mov a0,(8,sp)
+ mov d1,(12,sp)
+1:
+ mov (12,sp),d0
+ cmp 0,d0
+ beq 8f
+ mov (4,sp),d1
+ and 0x07ffffff,d1
+ mov 0x08000000,d2
+ sub d1,d2                        /* room before the edge */
+ cmp d0,d2
+ bls 2f
+ mov d0,d2
+2:
+ mov d2,(20,sp)
+ mov (4,sp),d0
+ mov d2,d1
+ call hl_open,[d2,d3,a2,a3],28
+ mov d0,(16,sp)
+ cmp 0,a0
+ beq 7f
+ clr d3
+ mov a0,d0
+ cmp 0xb8000000,d0
+ bcs 3f
+ add -0x40000000,d0               /* the window's cached view */
+ mov d0,a0
+ mov 1,d3
+3:
+ mov (8,sp),a1
+ mov (20,sp),d1
+ lsr 2,d1
+4:
+ mov (a1),d0
+ inc4 a1
+ mov d0,(a0)
+ inc4 a0
+ add -1,d1
+ bne 4b
+ cmp 0,d3
+ beq 5f
+ call FLUSH,[d2,d3],16
+5:
+ mov (16,sp),d0
+ call UNLOCK,[d2],8
+ mov (20,sp),d0
+ mov (4,sp),d1
+ add d0,d1
+ mov d1,(4,sp)
+ mov (8,sp),d1
+ add d0,d1
+ mov d1,(8,sp)
+ mov (12,sp),d1
+ sub d0,d1
+ mov d1,(12,sp)
+ bra 1b
+7:
+ mov (16,sp),d0
+ call UNLOCK,[d2],8
+ mov 1,d0
+ ret [d2,d3,a2,a3],40
+8:
+ clr d0
+ ret [d2,d3,a2,a3],40
+
+/* ---- grain g3 (2026-11-17, owner: "try the faster grain tile method"): the AV1 film-grain idea (a template copied at
+ * random offsets, the joins crossfaded), with the template a band of the tile itself (128 x 1536, made by tg_fill's
+ * box filter) so nothing repeats near itself. Per tile ~3x fewer instructions and ~5x fewer locks / FLUSHes than g2c
+ * (FLUSH is the costly part on the camera: NOTES, xb_grain gr4). research/NOTES.md "Better grain g3". */
+
+/* tg_op: `call tg_op,[d2,d3,a2,a3],20`, d0 = the tile's bus address -> a0 = the whole tile's cached view (the window's
+ * 0x78.. view, or DRAM's 0x6.. alias), 0 = not mapped; d0 = the lock token for tg_cl (also when a0 = 0). */
+tg_op:
+ mov TG_BYTES,d1
+ call hl_open,[d2,d3,a2,a3],28
+ cmp 0,a0
+ beq 1f
+ mov a0,d1
+ add -0x40000000,d1
+ mov d1,a0
+1:
+ ret [d2,d3,a2,a3],20
+
+/* tg_cl: `call tg_cl,[d2,d3,a2,a3],20`, d0 = tg_op's token: FLUSH (the cached view's lines out to memory), UNLOCK. */
+tg_cl:
+ mov d0,d2
+ call FLUSH,[d2,d3],16
+ mov d2,d0
+ call UNLOCK,[d2],8
+ ret [d2,d3,a2,a3],20
+
+/* tg_rc: `call tg_rc,[d2,d3,a2,a3],16`, a0 = a tile row (cached view), a1 = the source row, d0 = a shift (bytes, a
+ * multiple of 4, 0..3068): row[j] = source[(j + shift) mod 3072], written at a0 and a0 + TG_HALF (768 rows down).
+ * About 5.4 K instructions. */
+tg_rc:
+ mov TG_ROWB,d2
+ sub d0,d2
+ lsr 2,d2                         /* words before the source's end (1..768) */
+ mov a1,a2                        /* the source row's start */
+ add d0,a1
+ lsr 2,d0
+ mov d0,d3                        /* words after it (0..767) */
+1:
+ mov (a1),d0
+ inc4 a1
+ mov d0,(a0)
+ mov d0,(TG_HALF,a0)
+ inc4 a0
+ add -1,d2
+ bne 1b
+ cmp 0,d3
+ beq 3f
+ mov a2,a1
+2:
+ mov (a1),d0
+ inc4 a1
+ mov d0,(a0)
+ mov d0,(TG_HALF,a0)
+ inc4 a0
+ add -1,d3
+ bne 2b
+3:
+ ret [d2,d3,a2,a3],16
+
+/* tg_bl: `call tg_bl,[d2,d3,a2,a3],32`, a0 = a tile row (cached view) holding the new strip's row n, a1 = the row the
+ * strip before goes on with (p, before its shift), d0 = p's shift (bytes, a multiple of 4), d1 = weights c | s << 16:
+ * out = clamp(mid + ((c (p - mid) + s (n - mid) + 128) >> 8)), mid 48 for Y (even bytes), 128 for Cb / Cr (odd);
+ * written at a0 and a0 + TG_HALF. About 58 K instructions. Locals: (4) p's row start, (8) the shift, (12) the piece. */
+tg_bl:
+ mov a1,(4,sp)
+ mov d0,(8,sp)
+ mov d1,d3
+ exthu d3                         /* c */
+ mov d1,d2
+ lsr 16,d2                        /* s */
+ add d0,a1                        /* piece 0: p from the shift to its row's end */
+ mov TG_ROWB,d1
+ sub d0,d1
+ mov a0,a2
+ add d1,a2
+ clr d0
+ mov d0,(12,sp)
+5:
+ cmp a2,a0
+ bcc 8f
+6:
+ movbu (a1),d0                    /* Y */
+ add -48,d0
+ mul d3,d0
+ movbu (a0),d1
+ add -48,d1
+ mul d2,d1
+ add d1,d0
+ add TG_YRND,d0
+ asr 8,d0
+ cmp 0,d0
+ bge 1f
+ clr d0
+1:
+ cmp 255,d0
+ ble 2f
+ mov 255,d0
+2:
+ movbu d0,(a0)
+ movbu d0,(TG_HALF,a0)
+ movbu (1,a1),d0                  /* Cb or Cr */
+ add -128,d0
+ mul d3,d0
+ movbu (1,a0),d1
+ add -128,d1
+ mul d2,d1
+ add d1,d0
+ add TG_CRND,d0
+ asr 8,d0
+ cmp 0,d0
+ bge 3f
+ clr d0
+3:
+ cmp 255,d0
+ ble 4f
+ mov 255,d0
+4:
+ movbu d0,(1,a0)
+ movbu d0,(TG_HALF + 1,a0)
+ add 2,a0
+ add 2,a1
+ cmp a2,a0
+ bcs 6b
+8:
+ mov (12,sp),d0
+ cmp 0,d0
+ bne 9f
+ mov 1,d0
+ mov d0,(12,sp)
+ mov (4,sp),a1                    /* piece 1: p from its row's start, for the shift's bytes */
+ mov (8,sp),d0
+ mov a0,a2
+ add d0,a2
+ bra 5b
+9:
+ ret [d2,d3,a2,a3],32
+
+/* tg_mix: `call tg_mix,[d2,d3,a2,a3],72`, d0 = the tile's bus address, d1 = w (1..5); tile rows 0..127 hold the band
+ * (period 128: its row 128 would be row 0), rows 768..895 the same. Rows 128..767 (and 896..1535): 20 strips of 32
+ * rows; strip k = the band's rows sy..sy + 31 turned round by sx (row[j] = band[(j + sx) mod 3072]), sy and sx from
+ * tg_seed(k, 3) = h: sy = 2 ((h & 0xffff) 44 >> 16) (0..86, so the strip and the 10 rows after it stay in the band),
+ * sx = 4 ((h >> 16) 768 >> 16) bytes. Its first B = 2w rows are crossfaded (tg_bl, weights tg_wt: cos / sin of
+ * (i + 1) 90 / (B + 1) degrees, so the grain keeps its strength) from the strip before it going on (strip 0: the band
+ * going on, rows 0..B - 1); at the end the last strip going on is crossfaded into rows 0..B - 1 (the tile's wrap).
+ * A lock for each crossfaded row, up to 16 other rows a lock (at most ~90 K instructions under one).
+ * -> d0 = 0 done, 1 the window not mapped. Locals: (4) bus, (8) B, (12) weights, (16) k, (20) r0 (the strip's first
+ * row), (24) sy, (28) sx, (32) the row the strip before goes on with, (36) its sx, (40) i, (44) token, (48) the
+ * tile's cached view, (52) rows left this lock. */
+tg_mix:
+ mov d0,(4,sp)
+ mov d1,d0
+ add d0,d0
+ mov d0,(8,sp)
+ mov d1,d0
+ add -1,d0
+ mul d1,d0
+ asl2 d0
+ mov tg_wt,a0
+ add d0,a0
+ mov a0,(12,sp)
+ clr d0
+ mov d0,(16,sp)
+ mov d0,(32,sp)
+ mov d0,(36,sp)
+10:                               /* strip k */
+ mov (16,sp),d0
+ asl 5,d0
+ add TG_BAND,d0
+ mov d0,(20,sp)
+ mov (16,sp),d0
+ mov 3,d1
+ call tg_seed,[],0
+ mov d0,d2
+ exthu d0
+ mov 44,d1
+ mul d1,d0
+ lsr 16,d0
+ add d0,d0
+ mov d0,(24,sp)
+ mov d2,d0
+ lsr 16,d0
+ mov 768,d1
+ mul d1,d0
+ lsr 16,d0
+ asl2 d0
+ mov d0,(28,sp)
+ clr d0
+ mov d0,(40,sp)
+11:                               /* its first B rows: the strip's row, crossfaded from the strip before */
+ mov (4,sp),d0
+ call tg_op,[d2,d3,a2,a3],20
+ mov d0,(44,sp)
+ cmp 0,a0
+ beq 80f
+ mov a0,(48,sp)
+ mov (20,sp),d0
+ call tg_ra,[],0
+ mov d0,a2                        /* the row */
+ mov (24,sp),d0
+ call tg_ra,[],0
+ mov d0,a1
+ mov a2,a0
+ mov (28,sp),d0
+ call tg_rc,[d2,d3,a2,a3],16
+ mov (32,sp),d0
+ call tg_ra,[],0
+ mov d0,a1
+ mov a2,a0
+ call tg_wi,[],0
+ mov (36,sp),d0
+ call tg_bl,[d2,d3,a2,a3],32
+ mov (44,sp),d0
+ call tg_cl,[d2,d3,a2,a3],20
+ mov (40,sp),d0
+ inc d0
+ mov d0,(40,sp)
+ mov (8,sp),d1
+ cmp d1,d0
+ bcs 11b
+12:                               /* the rest of the strip, up to 16 rows a lock */
+ mov (40,sp),d0
+ cmp 32,d0
+ bcc 15f
+ mov (4,sp),d0
+ call tg_op,[d2,d3,a2,a3],20
+ mov d0,(44,sp)
+ cmp 0,a0
+ beq 80f
+ mov a0,(48,sp)
+ mov 16,d0
+ mov d0,(52,sp)
+13:
+ mov (20,sp),d0
+ call tg_ra,[],0
+ mov d0,a0
+ mov (24,sp),d0
+ call tg_ra,[],0
+ mov d0,a1
+ mov (28,sp),d0
+ call tg_rc,[d2,d3,a2,a3],16
+ mov (40,sp),d0
+ inc d0
+ mov d0,(40,sp)
+ cmp 32,d0
+ bcc 14f
+ mov (52,sp),d0
+ add -1,d0
+ mov d0,(52,sp)
+ bne 13b
+14:
+ mov (44,sp),d0
+ call tg_cl,[d2,d3,a2,a3],20
+ bra 12b
+15:
+ mov (24,sp),d0                   /* this strip goes on from its row sy + 32 */
+ add 32,d0
+ mov d0,(32,sp)
+ mov (28,sp),d0
+ mov d0,(36,sp)
+ mov (16,sp),d0
+ inc d0
+ mov d0,(16,sp)
+ cmp 20,d0
+ bcs 10b
+ clr d0                           /* the wrap: rows 0..B - 1 crossfaded from the last strip going on */
+ mov d0,(40,sp)
+ mov d0,(20,sp)
+16:
+ mov (4,sp),d0
+ call tg_op,[d2,d3,a2,a3],20
+ mov d0,(44,sp)
+ cmp 0,a0
+ beq 80f
+ mov a0,(48,sp)
+ mov (20,sp),d0
+ call tg_ra,[],0
+ mov d0,a2
+ mov (32,sp),d0
+ call tg_ra,[],0
+ mov d0,a1
+ mov a2,a0
+ call tg_wi,[],0
+ mov (36,sp),d0
+ call tg_bl,[d2,d3,a2,a3],32
+ mov (44,sp),d0
+ call tg_cl,[d2,d3,a2,a3],20
+ mov (40,sp),d0
+ inc d0
+ mov d0,(40,sp)
+ mov (8,sp),d1
+ cmp d1,d0
+ bcs 16b
+ clr d0
+ ret [d2,d3,a2,a3],72
+80:
+ mov (44,sp),d0
+ call UNLOCK,[d2],8
+ mov 1,d0
+ ret [d2,d3,a2,a3],72
+
+/* tg_ra: `call tg_ra,[],0` from tg_mix (same sp: the return address goes in its call slot): d0 = a row r -> d0 =
+ * the tile's cached view (48,sp) + (r + i) 3072, i = (40,sp). Uses d0, d1, MDR. */
+tg_ra:
+ mov (40,sp),d1
+ add d1,d0
+ mov TG_ROWB,d1
+ mul d1,d0
+ mov (48,sp),d1
+ add d1,d0
+ ret [],0
+
+/* tg_wi: `call tg_wi,[],0` from tg_mix -> d1 = the weights c | s << 16 for row i = (40,sp) of a crossfade, from
+ * (12,sp) + 4 i. Uses d0, a3. */
+tg_wi:
+ mov (40,sp),d0
+ asl2 d0
+ mov (12,sp),d1
+ add d1,d0
+ mov d0,a3
+ mov (a3),d1
+ ret [],0
+
+ .balign 4
+tg_kt:                            /* K by box width 1..5: 16 / (73.9 w) x 65536 */
+ .long 14189, 7094, 4730, 3547, 2838
+tg_wt:                            /* g3 crossfade weights, B = 2w rows: c, s = 256 cos, 256 sin ((i + 1) 90 / (B + 1)) */
+ .hword 222, 128, 128, 222
+ .hword 243, 79, 207, 150, 150, 207, 79, 243
+ .hword 250, 57, 231, 111, 200, 160, 160, 200, 111, 231, 57, 250
+ .hword 252, 44, 241, 88, 222, 128, 196, 165, 165, 196, 128, 222, 88, 241, 44, 252
+ .hword 253, 36, 246, 72, 233, 106, 215, 138, 193, 168, 168, 193, 138, 215, 106, 233, 72, 246, 36, 253
+tg_sb:                            /* this tile's seed */
+ .long 0
+tg_n:                             /* tiles made this power-on */
+ .long 0
+tg_nb:                            /* tiles that failed */
+ .long 0
+tg_ms:                            /* the last tile's time in ms (g1b; g1 logged end - start >> 10, wrong way round) */
+ .long 0
+tg_nf:                            /* g3: tiles made the fast way (band + strips) */
+ .long 0
+tg_own:                           /* set by the code block's xb_tex around TXGET: our tile's size 1..5, 0 = stock */
+ .byte 0
+tg_bad:                           /* 1: the last tile was not written (the code block gives the texture no weight) */
+ .byte 0
+tg_w:                             /* the last tile's size */
+ .byte 0
+ .balign 4
+tg_l1:
+ .asciz "\r\nGrain tiles (better grain g3): made "
+tg_l2:
+ .asciz ", failed "
+tg_l3:
+ .asciz ", last size "
+tg_l4:
+ .asciz ", last time (ms) "
+tg_l5:
+ .asciz ", fast "
+ .balign 4
+
+/* ------------------------------------------------------------------ better grain g2: the Film Grain and Grain Size rows
+ * Owner (2026-11-15, the mockup): Film Grain a slider Off, 1..5 (replacing Off / Low / Med / High) and a Grain Size row
+ * Fine / Medium / Coarse under it; films saved with Low / Med / High become 2 / 3 / 5. Per COLOR k and so per film:
+ * - slot +53 (record +51) = the old level 0 Off, 1 Low, 2 Med, 3 High, kept in step (gs_lv): older firmware, the CPU
+ *   grain, LookLab and the photo code read it as before, and BUNDLES / EDITS stay in their ranges for going back;
+ * - G = the curves record's spare byte (rgbcurves.inc: a slot's 8 kept bytes, the last one zero until now), live[k]
+ *   +25 in cv_ram: it goes wherever COLOR k's curves go (EDITS records ed[r], the per-mode sets, the record in M), and
+ *   firmware up to v0.30.3 copies it along without reading it. G = 0: the strength from the level (gs_dv: Low 2, Med 3,
+ *   High 5) and Medium; else 0x80 | size << 3 | strength. gs_wr writes 0 whenever the level gives the same, so a film
+ *   as built has G = 0 (and its '*' counts G != 0 as a change: ck_kset / ck_jset). */
+gs_lv:                            /* strength 0..5 -> level */
+ .byte 0, 1, 1, 2, 3, 3
+gs_dv:                            /* level 0..3 -> strength */
+ .byte 0, 2, 3, 5
+ .balign 2
+
+/* gs_ga: `call gs_ga,[d2,d3,a2],16`, a1 = a slot (P + 32 + 64k) -> a0 = &G (cv_ram live[k] +25), or 0 when there is
+ * no settings block or a1 is not COLOR k's slot. Uses d0, d1, a0. */
+gs_ga:
+ mov 0,a0
+ PVAL 9f
+ mov a1,d0
+ sub a2,d0
+ add -32,d0
+ cmp 256,d0
+ bcc 9f
+ btst 63,d0
+ bne 9f
+ lsr 6,d0                         /* k */
+ mov d0,d1
+ asl 4,d1
+ mov d0,d2
+ asl 3,d2
+ add d2,d1
+ add d0,d1
+ add d0,d1                        /* 26 k (CV_ESZ) */
+ mov cv_ram + CV_LV + 25,a0
+ add d1,a0
+9:
+ ret [d2,d3,a2],16
+
+/* gs_eff: `call gs_eff,[d2,d3,a2],16`, a0 = COLOR k's slot -> d0 strength 0..5 (0: the level is Off), d1 size 0 Fine,
+ * 1 Medium, 2 Coarse. Uses a0, a1 (keeps a3). Also the code block's xb_tex (GS_EFF). */
+gs_eff:
+ mov a0,a1
+ call gs_ga,[d2,d3,a2],16
+ movbu (53,a1),d2                 /* the level */
+ mov 1,d1                         /* Medium */
+ clr d3                           /* G */
+ cmp 0,a0
+ beq 2f
+ movbu (a0),d3
+ btst 0x80,d3
+ bne 1f
+ clr d3
+ bra 2f
+1:
+ mov d3,d1
+ lsr 3,d1
+ and 3,d1
+ cmp 3,d1
+ bcs 2f
+ mov 1,d1
+2:
+ clr d0
+ cmp 0,d2
+ beq 9f                           /* Off */
+ mov d3,d0
+ and 7,d0
+ cmp 0,d0
+ beq 3f
+ cmp 6,d0
+ bcs 9f                           /* G's strength 1..5 */
+3:
+ cmp 4,d2                         /* else the level's: Low 2, Med 3, High 5 (an older 4 / 5: 5) */
+ bcs 4f
+ mov 3,d2
+4:
+ mov gs_dv,a0
+ add d2,a0
+ movbu (a0),d0
+9:
+ ret [d2,d3,a2],16
+
+/* gs_wr: `call gs_wr,[d2,d3,a2],16`, a0 = COLOR k's slot, d0 strength 0..5, d1 size 0..2 (the callers check them):
+ * slot +53 <- its level; G <- 0 when the level gives the same strength and the size is Medium, else 0x80 | size << 3 |
+ * strength. Uses d0, d1, a0, a1. */
+gs_wr:
+ mov a0,a1
+ mov d0,d2
+ mov d1,d3
+ mov gs_lv,a0
+ add d2,a0
+ movbu (a0),d0
+ movbu d0,(53,a1)
+ mov gs_dv,a0
+ add d0,a0
+ movbu (a0),d0
+ clr d1
+ cmp d2,d0
+ bne 1f
+ cmp 1,d3
+ beq 2f
+1:
+ mov d3,d1
+ asl 3,d1
+ or d2,d1
+ or 0x80,d1
+2:
+ mov d1,d3
+ call gs_ga,[d2,d3,a2],16
+ cmp 0,a0
+ beq 9f
+ movbu d3,(a0)
+9:
+ ret [d2,d3,a2],16
+
+/* gs_row: `call gs_row,[d2,d3,a2,a3],40` from sl_set0, a3 class 15 (Film Grain 0..5) / 16 (Grain Size 0..2), d1 the
+ * new value, d2 = P + 64k -> d1 0 stored, 1 out of range. Keeps d0, a0, a1 (s_dirty reads them) and a2. Locals (4) d0,
+ * (8) a0, (12) a1, (16) the value, (20) the slot. */
+gs_row:
+ mov d0,(4,sp)
+ mov a0,(8,sp)
+ mov a1,(12,sp)
+ mov d1,(16,sp)
+ add 32,d2
+ mov d2,(20,sp)
+ mov d2,a0
+ call gs_eff,[d2,d3,a2],16        /* d0 strength, d1 size now */
+ cmp 15,a3
+ bne 2f
+ mov (16,sp),d0
+ cmp 6,d0
+ bcc 8f
+ bra 3f
+2:
+ mov (16,sp),d1
+ cmp 3,d1
+ bcc 8f
+3:
+ mov (20,sp),a0
+ call gs_wr,[d2,d3,a2],16
+ clr d1
+ bra 9f
+8:
+ mov 1,d1
+9:
+ mov (4,sp),d0
+ mov (8,sp),a0
+ mov (12,sp),a1
+ ret [d2,d3,a2,a3],40
+
+/* gs_def: `call gs_def,[d2,d3,a2,a3],28` (fl_isdef: the row's '*' and Reset guide), d0 = GSB + k or SZB + k, a2 = P
+ * -> d0 1 when the row is as built: Film Grain = its film's level as a strength (no film there: Off), Grain Size =
+ * Medium; else 0. Locals (4) 0 Film Grain / 1 Grain Size, (8) k, (12) strength now. */
+gs_def:
+ exthu d0
+ clr d1
+ add -GSB,d0
+ cmp 4,d0
+ bcs 1f
+ add GSB - SZB,d0
+ mov 1,d1
+1:
+ mov d1,(4,sp)
+ mov d0,(8,sp)
+ asl 6,d0
+ add 32,d0
+ mov a2,a0
+ add d0,a0
+ call gs_eff,[d2,d3,a2],16
+ mov d0,(12,sp)
+ mov (4,sp),d0
+ cmp 0,d0
+ beq 3f
+ clr d0                           /* Grain Size: Medium */
+ cmp 1,d1
+ bne 9f
+ mov 1,d0
+ bra 9f
+3:
+ mov (8,sp),d2
+ call fl_film,[],0                /* d0 = film j, or -1 */
+ clr d1                           /* no film: Off */
+ cmp 0,d0
+ blt 5f
+ mov d0,d3
+ mov (LPTR,a2),a0
+ call fl_has,[],0
+ clr d1
+ cmp 0,d0
+ beq 5f
+ mov (LPTR,a2),a0
+ mov d3,d0
+ asl 6,d0
+ add d0,a0
+ movbu (32 + 51,a0),d1            /* the film's level as built (its LOOKS record +51) */
+ cmp 4,d1
+ bcs 4f
+ mov 3,d1
+4:
+ mov gs_dv,a0
+ add d1,a0
+ movbu (a0),d1
+5:
+ mov (12,sp),d2
+ clr d0
+ cmp d1,d2
+ bne 9f
+ mov 1,d0
+9:
+ ret [d2,d3,a2,a3],28
+
+/* gs_zk: `call gs_zk,[d2],8`, d0 = k: COLOR k's G <- 0 (e_rst, the whole-profile reset: the level is 0 by then). */
+gs_zk:
+ mov d0,d1
+ asl 4,d1
+ mov d0,d2
+ asl 3,d2
+ add d2,d1
+ add d0,d1
+ add d0,d1
+ mov cv_ram + CV_LV + 25,a0
+ add d1,a0
+ clr d0
+ movbu d0,(a0)
+ ret [d2],8
+ .balign 4
+
 /* ------------------------------------------------------------------ split toning (v0.26)
  * research/NOTES.md "Split toning": the RGB gamma stage (0x60516ad9) copies the picture-mode curve into the job three
  * times (O+1252 R / +1892 G / +2532 B: 256 x u16 12-bit + 64 x u16 fine table, 640 B each) before the stage list that
@@ -8339,6 +9951,31 @@ s_lv6:
  jmp (a1)
 9:
  jmp lv_skip                      /* 0x6046b94f */
+
+/* slot_any: `call slot_any,[d2,d3,a2],16`, d1 want << 8 | mask, a0 byte offset in the block -> d0 1 when P is valid
+ * and some COLOR slot k (0..3) has (P + a0 + 64k) & mask == want, else 0. Uses d0, d1. Used by wb_get and hl_pp, each
+ * behind a SEC_READY gate right before the call (d0 is the gate's register, so the arguments are in d1 and a0). */
+slot_any:
+ mov d1,d0
+ lsr 8,d0                         /* want */
+ extbu d1                         /* mask */
+ PVAL 9f
+ add a0,a2
+ mov 4,d2
+1:
+ movbu (a2),d3
+ and d1,d3
+ cmp d0,d3
+ beq 2f
+ add 64,a2
+ add -1,d2
+ bne 1b
+9:
+ clr d0
+ ret [d2,d3,a2],16
+2:
+ mov 1,d0
+ ret [d2,d3,a2],16
 
 st_run:
  add -100,sp
@@ -8648,7 +10285,7 @@ t_ret:                            /* emu_test: the caller's d2, d3, a2 are back 
 
 /* tn_set <- sl_set's miss (instead of ed_set), entered as ed_set (d0 id, d1 value, a0 inner, a1 mode; d2/d3/a2/a3
  * saved by the setter's call, frame 68). A sector id on a Shadows / Highlights page: value -5..5; not 0 -> this
- * colour and strength; 0 -> strength 0 if this is the page's colour. Then s_dirty (dirty, the manager's refresh). */
+ * colour and strength; 0 -> strength 0 if this is the page's colour. Then s_cur (dirty, the refresh through the cursor). */
 tn_set:
  TONEP 9f
  mov d0,d2
@@ -8671,7 +10308,6 @@ tn_set:
 5:
  asr 1,d1
 6:
- mov d0,a3                        /* keep the id */
  clr d0
 1:
  cmp 12,d2
@@ -8684,6 +10320,7 @@ tn_set:
  add d3,d0
  add d3,d0                        /* 64k + 2 (axis - 5) */
  add 87,d0                        /* P offset of the page's colour byte */
+ mov d0,a3                        /* kept for s_cur */
  cmp 0,d1
  bne 3f
  movbu (d0,a2),d3
@@ -8698,8 +10335,8 @@ tn_set:
  inc d0
  movbu d1,(d0,a2)                 /* ... and strength */
 4:
- mov a3,d0
- jmp s_dirty
+ mov a3,d2
+ jmp s_cur
 8:
  clr d0
  ret [d2,d3,a2,a3],68
@@ -9324,6 +10961,7 @@ lg_pr:                            /* jmp from pr_ed, pr_hook's frame: as `call e
  call ub_try,[d2,d3,a2,a3],36     /* films in camera memory: a block write held back by the camera's own save */
  call el_card,[d2,d3,a2,a3],36
  call ck_card,[d2,d3,a2,a3],24    /* v0.30 test 9: CURVES.BIN, after el_card's films */
+ call cr_hp,[d2,d3,a2,a3],20      /* crop modes: the first shutter event after an early load (crop.s) */
  call cm_hp,[d2,d3,a2,a3],24      /* k4: in P / A / S / M, their films and choice now (kept in M) */
  call lg_write,[d2,d3,a2,a3],40
  call ex_live,[d2,d3,a2,a3],48    /* v0.28 pc1: the film's settings now, for the next photo's code */
@@ -9338,12 +10976,13 @@ lg_pre:                           /* edits waiting before ed_trig (it saves them
  ret [d2,d3,a2,a3],36
 
 lg_write:                         /* frame 40: (0) call slot, (4) handle */
+ movbu (lg_on),d0                 /* 0 not checked yet, 1 on, 2 off */
+ cmp 2,d0
+ beq lg_out                       /* off: before the card gate, so no card work at all */
  call hl_ok,[a2],16               /* the card gate (as the loaders and the GX probes) */
  cmp 0,d0
  bne lg_out
- movbu (lg_on),d0                 /* 0 not checked yet, 1 on, 2 off */
- cmp 2,d0
- beq lg_out
+ movbu (lg_on),d0
  cmp 1,d0
  beq 2f
  mov 2,d0
@@ -9438,6 +11077,7 @@ lg_write:                         /* frame 40: (0) call slot, (4) handle */
  call lg_svt,[d2,d3,a2,a3],24     /* SAVES */
  call lg_cmc,[d2,d3,a2,a3],24     /* CUSTOM MODES (the same) */
  call lg_btc,[d2,d3,a2,a3],24     /* BUTTONS AND DIALS (the same) */
+ call cr_txt,[d2,d3,a2,a3],24     /* CROP MODES (crop.s) */
  call lg_evt,[d2,d3,a2,a3],24     /* the last 32 events, newest first */
  mov (lg_cur),a0                  /* camera: fopen "w" does not truncate (dl3, 2026-11-10): always the same length, */
  mov lg_bend,a1                   /* spaces after the text, CR LF last; dl8: only up to where the last report's text */
@@ -9741,6 +11381,7 @@ lg_now:
 81:
  LGY
  call lg_ckn,[d2,d3,a2,a3],24     /* v0.30 test 10: curves / mix */
+ call lg_gsn,[d2,d3,a2,a3],24     /* better grain g2: each COLOR's Film Grain strength and Grain Size */
 9:
  ret [d2,d3,a2,a3],24
 
@@ -10340,6 +11981,45 @@ lg_sum:
  LGD
  LGS lg_t3
  mov (lg_w),d0
+ LGD
+ LGS tg_l1                        /* better grain g1: our grain tiles */
+ mov (tg_n),d0
+ LGD
+ LGS tg_l2
+ mov (tg_nb),d0
+ LGD
+ LGS tg_l3
+ movbu (tg_w),d0
+ LGD
+ LGS tg_l4
+ mov (tg_ms),d0
+ LGD
+ LGS tg_l5                        /* g3: tiles made the fast way */
+ mov (tg_nf),d0
+ LGD
+ LGS vg_l1                        /* gentler Shading s1: our vignettes */
+ mov (vg_n),d0
+ LGD
+ LGS vg_l2
+ mov (vg_nt),d0
+ LGD
+ LGS vg_l3
+ mov (vg_nd),d0
+ LGD
+ LGS vg_l4
+ movbu (vg_lvc),d0
+ extb d0
+ cmp 0,d0
+ bge 177f
+ LGS vg_mi
+ movbu (vg_lvc),d0
+ extb d0
+ not d0
+ inc d0
+177:
+ LGD
+ LGS vg_l5
+ mov (vg_ms),d0
  LGD
  LGS lg_y0                        /* now: mode, exposure, WB, picture, screen */
  call lg_new,[],0
@@ -11308,6 +12988,42 @@ lg_kcmb:
  mov rc_tr,a0
  mov 8,d1
  call lg_kw,[],0
+ ret [d2,d3,a2,a3],24
+
+/* lg_gsn: `call lg_gsn,[d2,d3,a2,a3],24` (better grain g2): NOW's "Film Grain on COLOR 1-4: Off, 3 Medium, ..." (each
+ * COLOR's strength 1..5 and Grain Size from gs_eff; Off when its level is 0). */
+lg_gsn:
+ LGS lg_gz0
+ PVAL 9f
+ clr d3
+1:
+ cmp 0,d3
+ beq 2f
+ LGS lg_cm
+2:
+ mov d3,d0
+ asl 6,d0
+ add 32,d0
+ mov a2,a0
+ add d0,a0
+ call gs_eff,[d2,d3,a2],16        /* d0 strength, d1 size */
+ cmp 0,d0
+ bne 3f
+ LGS lg_gz1
+ bra 4f
+3:
+ mov d1,d2
+ LGD
+ LGS lg_sp
+ mov d2,d0
+ mov lg_gw,a0
+ call lg_nth,[],0
+ call lg_s,[],0
+4:
+ inc d3
+ cmp 4,d3
+ bcs 1b
+9:
  ret [d2,d3,a2,a3],24
 
 /* lg_ckn: `call lg_ckn,[d2,d3,a2,a3],24` (v0.30 test 10): NOW's curves and mix: each COLOR's slot against the
@@ -12532,6 +14248,12 @@ lg_rst:
  .asciz "Reset"
 lg_q0:
  .asciz "\r\nCurves / mix on COLOR 1-4: "
+lg_gz0:                           /* better grain g2 */
+ .asciz "\r\nFilm Grain on COLOR 1-4: "
+lg_gz1:
+ .asciz "Off"
+lg_gw:
+ .ascii "Fine\000Medium\000Coarse\000"
 lg_qw:
  .ascii "none\000none (its film has some)\000its film's\000changed\000"
 lg_q1:
@@ -12893,6 +14615,21 @@ sx_set:                           /* from sl_set (entered as the manager: d0 id,
 1:
  cmp 897,d0
  beq 2f
+ cmp 269,d0                       /* crop83-2: Image Aspect set through the facade (crop.s cr_sv), then stock */
+ bne 86f
+ add -16,sp
+ mov a0,(4,sp)
+ mov a1,(8,sp)
+ mov d1,(12,sp)
+ call cr_sv,[d2,d3,a2,a3],20
+ mov (4,sp),a0
+ mov (8,sp),a1
+ mov (12,sp),d1
+ add 16,sp
+ mov 269,d0
+ mov (68,sp),d2                   /* MDR = the setter's return address again, as the 1440 path leaves it */
+ mov d2,mdr
+86:
  jmp sl_set0
 2:
  clr d2
@@ -13366,7 +15103,7 @@ ar_ic:                            /* .hook_ic: our ▲ / ◀ / ▲◀▶▼ pict
  add d1,a0
  retf [],0
 1:
- jmp ic_get
+ jmp cr_ic                        /* crop modes: our labels (crop.s), then ic_get */
  .set AR_IC0, 0x7fe0              /* clear of Caduceus' 0x7f80..0x7fc3 (PR #26's ▲ id) */
  .balign 4
 ar_ent:
@@ -13875,6 +15612,7 @@ ex_out:                           /* the record as coded (ex_cd1) */
 nm_ex:
  call nm_load,[d2,d3,a2,a3],36
  call ex_live,[d2,d3,a2,a3],48
+ call cr_hp,[d2,d3,a2,a3],20      /* crop modes: at a half-press load, cr_on and the crop back (crop.s) */
  ret [d2,d3,a2,a3],36
 
 /* ex_live: `call ex_live,[d2,d3,a2,a3],48` at each half-press (the first: sd_load via nm_ex; then lg_pr after the editor's save),
@@ -16169,6 +17907,334 @@ hl_open:
  mov d2,d1
  ret [d2,d3,a2,a3],28
 
+
+/* ================================================================== borders (2026-11-16; feature/image-borders)
+ * Our own code. A white border (Y 255, Cb = Cr = 128) painted over the photo's outer edge, the same width on all four
+ * sides, on our looks' stills with the Border row 1..5 (slot +50). Called by the code block's xb_gs after halation
+ * and grain (buffer 0x1000 complete: YCbYCr 4:2:2 as hl_run takes it), so no glow, halo or grain on the border.
+ * The JPEG keeps its size; the photo's outer B pixels are covered. RAW files are not touched.
+ *   B = (S bd_tab[level - 1]) >> 16 rows top and bottom, S = min(W, H) (1.5 / 3 / 4.5 / 6 / 7.5 % of the short side,
+ *   at least 1); left and right in whole pairs: Bp = (B + 1) / 2 pairs (2 Bp px; a pair shares its Cb / Cr).
+ * Rows through hl_open as hl_run: several rows per lock (at most BD_LOCKN instructions by the estimate), written
+ * through the window's cached view and FLUSHed before the lock goes; a group across the window's edge is retried one
+ * row at a time, and a row across it one pair at a time (a pair that cannot be mapped is left as it is).
+ * research/border/model.py is the exact model (research/border/emu_check.py: bit-exact in om-emu). */
+ .set BD_LOCKN, 120000            /* instructions under one lock, at most (by the estimate), as HL_LOCKN */
+ .set BD_PAIR, 4                  /* the estimate: per pair written, and per row */
+ .set BD_ROW, 60
+ .set BD_WORD, 0x80ff80ff         /* Y0 255, Cb 128, Y1 255, Cr 128 */
+ .set BD_BLACK, 0x80008000        /* 2026-11-18, Border -5..-1: Y0 0, Cb 128, Y1 0, Cr 128 */
+ .balign 4
+bd_tab:                           /* the width per level, in 1 / 65536 of the short side: 1.5, 3, 4.5, 6, 7.5 % */
+ .long 983, 1966, 2949, 3932, 4915
+
+/* bd_run: `call bd_run,[d2,d3,a2,a3],88`, a0 = buffer record, d0 = level 1..5 white, -1..-5 black (2026-11-18, owner:
+ * "make the border black ... so we could have white and black": one Border row -5..+5), anything else: nothing.
+ * Locals: (0) call slot, (4) rec, (8) P = W / 2 pairs, (12) H, (16) pitch, (20) bus, (24) B rows, (28) Bp pairs,
+ * (32) y, (36) the band's end row, (40) a: pairs from the left, (44) b: the right span's first pair (P - b pairs),
+ * (48) K rows per lock, (52) rows in this group, (56) token, (60) cached, (64) the row's CPU address, (68) band 0..2.
+ * d2 = BD_WORD or BD_BLACK throughout (the callee-saved registers are ours: xb_gs's call saves them). */
+bd_run:
+ mov a0,(4,sp)
+ mov BD_WORD,d2                   /* 1..5: white */
+ cmp 0,d0
+ bge 3f
+ not d0                           /* -1..-5: black, the same widths */
+ inc d0
+ mov BD_BLACK,d2
+3:
+ cmp 1,d0
+ bcs 99f
+ cmp 5,d0
+ bhi 99f
+ add -1,d0
+ asl2 d0
+ mov bd_tab,a1
+ add d0,a1
+ mov (a1),d3                      /* d3 = the level's width factor */
+ movhu (16,a0),d0                 /* format 0x0c02 only (as hl_run) */
+ cmp 0x0c02,d0
+ bne 99f
+ mov (4,a0),d0
+ cmp 0,d0
+ bne 99f
+ movhu (20,a0),d0                 /* W: 64 .. 8192, a multiple of 4 */
+ cmp 64,d0
+ bcs 99f
+ cmp 8193,d0
+ bcc 99f
+ btst 3,d0
+ bne 99f
+ mov d0,a2                        /* a2 = W */
+ lsr 1,d0
+ mov d0,(8,sp)                    /* P */
+ movhu (18,a0),d1                 /* memHw >= W */
+ cmp a2,d1
+ bcs 99f
+ add d1,d1
+ mov d1,(16,sp)                   /* pitch */
+ movhu (22,a0),d1                 /* H >= 64 */
+ cmp 64,d1
+ bcs 99f
+ mov d1,(12,sp)
+ mov (a0),d0
+ mov d0,(20,sp)                   /* bus */
+ mov a2,d0                        /* crop modes: a crop's own area of the buffer (crop.s cr_bdc) */
+ mov sp,a0
+ call cr_bdc,[d2,d3,a2,a3],28
+ mov d0,a2
+ mov (12,sp),d1
+ mov a2,d0                        /* S = min(W, H) */
+ cmp d1,d0
+ bls 1f
+ mov d1,d0
+1:
+ mul d3,d0
+ lsr 16,d0                        /* B */
+ cmp 0,d0
+ bne 2f
+ mov 1,d0
+2:
+ mov d0,(24,sp)
+ add 1,d0
+ lsr 1,d0
+ mov d0,(28,sp)                   /* Bp */
+ /* 2026-11-18 (test 4): past a crop's cut sides the border goes on for cr_mr rows / cr_mp pairs (crop.s cr_bdc), as far
+  * as the buffer goes: the camera cuts its 1600 px preview a few px wider than the photo, and those px showed as a thin
+  * line of picture at the preview's edge. The photo is cut where it was; B and Bp grow by the margin on the cut sides. */
+ mov (cr_mr),d0
+ cmp 0,d0
+ beq 14f
+ mov (24,sp),d1
+ add d0,d1
+ mov d1,(24,sp)                   /* B += mr */
+ mov (12,sp),d1
+ add d0,d1
+ add d0,d1
+ mov d1,(12,sp)                   /* H += 2 mr */
+ mov (16,sp),d1
+ mul d0,d1
+ mov (20,sp),d0
+ sub d1,d0
+ mov d0,(20,sp)                   /* bus -= mr pitch */
+14:
+ mov (cr_mp),d0
+ cmp 0,d0
+ beq 15f
+ mov (28,sp),d1
+ add d0,d1
+ mov d1,(28,sp)                   /* Bp += mp */
+ mov (8,sp),d1
+ add d0,d1
+ add d0,d1
+ mov d1,(8,sp)                    /* P += 2 mp */
+ asl2 d0
+ mov (20,sp),d1
+ sub d0,d1
+ mov d1,(20,sp)                   /* bus -= 4 mp */
+15:
+ clr d0
+ mov d0,(68,sp)                   /* band 0: rows 0 .. B - 1, the whole width */
+ mov d0,(32,sp)
+
+10:                               /* ---- a band: y (32), its end (36), the spans (40) / (44), K (48) */
+ mov (68,sp),d0
+ cmp 1,d0
+ beq 11f
+ mov (8,sp),d1                    /* bands 0 and 2: the whole row (a = P, b = P) */
+ mov d1,(40,sp)
+ mov d1,(44,sp)
+ mov (24,sp),d1                   /* band 0 ends at B, band 2 at H */
+ cmp 0,d0
+ beq 12f
+ mov (12,sp),d1
+ bra 12f
+11:
+ mov (28,sp),d1                   /* band 1: rows B .. H - B - 1, Bp pairs on each side */
+ mov d1,(40,sp)
+ mov (8,sp),d0
+ sub d1,d0
+ mov d0,(44,sp)
+ mov (12,sp),d1
+ mov (24,sp),d0
+ sub d0,d1
+12:
+ mov d1,(36,sp)
+ mov (40,sp),d0                   /* K = max(1, BD_LOCKN / (BD_PAIR (a + P - b) + BD_ROW)) */
+ mov (8,sp),d1
+ add d1,d0
+ mov (44,sp),d1
+ sub d1,d0
+ asl2 d0                          /* BD_PAIR = 4 */
+ add BD_ROW,d0
+ mov d0,d1
+ mov BD_LOCKN,d0
+ call hl_div,[d2,d3,a2,a3],20
+ cmp 1,d0
+ bcc 13f
+ mov 1,d0
+13:
+ mov d0,(48,sp)
+
+20:                               /* ---- a group: min(K, the band's rows left) */
+ mov (32,sp),d0
+ mov (36,sp),d1
+ cmp d1,d0
+ bcc 40f                          /* the band is done */
+ sub d0,d1
+ mov (48,sp),d0
+ cmp d0,d1
+ bcc 21f
+ mov d1,d0
+21:
+ mov d0,(52,sp)
+22:
+ mov (52,sp),d1                   /* (k - 1) pitch + 4 P bytes from row y */
+ add -1,d1
+ mov (16,sp),d0
+ mul d0,d1
+ mov (8,sp),d0
+ asl2 d0
+ add d0,d1
+ mov (32,sp),d0
+ mov (16,sp),d3
+ mul d3,d0
+ mov (20,sp),d3
+ add d3,d0
+ call hl_open,[d2,d3,a2,a3],28
+ mov d0,(56,sp)
+ cmp 0,a0
+ bne 23f
+ mov (56,sp),d0                   /* across the window's edge */
+ call UNLOCK,[d2],8
+ mov (52,sp),d0
+ cmp 1,d0
+ beq 30f                          /* one row: a pair at a time */
+ mov 1,d0
+ mov d0,(52,sp)
+ bra 22b
+23:
+ mov a0,d0
+ clr d1
+ cmp 0xb8000000,d0
+ bcs 24f
+ add -0x40000000,d0               /* the window's cached view */
+ mov 1,d1
+24:
+ mov d1,(60,sp)
+ mov d0,(64,sp)
+25:                               /* each row: a pairs from the left, then pairs b .. P - 1 */
+ mov (64,sp),a0
+ mov (40,sp),d0
+ cmp 0,d0
+ beq 27f
+26:
+ mov d2,(a0)
+ add 4,a0
+ add -1,d0
+ bne 26b
+27:
+ mov (8,sp),d0
+ mov (44,sp),d1
+ sub d1,d0
+ beq 29f
+ mov (64,sp),a0
+ asl2 d1
+ add d1,a0
+28:
+ mov d2,(a0)
+ add 4,a0
+ add -1,d0
+ bne 28b
+29:
+ mov (64,sp),d0
+ mov (16,sp),d1
+ add d1,d0
+ mov d0,(64,sp)
+ mov (32,sp),d0
+ inc d0
+ mov d0,(32,sp)
+ mov (52,sp),d0
+ add -1,d0
+ mov d0,(52,sp)
+ bne 25b
+ mov (60,sp),d0
+ cmp 0,d0
+ beq 291f
+ call FLUSH,[d2,d3],16
+291:
+ mov (56,sp),d0
+ call UNLOCK,[d2],8
+ bra 20b
+
+30:                               /* ---- a row across the window's edge: each pair on its own (a3 = pair x) */
+ clr d0
+ mov d0,a3
+31:
+ mov (40,sp),d0                   /* x < a, or b <= x < P */
+ cmp d0,a3
+ bcs 32f
+ mov (44,sp),d0
+ cmp d0,a3
+ bcs 34f                          /* the gap: jump to b */
+ mov (8,sp),d0
+ cmp d0,a3
+ bcc 39f                          /* the row is done */
+32:
+ mov (32,sp),d0                   /* bus + y pitch + 4 x, 4 bytes */
+ mov (16,sp),d1
+ mul d1,d0
+ mov (20,sp),d1
+ add d1,d0
+ mov a3,d1
+ asl2 d1
+ add d1,d0
+ mov 4,d1
+ call hl_open,[d2,d3,a2,a3],28
+ mov d0,(56,sp)
+ cmp 0,a0
+ beq 33f                          /* not even this pair: left as it is */
+ mov a0,d0
+ clr d1
+ cmp 0xb8000000,d0
+ bcs 35f
+ add -0x40000000,d0
+ mov 1,d1
+35:
+ mov d0,a0
+ mov d2,(a0)
+ cmp 0,d1
+ beq 33f
+ call FLUSH,[d2,d3],16
+33:
+ mov (56,sp),d0
+ call UNLOCK,[d2],8
+ inc a3
+ bra 31b
+34:
+ mov (44,sp),a3
+ bra 31b
+39:
+ mov (32,sp),d0
+ inc d0
+ mov d0,(32,sp)
+ bra 20b
+
+40:                               /* ---- the next band */
+ mov (68,sp),d0
+ inc d0
+ mov d0,(68,sp)
+ cmp 3,d0
+ bcc 99f
+ cmp 2,d0
+ bne 10b
+ mov (12,sp),d1                   /* band 2 starts at H - B */
+ mov (24,sp),d0
+ sub d0,d1
+ mov d1,(32,sp)
+ bra 10b
+99:
+ ret [d2,d3,a2,a3],88
 
 /* ---------------------------------------------------------------- films in camera memory, step 1 (2026-11-13)
  * The user's films (LOOKS.BIN image), on-camera edits (EDITS.BIN image) and Extras settings (BUNDLES.BIN image) live in
@@ -19248,3 +21314,318 @@ el_tid:                           /* the GUI task's id, noted by el_go */
 .balign 4
 wl_blk:                           /* the heap copy of wl_tab (fl_mk), 0 = none */
  .long 0
+
+/* ---- Border preview in live view (feature/border-live-view, owner 2026-11-17: "borders don't show up in live view"
+ * -> "Add a live view preview"). With a Border 1..5 on the look on screen (a COLOR picture mode, its slot +50), the
+ * shooting screen's grid shows the border's inner edge as a frame line: where the photo's white border will start
+ * (bd_run's width, 1.5 / 3 / 4.5 / 6 / 7.5 % of the picture's short side). Drawn by the camera's own grid layer on
+ * every screen it has (the four grid builders; the rear screen one at 0x612380bf), at the picture's place for the
+ * aspect (the table's thirds record), so nothing is drawn by us and nothing in live view or capture changes.
+ * Displayed Grid: thirds and golden keep their lines with the frame; Off, 6x4, scale, diagonal and the 16:9 frame show
+ * the frame alone while a Border is set. Photo modes only (mx_photo), after the first shutter event (STATE and
+ * el_hold: the start-up rule); video, S&Q and the movie grid (446) stay stock. research/NOTES.md "Border preview".
+ *
+ * bl_gv <- `call bl_gv,[d2,d3,a2,a3],28` at the four builders' grid read (stock: the GUI's setting read gui_get,
+ * d0 = 155 or 2047 (stills grid) / 446 (movie grid), a0 -> the value; d0 = 0 when read). After the stock read, with a
+ * Border L the value v (0..15) becomes BL_V | L << 4 | v: a line grid (kind 1) that no table holds, so the line lookup
+ * misses and bl_tail draws it. Frame: (0) call slot, (4) id, then the picture mode, (8) -> the value. */
+ .set BL_V, 0x100
+ .set BL_C, 0x200                 /* crop modes (crop.s cr_gm): the lines fit the crop's strip */
+.section .ext12,"ax"
+bl_gv:
+ mov d0,(4,sp)
+ mov a0,(8,sp)
+ mov 0,a3                         /* mx_photo's answer, for cr_gm (crop.s): 0 not asked */
+ call gui_get,[d2,d3,a2,a3],28    /* the stock read */
+ mov d0,d2                        /* its answer, given back */
+ mov (4,sp),d0
+ cmp 155,d0
+ beq 1f
+ cmp 2047,d0
+ bne 9f
+1:
+ call mx_photo,[],0               /* photo modes only (#68): video and S&Q keep their grid */
+ mov d0,a3
+ cmp 0,d0
+ beq 9f
+ movbu (el_hold),d0               /* after the early load: not before the first shutter event */
+ cmp 0,d0
+ bne 9f
+ PVAL 9f                          /* a2 = P (STATE is 0 until the films load) */
+ /* some COLOR slot with a Border (+50: 1..5 white, -1..-5 black)? Else no picture mode read (PR #82; the black range
+  * added at its merge into v0.41, cad) */
+ mov a2,a1
+ mov 4,d1
+4:
+ movbu (32 + 50,a1),d0
+ extb d0
+ add 5,d0                         /* -5..5 -> 0..10; 5 is Border 0 */
+ cmp 11,d0
+ bcc 6f
+ cmp 5,d0
+ bne 5f
+6:
+ add 64,a1
+ add -1,d1
+ bne 4b
+ bra 9f
+5:
+ mov 111,d0                       /* the picture mode, through the GUI's own read (ex_live's id) */
+ mov sp,a0
+ add 4,a0
+ call gui_get,[d2,d3,a2,a3],28    /* keeps d2, d3, a2, a3 */
+ cmp 0,d0
+ bne 9f
+ mov (4,sp),d0
+ mov fl_cvt,a0                    /* COLOR k's picture mode value */
+ clr d1
+2:
+ movbu (d1,a0),d3
+ cmp d3,d0
+ beq 3f
+ inc d1
+ cmp 4,d1
+ bcs 2b
+ bra 9f                           /* not COLOR 1..4 */
+3:
+ asl 6,d1
+ add 32,d1
+ add d1,a2                        /* COLOR k's slot */
+ movbu (50,a2),d0                 /* the Border -5..-1 / 1..5 (as xb_gs; 2026-11-18: either colour, the same frame) */
+ extb d0
+ cmp 0,d0
+ beq 9f
+ bgt 4f
+ not d0
+ inc d0
+4:
+ cmp 6,d0
+ bcc 9f
+ mov (8,sp),a0
+ mov (a0),d1                      /* the grid chosen */
+ cmp 16,d1
+ bcc 9f
+ asl 4,d0
+ or d1,d0
+ or BL_V,d0
+ mov d0,(a0)
+9:
+ mov (8,sp),a0                    /* crop modes: a crop's grid lines go inside the strip (crop.s cr_gm, BL_C) */
+ call cr_gm,[d2,d3,a2,a3],28
+ mov d2,d0
+ ret [d2,d3,a2,a3],28
+
+/* bl_tail <- jmp from the line lookup's loop end 0x611c7922 (`inc d3; add 68,a1; cmp d1,d3; lcs`; frame-lines' hook
+ * site; the lookup 0x611c78c7 runs in its caller's `call ..,[d2,d3,a2,a3],16`, ending with retf). Reached after each
+ * record that is not the value: d0 the value, d1 the count, d3 the index, a1 the record, (20,sp) -> the grid's 5 "V"
+ * rects, (24,sp) -> its 3 "H" rects ({x0, y0, x1, y1} u16; each draws a line from (x0, y0) to (x1, y1), 2 px wide,
+ * om-emu). The loop goes on as stock; at its end a value of ours (BL_V | L << 4 | v) gets: v's lines when v is thirds
+ * (1) or golden (6), then the frame B inside the picture (the thirds record's V[0] y0..y1 and H[0] x0..x1),
+ * B = max(1, min(w, h) 983 L >> 16) as bd_run, in the first empty slots. No calls (the frame has no free word);
+ * returns through the stack (mul uses mdr). */
+bl_tail:
+ inc d3
+ add 68,a1
+ cmp d1,d3
+ bcc 1f
+ jmp gl_loop                      /* 0x611c78cc: the next record */
+1:
+ mov d0,d2
+ and 0xfffffc00,d2                /* ours: only bits 8 (BL_V, a Border) and 9 (BL_C, a crop: crop.s cr_gm) above v, L */
+ bne 0f
+ mov d0,d2
+ and 0x300,d2
+ bne 2f
+0:
+ jmp gl_ret                       /* 0x611c7927: retf (a miss writes nothing, as stock) */
+2:
+ mov d0,(bl_v)
+ mov d1,d3                        /* back to the first record (count >= 1 here) */
+3:
+ add -68,a1
+ add -1,d3
+ bne 3b
+ mov bl_r,a2
+ clr d2
+ clr d3
+4:
+ mov d2,(d3,a2)
+ add 4,d3
+ cmp 64,d3
+ bcs 4b
+ mov (bl_v),d2
+ and 15,d2
+ cmp 1,d2
+ beq 5f
+ cmp 6,d2
+ beq 5f
+ cmp 5,d2                         /* crop modes: 6x4 too (a crop's value always misses its own record) */
+ bne 6f
+ mov (bl_v),d0
+ and BL_C,d0
+ beq 6f
+5:
+ mov a1,a0                        /* v's record -> bl_r */
+ mov d1,d3
+51:
+ mov (a0),d0
+ cmp d2,d0
+ beq 52f
+ add 68,a0
+ add -1,d3
+ bne 51b
+ bra 6f
+52:
+ add 4,a0
+ clr d3
+53:
+ mov (d3,a0),d0
+ mov d0,(d3,a2)
+ add 4,d3
+ cmp 64,d3
+ bcs 53b
+6:
+ mov a1,a0                        /* the thirds record: the picture's place */
+ mov d1,d3
+61:
+ mov (a0),d0
+ cmp 1,d0
+ beq 62f
+ add 68,a0
+ add -1,d3
+ bne 61b
+ bra 8f                           /* none: no frame */
+62:
+ movhu (44,a0),d0                 /* x0 */
+ movhu (48,a0),d1                 /* x1 */
+ movhu (6,a0),d2                  /* y0 */
+ movhu (10,a0),d3                 /* y1 */
+ mov bl_q,a3
+ movhu d0,(0,a3)
+ movhu d1,(2,a3)
+ movhu d2,(4,a3)
+ movhu d3,(6,a3)
+ mov (bl_v),d0                    /* crop modes: the lines and the picture's place -> the crop's strip (crop.s cr_gx) */
+ and BL_C,d0
+ beq bl_cgb
+ jmp cr_gx
+bl_cgb:                           /* (back from cr_gx: the strip in bl_q) */
+ movhu (0,a3),d0
+ movhu (2,a3),d1
+ movhu (4,a3),d2
+ movhu (6,a3),d3
+ sub d0,d1                        /* w */
+ sub d2,d3                        /* h */
+ cmp d1,d3
+ bcc 63f
+ mov d3,d1                        /* the short side */
+63:
+ mov (bl_v),d0
+ lsr 4,d0
+ and 15,d0
+ bne 66f
+ jmp 8f                           /* crop modes: no Border (L 0), no frame */
+66:
+ mov 983,d2
+ mul d2,d0
+ mul d1,d0
+ lsr 16,d0
+ cmp 0,d0
+ bne 64f
+ mov 1,d0                         /* B */
+64:
+ movhu (6,a3),d1                  /* yb = y1 - B (kept where the bottom line's y1 goes) */
+ sub d0,d1
+ movhu d1,(30,a3)
+ movhu (0,a3),d1                  /* xl = x0 + B, xr = x1 - B, yt = y0 + B */
+ add d0,d1
+ movhu (2,a3),d2
+ sub d0,d2
+ movhu (4,a3),d3
+ add d0,d3
+ movhu (30,a3),d0                 /* d1 xl, d2 xr, d3 yt, d0 yb */
+ movhu d1,(0,a3)                  /* bl_q: the 4 lines {left, right, top, bottom} */
+ movhu d3,(2,a3)
+ movhu d1,(4,a3)
+ movhu d0,(6,a3)
+ movhu d2,(8,a3)
+ movhu d3,(10,a3)
+ movhu d2,(12,a3)
+ movhu d0,(14,a3)
+ movhu d1,(16,a3)
+ movhu d3,(18,a3)
+ movhu d2,(20,a3)
+ movhu d3,(22,a3)
+ movhu d1,(24,a3)
+ movhu d0,(26,a3)
+ movhu d2,(28,a3)
+ movhu d0,(30,a3)
+ clr d2                           /* line i * 8 */
+71:
+ clr d3                           /* slot k * 8: the first empty one */
+72:
+ mov a2,a1
+ add d3,a1
+ mov (a1),d0
+ mov (4,a1),d1
+ or d1,d0
+ beq 73f
+ add 8,d3
+ cmp 64,d3
+ bcs 72b
+ bra 8f                           /* no empty slot left */
+73:
+ mov a3,a0
+ add d2,a0
+ mov (a0),d0
+ mov d0,(a1)
+ mov (4,a0),d0
+ mov d0,(4,a1)
+ add 8,d2
+ cmp 32,d2
+ bcs 71b
+8:
+ mov (20,sp),a1                   /* bl_r -> the grid's 5 + 3 rects (halfwords, as the stock lookup) */
+ clr d0
+81:
+ movhu (d0,a2),d1
+ movhu d1,(d0,a1)
+ add 2,d0
+ cmp 40,d0
+ bcs 81b
+ mov (24,sp),a1
+ add 40,a2
+ clr d0
+82:
+ movhu (d0,a2),d1
+ movhu d1,(d0,a1)
+ add 2,d0
+ cmp 24,d0
+ bcs 82b
+ ret [d2,d3,a2,a3],16
+ .balign 4
+bl_r:                             /* the grid's lines: 5 "V" then 3 "H" rects */
+ .space 64
+bl_q:                             /* the picture's x0 x1 y0 y1, then the frame's 4 lines */
+ .space 32
+bl_v:                             /* the value */
+ .long 0
+
+.section .hook_bga,"ax"
+ call bl_gv,[d2,d3,a2,a3],28      /* stock 0x6123825e: call 0x610fd8ef,[d2,d3,a2,a3],28 (grid builder 0x612380bf) */
+.section .hook_bgb,"ax"
+ call bl_gv,[d2,d3,a2,a3],28      /* stock 0x611cb433: the same read (grid builder 0x611cb359) */
+.section .hook_bgc,"ax"
+ call bl_gv,[d2,d3,a2,a3],28      /* stock 0x611e44d7: the same read (grid builder 0x611e4221) */
+.section .hook_bgd,"ax"
+ call bl_gv,[d2,d3,a2,a3],28      /* stock 0x611eae1e: the same read (grid builder 0x611eab68) */
+.section .hook_blk,"ax"
+ jmp bl_tail                      /* stock 0x611c7922: inc d3; add 68,a1; cmp d1,d3; lcs */
+
+ .include "crop.s"                /* custom crop modes (feature/crop-modes) */
+
+ .include "screeninfo.s"          /* screen info: hook, handlers, tables (ext12) */
+
+ .include "shading.s"             /* gentler Shading s1 (#22): our own vignette on stills (ext13) */
+
+ .include "fwver.s"               /* our version on the camera's Firmware Version screen (ext13) */

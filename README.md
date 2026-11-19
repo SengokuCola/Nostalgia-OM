@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  Latest: <b>v0.30.3</b> (2026-11-17)
+  Latest: <b>v0.30.3</b> (2026-11-17) &nbsp;·&nbsp; Test version: <b>v0.40-beta</b> (pre-release)
 </p>
 
 ## What it does
