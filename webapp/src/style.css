@@ -448,11 +448,13 @@ dialog.modal:has(.replace-grid) { width: min(780px, calc(100vw - 32px)); }
 .tc-top.mx-top > :first-child { justify-self: start; } .tc-top.mx-top > :last-child { justify-self: end; }
 
 /* Help boxes (owner, 2026-11-18, as DxO PhotoLab): a "?" beside each setting opens a box under it. */
-.help-q { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; margin-left: 6px; padding: 0;
-  border: 1px solid var(--line); border-radius: 50%; background: transparent; color: var(--muted); font: 600 11px/1 var(--body, sans-serif);
-  vertical-align: middle; cursor: pointer; text-transform: none; letter-spacing: 0; flex: none; }
-.help-q:hover, .help-q:focus-visible { color: var(--ink); border-color: var(--muted); }
-.help-q.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.help-q { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; margin-left: 5px; padding: 0;
+  border: 1px solid currentColor; border-radius: 50%; background: transparent; color: var(--muted); opacity: .55;
+  font: 600 9px/1 var(--body, sans-serif); text-transform: none; letter-spacing: 0; cursor: pointer; flex: none; }
+.help-q:hover, .help-q:focus-visible { opacity: 1; color: var(--ink); }
+.help-q.on { opacity: 1; background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+/* the ? centred on its name's line */
+.crow .cname, .cam-head .lbl, .pv-opts .aspect { display: inline-flex; align-items: center; }
 .help-box { margin: 6px 0 8px; padding: 10px 12px; border-left: 3px solid var(--accent); border-radius: 6px; background: var(--soft);
   font-size: 13px; line-height: 1.5; color: var(--ink); text-transform: none; letter-spacing: 0; font-weight: 400; }
 .help-box p { margin: 0 0 6px; }
