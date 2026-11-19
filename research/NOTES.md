@@ -8441,3 +8441,13 @@ Assign C4, Set B, Assign C5: C4 showed Set B's films, and Set A again is ignored
   the shutter)", E1479999.BIN `1933a366…1c19`, GUIDES.BIN `22f57086…5ede`; `test-builds/2026-11-19-glow-shots-2`
   (go back: glow-shots-1, v0.40-beta2). ext12 262,008 of 262,144; ext13 72,512 of 81,920.
   Full suite (with --stock) on that build: **108 of 108 pass**.
+
+## fixes-1: #86 with the Halation and #85 fixes (2026-11-19; emulator, camera test pending)
+- **glow-shots-2 camera (owner, 2026-11-19: "that works well"):** 35 Halation photos, quick single shots fire; log:
+  Halation last 335 ms (pass A 283, map 50, pass C 0), longest 1763; our code at shutter events 1 ms (longest 83 at
+  event 1); log writes 14 ms (longest 77); no pauses on the last photo. fix85-1 camera-tested earlier the same day.
+- Owner: "for the #86 test, I want the halation/glow fixe and debug fix with it". `try/v0.40-fixes` = fix/86-custom-mode-films
+  (c6e2ad6) + fix/glow-halation-shots (99b3fe2), merge 4a15ab6 (conflicts: VERSION, these notes; both kept).
+- Build "v0.40-dev fixes-1 (#85 + #86 + Halation h7)": E1479999.BIN `02c56b35…2bd8`, GUIDES.BIN `940d439e…5030`;
+  ext12 262,016 of 262,144, ext13 73,664 of 81,920. Full suite (with --stock): **112 of 112 pass**.
+- Still to do before a release: LookLab's Halation preview (`webapp/src/preview.ts`) still draws h8's tail: back to h7.
