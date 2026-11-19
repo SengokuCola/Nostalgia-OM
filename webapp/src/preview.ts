@@ -319,14 +319,13 @@ function planckRgb(T: number): [number, number, number] {
 
 /** OM-3 v0.28 Halation, after research/halation/model.py (the camera's pass, firmware hl_run; numbers firmware/halation.py),
  *  on the preview in the camera's own pixel scale (a 5184-px-wide photo): 64-px cells sum how far bright pixels pass
- *  Y 200, two blurs (3 and 10 passes) mixed 50 / 50, plus (h8, a long even tail) a quarter of the broad one blurred
- *  30 more times, u = 255 v / (v + 900); none when 24 % or more of the cells are bright (counted on the 50 / 50 mix;
- *  full strength up to 8 %); each pixel gets a red-orange glow lerped from the cells (Y by the pixel, the colour less
- *  on bright cells). */
+ *  Y 200, two blurs (3 and 10 passes) mixed 50 / 50, u = 255 v / (v + 900); none when 24 % or more of the cells are
+ *  bright (full strength up to 8 %); each pixel gets a red-orange glow lerped from the cells (Y by the pixel, the colour
+ *  less on bright cells). h7's fade again since v0.40-beta3 (the camera dropped h8's wide layer: faster). */
 /** What Halation did on the last preview: 'off' = the photo is too bright (the camera skips it too), 'none' = no bright
  *  lights, 'done', or null (not set). */
 export let lastHalation: 'off' | 'none' | 'done' | null = null;
-const HL = { T: 200, K: 900, BLUR: 3, BLUR2: 10, BLUR3: 30, WIDE: 64, MIX: 128, GMAX: [0, 43, 78, 113, 156, 208], KY: 44, KCB: -40, KCR: 60, WMUL: 2, COV_U: 32, COV_LO: 8, COV_HI: 24,
+const HL = { T: 200, K: 900, BLUR: 3, BLUR2: 10, MIX: 128, GMAX: [0, 43, 78, 113, 156, 208], KY: 44, KCB: -40, KCR: 60, WMUL: 2, COV_U: 32, COV_LO: 8, COV_HI: 24,
   DLO: 60, DHI: 72, DCOV: 16 };   // DLO / DHI / DCOV: the preview's dark-photo allowance (not in the firmware)
 function om3Halation(img: Float32Array, w: number, h: number, level: number): 'off' | 'none' | 'done' {
   const sc = FULL_WIDTH / w, Wc = FULL_WIDTH, Hc = Math.round(h * sc);
@@ -358,13 +357,13 @@ function om3Halation(img: Float32Array, w: number, h: number, level: number): 'o
     }
     return cur;
   };
-  const t1 = blur(E, HL.BLUR), t2 = blur(E, HL.BLUR2), t3 = blur(t2, HL.BLUR3);   // h8: the wide layer
+  const t1 = blur(E, HL.BLUR), t2 = blur(E, HL.BLUR2);
   const u = new Float64Array(E.length);
   let bright = 0;
   for (let g = 0; g < u.length; g++) {
-    const v0 = (t1[g] * (256 - HL.MIX) + t2[g] * HL.MIX) / 256, v = Math.min(65408, v0 + (t3[g] * HL.WIDE) / 256);
-    if ((255 * Math.min(65408, v0)) / (Math.min(65408, v0) + HL.K) >= HL.COV_U) bright++;   // the bright-frame count: the 50 / 50 mix
+    const v = Math.min(65408, (t1[g] * (256 - HL.MIX) + t2[g] * HL.MIX) / 256);
     u[g] = (255 * v) / (v + HL.K);
+    if (u[g] >= HL.COV_U) bright++;
   }
   const lo = (u.length * HL.COV_LO) / 100, hi = (u.length * HL.COV_HI) / 100;
   let cov = bright >= hi ? 0 : bright <= lo ? 1 : (hi - bright) / (hi - lo);   // many bright cells: daylight, fade out
