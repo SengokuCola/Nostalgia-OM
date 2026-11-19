@@ -8540,3 +8540,21 @@ Assign C4, Set B, Assign C5: C4 showed Set B's films, and Set A again is ignored
   alone is new (as for earlier releases).
 - LookLab's Halation preview back to h7 (BLUR3 / WIDE removed), as the firmware since beta3; vitest 76 pass.
 - Tour pictures remade with `research/showcase/make.sh` on the release build (WHEEL_IMG = a v0.30.3 build).
+
+## v0.40 grain on the camera: square clumps and repeats (2026-11-19; camera photos, analysis)
+- Owner's OM-3, v0.40-beta3 firmware (= v0.40), a colour chart, ISO 1000, 10 JPEGs: grain Off, then Fine / Medium /
+  Coarse at 1, 3 and 5 (private folder, never in the repo). A Discord tester saw in Coarse "slightly slanted vertical
+  lines, and then 1 px stripes (horizontal and vertical)".
+- **Square clumps (measured):** the Coarse photos' power spectrum has the 3 x 3 box filter's zeros at 1/3 cycle / px
+  on both axes and its side lobes beyond, so the clumps are little squares with straight horizontal and vertical
+  edges. Neighbour correlation 0.64 sideways and down, 0.41 diagonally (box 3: 0.67 / 0.44); Medium 0.48 / 0.23; Fine
+  about 0. Row and column means vary as much as the clump shape predicts (Coarse 1.4..1.7 x the white-noise value,
+  box 3: 1.73), so no extra whole-row / whole-column stripes. Same image geometry as the tile (no shear seen).
+- **Repeats (measured):** the grain photos have repeat peaks of 0.04..0.10 (autocorrelation, 640 x 640 grey area;
+  grain Off 0.018); the exact model (`tile_model.py`) gives g3's fast tile 0.05..0.09 and g2c's full tile 0.01..0.02.
+  So they come from g3's band and strips (each of the 128 band rows used about 6 times a tile, turned sideways).
+- **Slanted lines: not found as a pattern.** Energy by direction (0.04..0.30 cycle / px) within +-10 % at every angle,
+  as in the no-grain photo and both models. They may be the repeats as the eye picks them up, or the zoom: the
+  shared pictures were 2x nearest-neighbour, which keeps the square edges hard (analysis).
+- Possible fixes (owner's call; not started): rounder clumps (box twice, or the two-size "film-like variant" above:
+  about 2-3x tg_fill's work) for the straight edges; a longer band or more varied strips for the repeats (speed cost).
