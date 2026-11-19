@@ -3,12 +3,18 @@
 #   1. the standard 20 films (LookLab's, webapp/src/data/om3films.json) as LOOKS.BIN + CURVES.BIN on a blank card;
 #   2. the camera screens: emulator runs on that card (shoot.sh), the HSL wheels drawn in (wheel.py), quantized;
 #   3. the photos: each film and each setting on CC0 / public-domain samples with LookLab's own preview
-#      (films.ts, demos.ts); Noise Filter and Vignette Correction as illustrations (illus.py).
+#      (films.ts, demos.ts); Noise Filter and Vignette Correction as illustrations (illus.py); v0.40's Border, Film Grain,
+#      Grain Size and the crop shapes as illustrations (illus40.py: the border's own widths, the grain tile's recipe).
 # Needs the workspace (`. ~/om3-work/env.sh`) and `cd webapp && npm install`. The firmware is IMG (default: the
 # build research/setup.sh checks, i.e. the latest release; v0.30's rows need a v0.30 build: IMG=$OM3_WORK/out-NAME/main.bin).
 # The page shows the films kept in the camera with nothing else on the card. v0.30's Picture Mode order (colour menu
 # test 7): Film, Color Mix, RGB, Color wheel (HSL), Split Tone Balance, WB, Highlight & Shadow, Blacks / Whites,
-# Contrast, Sharpness, Noise Filter, Vignette Correction, Shading, Glow, Halation, Film Grain. Work files go to SHOWCASE_WORK (default $OM3_WORK/showcase).
+# Contrast, Sharpness, Noise Filter, Vignette Correction, Shading, Glow, Halation, Film Grain; v0.40 adds Grain Size and
+# Border, and its Glow, Halation, Split Tone Balance and Film Grain step the same way as Contrast (main+1 = plus).
+# v0.40's screens: IMG = a v0.40 build (the Firmware Version page shows VERSION's first word: use the release's build).
+# WHEEL_IMG (default IMG) makes the five wheel pages: on v0.40 om-emu leaves the wheel's dial label (Sat / Hue / Lum /
+# Tint, #64) blank, so the page keeps v0.30's (WHEEL_IMG=$OM3_WORK/out-NAME/main.bin of v0.30.3, its "Vivid" label).
+# Work files go to SHOWCASE_WORK (default $OM3_WORK/showcase).
 set -e
 H="$(cd "$(dirname "$0")" && pwd)"
 : "${OM3_REPO:?load ~/om3-work/env.sh first}"
@@ -29,16 +35,16 @@ L='s1 ok ok right right right right shot:f01.png'; for i in $(seq -w 2 20); do L
 "$H/shoot.sh" list "$L" > /dev/null
 # the five wheel pages on COLOR 1, one change each (Color: Blue + Blue-cyan -5; Hue: Yellow +5; Luminance: the three
 # blues -5; Shadows: Blue 10; Highlights: Orange 10)
-"$H/shoot.sh" wheels "s1 ok ok down down down $(r sub-1 7) $(r main-1 5) sub+1 $(r main-1 5) shot:w1.png info info $(r sub+1 6) $(r main+1 5) shot:w2.png info $(r sub-1 6) $(r main-1 5) sub-1 $(r main-1 5) sub-1 $(r main-1 5) sub+1 sub+1 shot:w3.png info $(r main+1 10) shot:w4.png info $(r sub+1 5) $(r main+1 10) shot:w5.png" > /dev/null
+IMG=${WHEEL_IMG:-$IMG} "$H/shoot.sh" wheels "s1 ok ok down down down $(r sub-1 7) $(r main-1 5) sub+1 $(r main-1 5) shot:w1.png info info $(r sub+1 6) $(r main+1 5) shot:w2.png info $(r sub-1 6) $(r main-1 5) sub-1 $(r main-1 5) sub-1 $(r main-1 5) sub+1 sub+1 shot:w3.png info $(r main+1 10) shot:w4.png info $(r sub+1 5) $(r main+1 10) shot:w5.png" > /dev/null
 # the other rows on COLOR 1 at each demo's "after" value (Vignette Correction: its default On, no dial). Mix: Red Sat +3,
 # Hue +4; RGB: Blue point 2 +5, point 4 -4.
-"$H/shoot.sh" rows "s1 ok ok down $(r main+1 3) $(r sub-1 4) shot:mix.png down info info sub-1 $(r main+1 5) sub-1 sub-1 $(r main-1 4) shot:rgb.png down down $(r main-1 5) shot:bal.png down down $(r main+1 7) $(r sub+1 7) shot:curve.png down down $(r main+1 2) shot:con.png down $(r main+1 2) shot:sharp.png down main+1 shot:noise.png down main+1 shot:vigoff.png down $(r main-1 5) shot:shade.png down $(r main-1 5) shot:glow.png down $(r main-1 5) shot:halo.png down $(r main+1 3) shot:grain.png" > /dev/null
+"$H/shoot.sh" rows "s1 ok ok down $(r main+1 3) $(r sub-1 4) shot:mix.png down info info sub-1 $(r main+1 5) sub-1 sub-1 $(r main-1 4) shot:rgb.png down down $(r main+1 5) shot:bal.png down down $(r main+1 7) $(r sub+1 7) shot:curve.png down down $(r main+1 2) shot:con.png down $(r main+1 2) shot:sharp.png down main+1 shot:noise.png down main+1 shot:vigoff.png down $(r main-1 5) shot:shade.png down $(r main+1 5) shot:glow.png down $(r main+1 5) shot:halo.png down $(r main+1 5) shot:grain.png down main+1 shot:gsize.png down $(r left 3) shot:border.png" > /dev/null
 "$H/shoot.sh" vig "s1 ok ok $(r down 11) shot:vig.png" > /dev/null
 "$H/shoot.sh" bwgrid "s1 ok ok $(r down 7) ok $(r right 7) shot:bw.png" > /dev/null
 "$H/shoot.sh" wbgrid "s1 ok ok $(r down 5) ok $(r right 7) shot:wb.png" > /dev/null
 # FILM 1 changed on the camera: the stars, then the shooting screen and the super control panel
 # (Mix Sat +2 and Split Tone Balance +2 on FILM 1, then back up to Mix: page 1 shows FILM 1* and the starred rows)
-"$H/shoot.sh" kept "s1 ok ok right right right right down main+2 down down down $(r main-1 2) up up up shot:star.png ok shot:lv.png ok shot:scp.png" > /dev/null
+"$H/shoot.sh" kept "s1 ok ok right right right right down main+2 down down down $(r main+1 2) up up up shot:star.png ok shot:lv.png ok shot:scp.png" > /dev/null
 # Button Function (MENU, five pages left to the Custom menu's Operations, OK on Button Settings, OK on Button Function;
 # the cursor starts on Fn): the arrow pad to Direct Function, the ▲ row and its options; then the CRT dial row set to COLOR
 # (six rows down from ▲ since v0.29.3's Delete row)
@@ -46,13 +52,26 @@ M='s1 menu left left left left left ok ok'
 "$H/shoot.sh" buttons "$M down down down down down ok right right ok down shot:up.png ok shot:uppick.png menu down down down down down down ok right right right shot:dialpick.png ok shot:dial.png" > /dev/null
 # v0.29.3: the Delete row (trash icon, right after ▼) set to the Digital Tele-converter, and its options
 "$H/shoot.sh" delete "$M down down down down down ok right right ok down down down down down ok down down down down down down shot:delpick.png ok shot:del.png" > /dev/null
+# v0.40: Image Aspect on the super control panel (its cell, the main dial six steps from 4:3 to XPan)
+"$H/shoot.sh" crop "s1 wait wait ok down down right right $(r 'main+1 wait' 6) shot:scp-xpan.png" > /dev/null
+# v0.40: Custom menu > 4. Information > Camera Info Settings > Information 1 (as emu_test's SI_HIDE_MODE): the cursor on
+# Shooting Mode (the 5th row, the first of ours), the shooting screen before; then Shooting Mode, Exposure Comp.,
+# Image Stabilizer, Drive Mode, Metering, Remaining Files and Touch screen unticked, the list (rows 8-14) and the shooting
+# screen after
+SI="menu wait left wait left wait down wait ok wait down wait right wait $(r 'down wait' 4)"
+"$H/shoot.sh" info "s1 wait wait shot:lv-all.png $SI ok wait $(r 'down wait' 3) ok wait $(r 'down wait' 4) ok wait $(r 'down wait' 2) ok wait down wait ok wait $(r 'down wait' 2) ok wait down wait ok wait $(r 'up wait' 4) shot:list.png menu wait menu wait menu wait s1 wait wait shot:lv-some.png" > /dev/null
+# v0.40: MENU > wrench tab, page 6 > Firmware Version > OK (emu_test's FV_WALK); om-emu has no body version (0.0)
+"$H/shoot.sh" fwver "s1 wait wait menu wait left wait up wait up wait $(r 'right wait' 6) $(r 'down wait' 5) ok wait wait shot:fv.png" > /dev/null
 rm -f "$D"/*.png
 for i in $(seq -w 1 20); do cp "$S/list/f$i.png" "$D/film-$i.png"; done
 cp "$S/rows/mix.png" "$D/row-mix.png"; cp "$S/rows/rgb.png" "$D/row-rgb.png"
 cp "$S/rows/bal.png" "$D/row-tone-balance.png"; cp "$S/rows/con.png" "$D/row-contrast.png"; cp "$S/rows/curve.png" "$D/row-curve.png"
 cp "$S/rows/sharp.png" "$D/row-sharpness.png"; cp "$S/rows/noise.png" "$D/row-noise.png"; cp "$S/vig/vig.png" "$D/row-vignette.png"
 cp "$S/rows/shade.png" "$D/row-shading.png"; cp "$S/rows/glow.png" "$D/row-glow.png"; cp "$S/rows/halo.png" "$D/row-halation.png"
-cp "$S/rows/grain.png" "$D/row-grain.png"; cp "$S/bwgrid/bw.png" "$D/row-blacks-whites.png"; cp "$S/wbgrid/wb.png" "$D/row-wb.png"
+cp "$S/rows/grain.png" "$D/row-grain.png"; cp "$S/rows/gsize.png" "$D/row-grain-size.png"; cp "$S/rows/border.png" "$D/row-border.png"
+cp "$S/crop/scp-xpan.png" "$D/scp-xpan.png"; cp "$S/fwver/fv.png" "$D/fwver.png"
+cp "$S/info/list.png" "$D/info-list.png"; cp "$S/info/lv-all.png" "$D/info-before.png"; cp "$S/info/lv-some.png" "$D/info-after.png"
+ cp "$S/bwgrid/bw.png" "$D/row-blacks-whites.png"; cp "$S/wbgrid/wb.png" "$D/row-wb.png"
 cp "$S/kept/star.png" "$D/kept-star.png"; cp "$S/kept/lv.png" "$D/liveview.png"; cp "$S/kept/scp.png" "$D/scp.png"
 cp "$S/buttons/up.png" "$D/btn-up.png"; cp "$S/buttons/uppick.png" "$D/btn-up-options.png"
 cp "$S/buttons/dial.png" "$D/btn-dial.png"; cp "$S/buttons/dialpick.png" "$D/btn-dial-options.png"
@@ -83,4 +102,5 @@ for f in "$RAW"/out/*.rgba; do b=$(basename "$f" .rgba); case $b in hal-*) pytho
 for n in meadow portrait paris taxi; do python3 "$H/raw.py" out "$RAW/$n.rgba" "$OUT/films/$n-00.jpg"; done
 for f in "$RAW"/demo/*.rgba; do python3 "$H/raw.py" out "$f" "$OUT/demos/$(basename "$f" .rgba).jpg"; done
 python3 "$H/illus.py" "$P" "$OUT/demos"
+python3 "$H/illus40.py" "$P" "$OUT/demos" > /dev/null
 echo "pages/showcase/img: $(find "$OUT" -type f | wc -l | tr -d ' ') files"
