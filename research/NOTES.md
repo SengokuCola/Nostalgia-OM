@@ -8201,3 +8201,4 @@ Test driver tools/emulator/focus_stacking.mjs runs this routine with controlled 
   (frame lines at the crop edges)". Suite **102 of 103**: the one FAIL is `static:changed-bytes` for the six table
   entries above (hooks.json not changed: the owner's OK first). Package `test-builds/2026-11-18-framelines-1`
   (private folder), go-back test 9 `ac702af7…3065`, with an emulator before / after picture. Camera test pending.
+- **framelines-1 camera-tested 2026-11-18** (owner: "that works!!!!"): the aspect frame lines at the crop's edges.
