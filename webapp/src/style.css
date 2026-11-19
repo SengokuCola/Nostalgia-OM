@@ -157,6 +157,8 @@ canvas.pv { width: 100%; height: auto; display: block; max-height: 70vh; object-
 p.warn { background: #2e2510; color: #f1e3bf; border-left: 3px solid #f2c25c; padding: 8px 12px; border-radius: 8px; margin: 8px 0 0; font-size: 13px; line-height: 1.45; }
 :root[data-theme="light"] p.warn { background: #fff4d6; color: #5a4300; border-left-color: #d39b00; }
 .pv-opts { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.pv-opts .aspect { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; }
+.pv-opts .aspect select { width: auto; }
 .check { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; cursor: pointer; }
 .check .help { flex-basis: 100%; margin-left: 24px; }
 

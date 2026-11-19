@@ -157,7 +157,25 @@ function blurredCopy(src: Float32Array, w: number, h: number, sw: number, sigma:
 
 /** camera 'om3' (Caduceus for OM-3): hue turns toward the clockwise neighbour (OM-3 camera-tested direction), no
  *  noise filter preview; glow / clarity (v0.20) and the profile's Sharpness and Shading (vignette) are previewed. */
-export interface PreviewOptions { advice: boolean; camera?: 'ep7' | 'om3' }
+export interface PreviewOptions { advice: boolean; camera?: 'ep7' | 'om3'; crop?: CropRect }
+/** OM-3 Image Aspect (preview): the part of the photo the camera keeps, centred, as the camera's JPEG sizes (4:3 = the
+ *  whole photo; crops of the 5184 x 3888 frame: 3:2 5184 x 3456, 16:9 5184 x 2920, 1:1 3888 x 3888, 3:4 2912 x 3888, and
+ *  v0.40's 5:4 4864 x 3888, XPan 5184 x 1920, 21:9 5184 x 2224; research/border/model.py). The look is made on the whole
+ *  photo (Shading, the lens corners and grain as on the sensor's frame), then cut, and the Border sits inside the cut. */
+export interface CropRect { x: number; y: number; w: number; h: number }
+export const ASPECTS: { id: string; label: string; r?: number }[] = [
+  { id: '4:3', label: '4:3' }, { id: '3:2', label: '3:2', r: 5184 / 3456 }, { id: '16:9', label: '16:9', r: 5184 / 2920 },
+  { id: '1:1', label: '1:1', r: 1 }, { id: '3:4', label: '3:4', r: 2912 / 3888 }, { id: '5:4', label: '5:4', r: 4864 / 3888 },
+  { id: 'xpan', label: 'XPan', r: 5184 / 1920 }, { id: '21:9', label: '21:9', r: 5184 / 2224 },
+];
+/** The crop of a w x h photo at Image Aspect `id` (a portrait photo: the camera's crop turned with it). */
+export function cropRect(w: number, h: number, id: string): CropRect {
+  const a = ASPECTS.find((x) => x.id === id);
+  if (!a?.r) return { x: 0, y: 0, w, h };
+  const r = h > w ? 1 / a.r : a.r;
+  const cw = r > w / h ? w : Math.min(w, Math.round(h * r)), ch = r > w / h ? Math.min(h, Math.round(w / r)) : h;
+  return { x: Math.round((w - cw) / 2), y: Math.round((h - ch) / 2), w: cw, h: ch };
+}
 
 /** Render `look` from `src` (8-bit sRGB RGBA) into `dst` (same size). */
 export function renderLook(src: ImageData, dst: ImageData, look: Look, opt: PreviewOptions) {
@@ -230,7 +248,7 @@ export function renderLook(src: ImageData, dst: ImageData, look: Look, opt: Prev
   if (om3 && (look.split || look.rgb)) bendSplit(img, n, look.split, OM3_CAL.split, look.tone_balance ?? 0, look.rgb);   // OM-3 v0.26 split toning (the camera bends its gamma curves); v0.28 Tone Balance; RGB curves
   // OM-3: Sharp and Film Grain are part of the camera's development, before Glow (Soft Focus), Halation, Shading, Border
   if (om3) om3Sharp(img, w, h, look.advice.sharpness ?? 0);
-  if (om3 && look.film_grain) om3Grain(img, w, h, GRAIN_STRENGTH[Math.min(3, look.film_grain)], look.grain_size ?? 2);
+  if (om3 && look.film_grain) om3Grain(img, w, h, look.grain_strength ?? GRAIN_STRENGTH[Math.min(3, look.film_grain)], look.grain_size ?? 2);
   // 5. bloom / halation (Soft Focus blend of a 160-px-wide blurred copy) or clarity (large-radius local contrast)
   const e = look.effect;                     // OM-3 v0.20: glow (no colour) and clarity too
   if (e && e.strength >= 1) {
@@ -257,7 +275,7 @@ export function renderLook(src: ImageData, dst: ImageData, look: Look, opt: Prev
   lastHalation = om3 && look.halation ? om3Halation(img, w, h, look.halation) : null;   // OM-3 v0.28: after the Soft Focus blend, as the camera
   // 6. OM-3 Shading and Border (the camera's passes on the finished photo); grain (E-P7: Olympus xorshift32 luma grain)
   if (om3 && look.vignette) om3Shading(img, w, h, look.vignette);
-  if (om3 && look.border) om3Border(img, w, h, look.border);
+  if (om3 && look.border) om3Border(img, w, h, look.border, opt.crop);
   const gi = om3 ? 0 : GRAINS.indexOf(look.grain);
   const gain = gi > 0 ? (mono ? MONO_GRAIN : COLOUR_GRAIN)[gi] : 0;
   const scale = Math.min(1, w / FULL_WIDTH) * 2.2;   // a little stronger than full-res-viewed-small, so it stays visible
@@ -406,7 +424,7 @@ function lensFalloff(w: number, h: number): Float32Array {
   return f;
 }
 
-/** OM-3 Shading -5..+5: the camera's own (firmware v0.41 test 7 went back to it, 2026-11-18). Measured on a plain
+/** OM-3 Shading -5..+5: the camera's own (as on v0.40-beta: v0.41-dev test 7 went back to it, 2026-11-18). Measured on a plain
  *  wall, every level (card backup 2026-11-18-shading-stock-levels, PB183616..626: Shading 0, then -5..-1, +1..+5; OM
  *  17 mm f/1.8, exposure matched at the centre): a radial mask m(r), r = the distance from the centre / the
  *  half-diagonal, nothing inside r 0.4 and most of it past r 0.8. Darker blends toward black, Y' = Y (1 - m), lighter
@@ -465,18 +483,19 @@ function om3Shading(img: Float32Array, w: number, h: number, level: number) {
   }
 }
 
-/** OM-3 Border -5..+5 (firmware v0.41 bd_run, research/border/model.py; camera-tested 2026-11-18): white (1..5) or black
- *  (-1..-5), the same width on every side, 1.5 / 3 / 4.5 / 6 / 7.5 % of the short side. */
+/** OM-3 Border -5..+5 (firmware v0.40 bd_run, research/border/model.py; camera-tested 2026-11-18): white (1..5) or black
+ *  (-1..-5), the same width on every side, 1.5 / 3 / 4.5 / 6 / 7.5 % of the short side of the photo as kept (the crop). */
 const BORDER_T = [983, 1966, 2949, 3932, 4915];
-function om3Border(img: Float32Array, w: number, h: number, level: number) {
-  const B = Math.max(1, Math.round((Math.min(w, h) * BORDER_T[Math.min(5, Math.abs(level)) - 1]) / 65536)), v = level > 0 ? 1 : 0;
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    if (y >= B && y < h - B && x >= B && x < w - B) { x = w - B - 1; continue; }
+function om3Border(img: Float32Array, w: number, h: number, level: number, crop: CropRect = { x: 0, y: 0, w, h }) {
+  const { x: x0, y: y0, w: cw, h: ch } = crop, v = level > 0 ? 1 : 0;
+  const B = Math.max(1, Math.round((Math.min(cw, ch) * BORDER_T[Math.min(5, Math.abs(level)) - 1]) / 65536));
+  for (let y = y0; y < y0 + ch; y++) for (let x = x0; x < x0 + cw; x++) {
+    if (y >= y0 + B && y < y0 + ch - B && x >= x0 + B && x < x0 + cw - B) { x = x0 + cw - B - 1; continue; }
     const q = (y * w + x) * 3; img[q] = img[q + 1] = img[q + 2] = v;
   }
 }
 
-/** OM-3 Film Grain (firmware v0.41 better grain g3: editor.s tg_fill, research/grain/tile_model.py). The camera adds a
+/** OM-3 Film Grain (firmware v0.40 better grain g3: editor.s tg_fill, research/grain/tile_model.py). The camera adds a
  *  colour grain tile in its development: Y = a w x w box sum of uniform random bytes, sigma 16 (8-bit), w = Grain Size
  *  (1 Fine, 2 Medium, 3 Coarse); Cb / Cr the same at half width and height, box (w + 1) / 2; times the strength's gain,
  *  Y 400 / 650 / 1024 / 1280 / 1536 of 1024 for 1..5, Cb / Cr 0.4375 of it. LOOKS.BIN's Low / Med / High are 2 / 3 / 5

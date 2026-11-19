@@ -57,3 +57,48 @@ describe('OM-3 v0.41 Border in LOOKS.BIN', () => {
     expect(profilesBin(bank, 26)[32 + 48]).toBe(0);
   });
 });
+
+describe('OM-3 v0.40 crops, grain strength and photo codes', () => {
+  it('XPan / 21:9 / 5:4 crops are centred at the camera\'s shapes, turned for an upright photo', async () => {
+    const { cropRect } = await import('../src/preview');
+    expect(cropRect(1296, 972, 'xpan')).toEqual({ x: 0, y: 246, w: 1296, h: 480 });
+    expect(cropRect(1296, 972, '21:9')).toEqual({ x: 0, y: 208, w: 1296, h: 556 });
+    expect(cropRect(1296, 972, '5:4')).toEqual({ x: 40, y: 0, w: 1216, h: 972 });
+    expect(cropRect(972, 1296, 'xpan')).toEqual({ x: 246, y: 0, w: 480, h: 1296 });
+    expect(cropRect(1296, 972, '4:3')).toEqual({ x: 0, y: 0, w: 1296, h: 972 });
+  });
+  it('the Border sits inside the crop, its width from the crop\'s short side', async () => {
+    const { cropRect } = await import('../src/preview');
+    const w = 160, h = 120, cr = cropRect(w, h, 'xpan');   // 160 x 59 at y 30
+    const l = blankLook('colour', 'b');
+    l.border = 5;
+    const out = grey(w, h, 0);
+    renderLook(grey(w, h), out, { ...l, lens_correction: true }, { advice: true, camera: 'om3', crop: cr });
+    const B = Math.max(1, Math.round((Math.min(cr.w, cr.h) * 4915) / 65536));   // 4 rows
+    expect(px(out.data, w, 80, cr.y)).toBe(255);
+    expect(px(out.data, w, 80, cr.y + B - 1)).toBe(255);
+    expect(Math.abs(px(out.data, w, 80, cr.y + B) - 128)).toBeLessThanOrEqual(1);
+    expect(Math.abs(px(out.data, w, 80, cr.y - 2) - 128)).toBeLessThanOrEqual(1);   // outside the crop: untouched
+  });
+  it('Film Grain 1..5: the looks file keeps the camera\'s level (1-2 Low, 3 Med, 4-5 High)', async () => {
+    const { setGrainStrength, grainStrength } = await import('../src/om3');
+    const l = blankLook('colour', 'g');
+    const bank = emptyBank(); bank[0][0] = l;
+    for (const [x, lv] of [[1, 1], [2, 1], [3, 2], [4, 3], [5, 3]]) {
+      setGrainStrength(l, x);
+      expect(grainStrength(l)).toBe(x);
+      expect(profilesBin(bank, 28)[32 + 51]).toBe(lv);
+      expect(grainStrength(lookFromRecord(profilesBin(bank, 28).slice(32, 96), 'x', true))).toBe([0, 2, 3, 5][lv]);
+    }
+    setGrainStrength(l, 0);
+    expect(l.film_grain).toBeUndefined();
+  });
+  it('a photo code with a black Border reads back as black', async () => {
+    const { photoCodeOf, lookFromPhotoCode } = await import('../src/om3');
+    const l = blankLook('colour', 'p');
+    l.border = -3;
+    expect(lookFromPhotoCode(`Caduceus FILM 1 p ${photoCodeOf(l)}`).border).toBe(-3);
+    l.border = 4;
+    expect(lookFromPhotoCode(`Caduceus FILM 1 p ${photoCodeOf(l)}`).border).toBe(4);
+  });
+});

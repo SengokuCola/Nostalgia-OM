@@ -80,8 +80,9 @@ export interface Look {
   split?: Split;               // OM-3 v0.26: split toning, Shadows / Highlights colour 0..11 and strength 0..5 in half steps (v0.28; absent = off)
   tone_balance?: number;       // OM-3 v0.28: Tone Balance -5..5 (- the shadow tint reaches further, + the highlight tint; absent = 0)
   halation?: number;           // OM-3 v0.28: Halation 1..5 (absent = off)
-  border?: number;             // OM-3 v0.41: Border -5..5 (1..5 white, -1..-5 black; absent = none), LOOKS.BIN +48
-  grain_size?: number;         // OM-3 v0.41: Grain Size 1 Fine, 3 Coarse (absent = 2 Medium); preview only, set on the camera
+  border?: number;             // OM-3 v0.40: Border -5..5 (1..5 white, -1..-5 black; absent = none), LOOKS.BIN +48
+  grain_size?: number;         // OM-3 v0.40: Grain Size 1 Fine, 3 Coarse (absent = 2 Medium); not in any card file: set on the camera
+  grain_strength?: number;     // OM-3 v0.40: Film Grain 1 or 4 (absent = film_grain's 2 / 3 / 5); not in any card file: set on the camera
   film_wb?: FilmWb;            // OM-3 v0.28: the WB the camera switches to with this film (absent = Auto)
   rgb?: RgbCurves;             // OM-3 RGB curves (feature/rgb-curves): R / G / B, 5 points each, -7..7 (absent = flat); preview only, not in LOOKS.BIN yet
   mix?: number[];              // OM-3 colour mix (feature/rgb-curves): hue, strength for R, G, B, -7..7 (absent = none); preview only, not in LOOKS.BIN yet
@@ -189,6 +190,7 @@ export function parseLook(v: unknown, what = 'look'): Look {
     ...(Number.isInteger(v.halation) && (v.halation as number) > 0 ? { halation: Math.min(5, v.halation as number) } : {}),
     ...(Number.isInteger(v.border) && v.border !== 0 ? { border: Math.max(-5, Math.min(5, v.border as number)) } : {}),
     ...(v.grain_size === 1 || v.grain_size === 3 ? { grain_size: v.grain_size } : {}),
+    ...(v.grain_strength === 1 || v.grain_strength === 4 ? { grain_strength: v.grain_strength } : {}),
     ...(parseFilmWb(v.film_wb) ? { film_wb: parseFilmWb(v.film_wb) } : {}),
     ...(parseCurves(v.rgb) ? { rgb: parseCurves(v.rgb) } : {}),
     ...(parseMix(v.mix) ? { mix: parseMix(v.mix) } : {}),

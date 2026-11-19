@@ -8267,3 +8267,20 @@ Test driver tools/emulator/focus_stacking.mjs runs this routine with controlled 
   0.90, -4 0.94 / 0.92, -5 0.96 / 0.94; r 0.725 -1 0.23 .. -5 0.39, +1 0.27 .. +5 0.42; nothing inside r 0.4. Every
   level is strong; the steps add a little. preview.ts keeps the ten measured rows (SHADE_DARK / SHADE_LIGHT) and
   matches the photos within 2..6 of 255 at every radius; the (1 - m)^k estimate is gone. -2 agrees with probe p1.
+
+## LookLab for v0.40: crops, Film Grain 1..5 + Grain Size, black Border (2026-11-18; branch feature/looklab-camera-match)
+- cad (for the owner): LookLab's update for the full v0.40 (v0.40-beta notes: "LookLab doesn't know the black Border,
+  the grain strength and size, or the crops yet"). try/v0.40-beta merged in (ec472dd; its card formats are main's).
+- **Image Aspect (preview only, a camera setting):** 4:3, 3:2, 16:9, 1:1, 3:4 and v0.40's 5:4, XPan, 21:9 at the
+  camera's JPEG shapes (research/border/model.py: 5184 x 3456 / 2920, 3888 x 3888, 2912 x 3888, 4864 x 3888, 5184 x
+  1920 / 2224), centred, turned for an upright photo. The look is made on the whole frame (Shading, lens corners, grain
+  as on the sensor's frame: analysis, not camera-checked for the camera's own Shading at a crop), then cut; the
+  Border sits inside the cut, its width from the cut's short side (as bd_run).
+- **Film Grain Off / 1..5 + Grain Size Fine / Medium / Coarse** rows as the camera's. Card files carry only the level
+  (LOOKS.BIN +51: 1-2 Low, 3 Med, 4-5 High, the camera's gs_lv; the camera reads Low / Med / High as 2 / 3 / 5 Medium,
+  gs_dv); strength 1 / 4 and size live in the camera's curves record (G) and in no card file (CURVES.BIN's spare bytes
+  must be zero). LookLab keeps them in the look (share links, looks files) for the preview and says what to set on the
+  camera.
+- **Border** -5..+5 as before (LOOKS.BIN +48). The photo code writes +48 as a signed nibble (photocode.py: value & 15),
+  so LookLab now reads byte 48 signed (a black border was read as 11..15). firmware/photocode.py's UNSIGNED, docs/
+  PHOTO_CODE.md and the devkit reader still list 48 as unsigned (left for cad).

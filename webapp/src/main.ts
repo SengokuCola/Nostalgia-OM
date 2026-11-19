@@ -8,14 +8,14 @@ import {
 } from './pack';
 import { History } from './history';
 import { fromLibrary, libraryOrigin, resetLook } from './reset';
-import { lastHalation, renderLook } from './preview';
+import { ASPECTS, cropRect, lastHalation, renderLook } from './preview';
 import { makeZip } from './zip';
 import { curvesBin } from './curvesbin';
 import { rrpreset } from './rapidraw';
 import { previewToneLut } from './tone';
 import {
   BANK_SCHEMA, PHOTO_RE, COLORS, OM3, OM3_NAME_MAX, PER, lookFromPhotoCode, om3NameProblem, blankProfile, defaultBank, emptyBank, fromOldLookLab, parseBank, profilesBin, readProfiles,
-  SHARP, sharpLabel, slowGrain, monoGrain, toOm3, validateBank, type Bank, type Fw, FW_NAME, bankMinFw, exportLook, minFw, v28Parts, recipeText,
+  SHARP, sharpLabel, slowGrain, monoGrain, grainStrength, setGrainStrength, toOm3, validateBank, type Bank, type Fw, FW_NAME, bankMinFw, exportLook, minFw, v28Parts, recipeText,
 } from './om3';
 import { namesBin } from './om3names';
 import { SPLIT_COLOURS, SPLIT_STEPS, fromSteps, toSteps, type Split } from './split';
@@ -44,6 +44,7 @@ const S = {
   rgb: 'r' as Channel,  // the RGB curves' colour (the camera's INFO on the RGB row)
   image: 'frames',
   cut: 50,
+  aspect: (() => { try { const a = localStorage.getItem('caduceus.om3.aspect'); if (a && ASPECTS.some((x) => x.id === a)) return a; } catch { /* storage blocked */ } return '4:3'; })(),
 };
 
 // ---------------------------------------------------------------- camera: OM-3 only (owner 2026-11-09: the E-P7 side of the
@@ -1001,6 +1002,10 @@ function buildPreview() {
     h('div', { class: 'pv-wrap' }, frame, h('span', { class: 'badge' }, 'Before'), h('span', { class: 'badge r' }, 'After · approximate')),
     thumbs,
     h('div', { class: 'pv-opts' },
+      h('label', { class: 'aspect', title: 'Preview the photo at one of the camera\'s Image Aspect shapes (a camera setting, not part of the look): the look is made on the whole photo, then cut, and the Border sits inside the cut' },
+        'Image Aspect ',
+        h('select', { onchange: (e: Event) => { S.aspect = (e.target as HTMLSelectElement).value; try { localStorage.setItem('caduceus.om3.aspect', S.aspect); } catch { /* storage blocked */ } schedulePreview(); } },
+          ...ASPECTS.map((a) => h('option', { value: a.id, selected: a.id === S.aspect }, a.label)))),
       h('span', { class: 'help' }, 'Includes Contrast, Sharp, Shading, Film Grain, Border, Glow, Halation and the lens corners.'),
       h('button', { class: 'link', onclick: () => $<HTMLInputElement>('#photo').click() }, 'Use your own photo…')),
     h('p', { class: 'help' }, 'Drag the line on the photo to compare before and after. Shading, grain, border, glow and the lens corners follow the camera\'s own maths, checked against photos from an OM-3; colours are close but not exact (strong blues and purples differ most), so check a new look on the camera. Your own photo never leaves this browser.'));
@@ -1064,17 +1069,20 @@ function schedulePreview() {
   requestAnimationFrame(() => {
     previewQueued = false;
     if (!srcData || !canvas) return;
-    if (canvas.width !== srcData.width || canvas.height !== srcData.height) { canvas.width = srcData.width; canvas.height = srcData.height; }
-    sizeFrame(srcData.width, srcData.height);
-    if (beforeOf !== srcData) {           // the untouched photo, drawn once per photo
-      beforeCv.width = srcData.width; beforeCv.height = srcData.height; beforeCv.getContext('2d')!.putImageData(srcData, 0, 0); beforeOf = srcData;
+    const cr = cropRect(srcData.width, srcData.height, S.aspect);   // Image Aspect: the part the camera keeps
+    if (canvas.width !== cr.w || canvas.height !== cr.h) { canvas.width = cr.w; canvas.height = cr.h; }
+    sizeFrame(cr.w, cr.h);
+    const key = `${S.aspect}`;
+    if (beforeOf !== srcData || beforeCv.dataset.aspect !== key) {   // the untouched photo, drawn once per photo and crop
+      beforeCv.width = cr.w; beforeCv.height = cr.h; beforeCv.getContext('2d')!.putImageData(srcData, -cr.x, -cr.y, cr.x, cr.y, cr.w, cr.h);
+      beforeOf = srcData; beforeCv.dataset.aspect = key;
     }
     const ctx = canvas.getContext('2d')!;
     const l = cur();
-    if (!l) { ctx.putImageData(srcData, 0, 0); return; }
+    if (!l) { ctx.putImageData(srcData, -cr.x, -cr.y, cr.x, cr.y, cr.w, cr.h); return; }
     const out = ctx.createImageData(srcData.width, srcData.height);
-    renderLook(srcData, out, splitPv(l), { advice: true, camera: CAM });
-    ctx.putImageData(out, 0, 0);
+    renderLook(srcData, out, splitPv(l), { advice: true, camera: CAM, crop: cr });
+    ctx.putImageData(out, -cr.x, -cr.y, cr.x, cr.y, cr.w, cr.h);
     afterPreview?.();
   });
 }
@@ -1460,20 +1468,29 @@ function renderOm3Editor(l: Look) {
       })(),
       h('p', { class: 'help' }, 'Glow Effect: + Glow, − Clarity. Halation Effect needs firmware v0.28; saving a photo with it takes a little longer. Hover a row for what it does.')),
     h('div', { class: 'group cam rows' },
-      cseg('Film Grain Effect', [['0', 'Off'], ['1', '2'], ['2', '3'], ['3', '5']], String(l.film_grain ?? 0), (x) => {
-        if (x === '0') delete l.film_grain; else l.film_grain = Number(x);
-        renderEditor(); changed();
-      }, 'Colour film grain, made by the camera as the photo develops. The looks file holds strength 2, 3 or 5 (Low / Med / High on firmware before v0.41); 1 and 4 are set on the camera'),
-      ...(l.film_grain ? [cseg('Grain Size', [['1', 'Fine'], ['2', 'Medium'], ['3', 'Coarse']], String(l.grain_size ?? 2), (x) => {
-        if (x === '2') delete l.grain_size; else l.grain_size = Number(x);
-        renderEditor(); changed();
-      }, 'Preview only: the looks file has no place for the grain size, so films start at Medium; set Fine or Coarse on the camera\'s Grain Size row (firmware v0.41)')] : []),
+      ...(() => {                                // v0.40: Film Grain Off, 1..5 and Grain Size, as the camera's rows
+        const note = h('p', { class: 'help' });
+        const show = () => {
+          const st = grainStrength(l), sz = l.grain_size ?? 2;
+          note.hidden = !st || ((st === 2 || st === 3 || st === 5) && sz === 2);
+          const saved = [0, 2, 2, 3, 5, 5][st];
+          note.replaceChildren(h('b', {}, 'Set on the camera: '), `the looks file keeps grain as 2, 3 or 5 at Medium (Low / Med / High on older firmware), so this look saves as ${saved} Medium. Set ${st !== saved ? `Film Grain ${st}` : ''}${st !== saved && sz !== 2 ? ' and ' : ''}${sz !== 2 ? `Grain Size ${sz === 1 ? 'Fine' : 'Coarse'}` : ''} on the camera after loading the looks.`);
+        };
+        const { inp, out } = slider(0, 5, grainStrength(l), (x) => { setGrainStrength(l, x); show(); changed(); if (!x !== !sizeRow.isConnected) renderEditor(); }, (x) => (x ? String(x) : 'Off'), 'Film Grain Effect');
+        const sizeRow = cseg('Grain Size', [['1', 'Fine'], ['2', 'Medium'], ['3', 'Coarse']], String(l.grain_size ?? 2), (x) => {
+          if (x === '2') delete l.grain_size; else l.grain_size = Number(x);
+          renderEditor(); changed();
+        }, 'The size of the grain: Fine, Medium or Coarse (firmware v0.40)');
+        show();
+        return [h('div', { class: 'crow', title: 'Colour film grain, made by the camera as the photo develops: Off, 1 (light) to 5 (strong); firmware v0.40' }, h('span', { class: 'cname' }, 'Film Grain Effect'), steps(inp), out),
+          ...(l.film_grain ? [sizeRow] : []), note];
+      })(),
       ...(() => {
         const note = h('p', {});
         const show = () => {
           note.hidden = !l.border;
-          if (!om3Fw28()) { note.className = 'warn'; note.replaceChildren(h('b', {}, 'Needs firmware v0.41: '), 'the export is set to an older firmware, so the Border is not previewed or saved. Choose "v0.28 or later" under Export › Firmware on the camera.'); }
-          else { note.className = 'help'; note.textContent = 'The Border shows on firmware v0.41 and later; older firmware ignores it.'; }
+          if (!om3Fw28()) { note.className = 'warn'; note.replaceChildren(h('b', {}, 'Needs firmware v0.40: '), 'the export is set to an older firmware, so the Border is not previewed or saved. Choose "v0.28 or later" under Export › Firmware on the camera.'); }
+          else { note.className = 'help'; note.textContent = 'The Border shows on firmware v0.40 and later (black from v0.40-beta); older firmware ignores it.'; }
         };
         const { inp, out } = slider(-OM3.border, OM3.border, l.border ?? 0, (x) => { if (x) l.border = x; else delete l.border; show(); changed(); }, (x) => (x > 0 ? `+${x} white` : x < 0 ? `${x} black` : '0'), 'Border');
         show();
