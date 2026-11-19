@@ -8639,7 +8639,8 @@ Assign C4, Set B, Assign C5: C4 showed Set B's films, and Set A again is ignored
   over 6 bins 0.043 / 0.024 along fy / fx; fresh about 0, v0.40 0.50 / 0.21). It follows the block shape, not the
   crossfades (joins made in the white noise before the filter, so with no crossfade at all, gave the same numbers):
   40 x 64 px blocks bring it to 0.077 and 0.015 / 0.020 (32 x 64: 0.075, 0.009 / 0.011), repeats down to 0.008 /
-  0.011, at an estimated 20..25 % more work for Medium and Coarse (twice the joins). Not built; the owner's call.
+  0.011, at an estimated 20..25 % more work for Medium and Coarse (twice the joins). Not built: **owner (2026-11-19):
+  "Keep the test build"** (40 x 128 blocks stay).
 - **Camera-only:** the time per tile (v0.40 ~270 ms; guess: Fine quicker, Coarse about the same or a little slower),
   the look on photos (no squares, stripes or repeats), Halation with grain, bursts, start-up with the 4 KB longer boot
   copy.
