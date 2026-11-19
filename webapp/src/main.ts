@@ -284,16 +284,39 @@ function steps(inp: HTMLInputElement): HTMLElement {
     h('button', { class: 'cam-step', 'aria-label': 'More', tabindex: -1, onclick: () => bump(1) }, '+'));
 }
 /** A Picture Mode row: the camera's name, a slider and the value. */
-function crow(label: string, lim: number, get: () => number, set: (x: number) => void, tip: string): HTMLElement {
+function crow(label: string, lim: number, get: () => number, set: (x: number) => void, help: HelpBody): HTMLElement {
   const { inp, out } = slider(-lim, lim, get(), (x) => { set(x); save(); schedulePreview(); refreshProblems(); }, undefined, label);
-  return h('div', { class: 'crow', title: tip }, h('span', { class: 'cname' }, label), steps(inp), out);
+  return withHelp(h('div', { class: 'crow' }, h('span', { class: 'cname' }, label), steps(inp), out), label, help);
 }
 /** A Picture Mode row with a few choices. */
-function cseg(label: string, opts: [string, string][], value: string, on: (v: string) => void, tip: string): HTMLElement {
-  return h('div', { class: 'crow seg-row', title: tip }, h('span', { class: 'cname' }, label),
+function cseg(label: string, opts: [string, string][], value: string, on: (v: string) => void, help: HelpBody): HTMLElement {
+  return withHelp(h('div', { class: 'crow seg-row' }, h('span', { class: 'cname' }, label),
     h('div', { class: 'seg', role: 'radiogroup', 'aria-label': label }, ...opts.map(([v, t]) =>
-      h('button', { role: 'radio', 'aria-checked': String(v === value), class: v === value ? 'on' : '', onclick: () => on(v) }, t))));
+      h('button', { role: 'radio', 'aria-checked': String(v === value), class: v === value ? 'on' : '', onclick: () => on(v) }, t)))), label, help);
 }
+/** Help (owner, 2026-11-18, as DxO PhotoLab): a "?" beside each setting's name opens a box under the setting with what
+ *  it does and how to use it, in place of the always-on help text. Boxes left open stay open while the editor redraws. */
+type HelpBody = (string | Node | null | false | undefined)[];
+const helpOpen = new Set<string>();
+function helpParts(key: string, body: HelpBody): { q: HTMLElement; box: HTMLElement } {
+  const id = `help-${key.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`, open = helpOpen.has(key);
+  const box = h('div', { class: 'help-box', id, hidden: !open }, ...body.map((b) => (typeof b === 'string' ? h('p', {}, b) : b)));
+  const q = h('button', { type: 'button', class: open ? 'help-q on' : 'help-q', 'aria-expanded': String(open), 'aria-controls': id, 'aria-label': `About ${key}`, title: 'What this does and how to use it' }, '?');
+  q.addEventListener('click', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    const show = box.hidden;
+    box.hidden = !show; q.classList.toggle('on', show); q.setAttribute('aria-expanded', String(show));
+    if (show) helpOpen.add(key); else helpOpen.delete(key);
+  });
+  return { q, box };
+}
+/** A settings row with a "?" after its name and its help box under it (plus any notes that belong to the row). */
+function withHelp(row: HTMLElement, key: string, body: HelpBody, ...after: (Node | null)[]): HTMLElement {
+  const { q, box } = helpParts(key, body);
+  (row.querySelector('.cname') ?? row).append(q);
+  return h('div', { class: 'crow-wrap' }, row, box, ...after);
+}
+const fwLine = (fw: string, text: string) => h('p', {}, h('b', {}, `${fw}: `), text);
 
 function slider(min: number, max: number, value: number, on: (v: number) => void, fmt = (v: number) => (v > 0 ? `+${v}` : String(v)), aria = '') {
   const out = h('output', {}, fmt(value));
@@ -508,13 +531,19 @@ function hslPanel(l: Look, changed: () => void): HTMLElement {
     ? `${tab === 'sh' ? 'Tints the shadows' : 'Tints the highlights'} toward one colour: pick it, then set the strength 0–10 (as the camera from v0.28; 10 = v0.26's +5). One colour at a time. Needs firmware v0.26; the odd steps (1, 3 … 9) need v0.28 and are rounded up for older firmware. Tone Balance (below) moves where the two tints meet.`
     : tab === 'hue' ? 'Turns a colour toward its clockwise neighbour (+: Yellow → Orange).'
       : tab === 'light' ? 'Darker or brighter, per colour.' : 'Saturation, per colour.';
+  const hp = helpParts('Color wheel (HSL)', [
+    'Changes the 12 colours of the wheel one at a time, as the camera\'s colour wheel: Sat (how strong a colour is), Hue (turns it toward its neighbour), Light (darker or brighter). Shadows and Highlights tint the dark or the light parts of the photo toward one colour (split toning).',
+    `This page: ${help}`,
+    'How to use: pick a tab, then drag a colour\'s corner out (+) or in (−), or pick a colour with ‹ › and use the slider or ↑ ↓ on the wheel. Double-click a colour on the ring to zero it; Reset page zeroes the whole tab.',
+    'On the camera: Picture Mode › Color wheel; the front dial picks the colour, the rear dial sets it.']);
   return h('div', { class: 'group cam' },
-    h('div', { class: 'cam-head' }, h('span', { class: 'lbl' }, pmIcon('wheel'), 'Color wheel (HSL)'),
+    h('div', { class: 'cam-head' }, h('span', { class: 'lbl' }, pmIcon('wheel'), 'Color wheel (HSL)', hp.q),
       h('button', { class: 'link', onclick: () => { if (split) { if (l.split) { const s = { ...l.split, [tab]: 0 } as Split; if (s.sh || s.hl) l.split = s; else delete l.split; } } else l[tab as 'sat'].fill(0); renderEditor(); changed(); } }, 'Reset page')),
     h('div', { class: 'tabs cam-tabs', role: 'tablist' }, ...(['sat', 'hue', 'light', 'sh', 'hl'] as Tab[]).map((t) => h('button', {
       role: 'tab', 'aria-selected': String(t === tab), class: t === tab ? 'on' : '',
       onclick: () => { S.tab = t; renderEditor(); },
     }, TAB_NAME[t], tabHas(t) ? h('span', { class: 'dot' }) : null))),
+    hp.box,
     split && !om3Fw25() ? h('p', { class: 'warn' }, h('b', {}, 'Needs firmware v0.26: '), 'Export is set to an older firmware, so split toning is not previewed or saved. Choose "v0.26 or later" under Export › Firmware on the camera.') : null,
     split && om3Fw25() && !om3Fw28() && cur() % 2 ? h('p', { class: 'warn' }, h('b', {}, 'Half steps need firmware v0.28: '), `the export is set to an older firmware, so ${cur()} is saved and previewed as ${cur() + 1}. Choose "v0.28 or later" under Export › Firmware on the camera.`) : null,
     svg,
@@ -522,8 +551,7 @@ function hslPanel(l: Look, changed: () => void): HTMLElement {
       h('button', { class: 'icon', title: 'Previous colour (front dial)', 'aria-label': 'Previous colour', onclick: () => move(-1) }, '‹'),
       selName,
       h('button', { class: 'icon', title: 'Next colour (front dial)', 'aria-label': 'Next colour', onclick: () => move(1) }, '›'),
-      steps(inp), out),
-    h('p', { class: 'help' }, help, ' Drag a colour\'s corner out (+) or in (−), or use ↑ ↓ on the wheel; double-click a colour on the ring to zero it.'));
+      steps(inp), out));
 }
 
 /** Highlight & Shadow: the curve with its sliders. Drag the handles on the curve up or down: S, M and H (Shadows,
@@ -588,11 +616,15 @@ function tonePanel(l: Look, changed: () => void): HTMLElement {
   draw();
   toneRedraw = draw;
   const hsm = () => l.tone.shadows || l.tone.midtones || l.tone.highlights;
+  const hp = helpParts('Highlight & Shadow', [
+    'The camera\'s tone curve for this film: Shadows, Midtones and Highlights, −7 to +7 each. + brightens that part of the picture, − darkens it; Shadows − and Highlights + together give more contrast, the other way round a softer, flatter look.',
+    'How to use: drag Sh, Mid or Hi on the curve up or down, or use the sliders; double-click a point to zero it. The curve shows the camera\'s normal (across) against this look (up); its two ends follow Blacks / Whites, which have their own grid below.',
+    'On the camera: Picture Mode › Highlight & Shadow.']);
   return h('div', { class: 'group cam' },
-    h('div', { class: 'cam-head' }, h('span', { class: 'lbl' }, 'Highlight & Shadow'),
+    h('div', { class: 'cam-head' }, h('span', { class: 'lbl' }, 'Highlight & Shadow', hp.q),
       hsm() ? h('button', { class: 'link', onclick: () => { for (const k of ['shadows', 'midtones', 'highlights'] as const) l.tone[k] = 0; renderEditor(); changed(); } }, 'Reset') : null),
-    h('div', { class: 'cam-screen-wrap' }, top, svg), ...rows,
-    h('p', { class: 'help' }, 'Drag Sh, Mid and Hi on the curve up or down; double-click one to zero it. The curve shows the camera\'s normal → this look; its two ends follow Blacks / Whites (their own grid below).'));
+    hp.box,
+    h('div', { class: 'cam-screen-wrap' }, top, svg), ...rows);
 }
 
 /** RGB curves (the camera's RGB row under Highlight & Shadow; feature/rgb-curves, camera-tested 2026-11-15): a curve
@@ -685,13 +717,17 @@ function rgbPanel(l: Look, changed: () => void): HTMLElement {
     }));
   }
   buildRows(); draw();
+  const hp = helpParts('RGB curves', [
+    'A curve each for red, green and blue, with 5 points from black (0 %) to white (100 %), −7 to +7 each. Raise a colour\'s points to add that colour where those points are (in the shadows, mids or highlights); lower them to take it away. For example, blue up at the shadows and down at the highlights gives cool shadows and warm lights.',
+    'How to use: pick R, G or B, then drag a point up or down on the curve, or use its slider or ↑ ↓; double-click a point to zero it. Reset clears all three curves.',
+    fwLine('Firmware v0.30', 'saved with your looks as OM3MOD/CURVES.BIN (Export › Save to the SD card); the camera takes them at the next half-press, for each film that is still as you saved it.'),
+    'On the camera: Picture Mode › RGB: INFO picks R / G / B, the front dial the point (1–5), the rear dial its level.']);
   return h('div', { class: 'group cam' },
-    h('div', { class: 'cam-head' }, h('span', { class: 'lbl' }, pmIcon('rgb'), 'RGB curves'),
+    h('div', { class: 'cam-head' }, h('span', { class: 'lbl' }, pmIcon('rgb'), 'RGB curves', hp.q),
       hasCurves(l) ? h('button', { class: 'link', onclick: () => { delete l.rgb; renderEditor(); changed(); } }, 'Reset') : null),
+    hp.box,
     chips,
-    h('div', { class: 'cam-screen-wrap' }, top, svg), rowsBox,
-    h('p', { class: 'help' }, 'A curve each for red, green and blue: raise a colour\'s points to add it (in the shadows, mids or highlights), lower them to take it away. Drag a point up or down; double-click one to zero it.'),
-    h('p', { class: 'help' }, h('b', {}, 'Firmware v0.30: '), 'saved with your looks as OM3MOD/CURVES.BIN (Export › Save to the SD card); the camera takes them at the next half-press, for each film that is still as you saved it. On the camera: Picture Mode › RGB: INFO picks R / G / B, the front dial the point (1–5), the rear dial its level.'));
+    h('div', { class: 'cam-screen-wrap' }, top, svg), rowsBox);
 }
 
 /** Colour mix (the camera's Mix row; feature/rgb-curves, camera-tested test 6, 2026-11-15): for red, green and blue a
@@ -769,13 +805,17 @@ function mixPanel(l: Look, changed: () => void): HTMLElement {
       row(0, 'Hue', `Front dial on the camera: + turns ${RGB_NAME[ch()].toLowerCase()} toward ${MIX_TOWARD[ch()]}, − the other way`));
   }
   buildRows(); draw();
+  const hp = helpParts('Color Mix', [
+    'Mixes the camera\'s red, green and blue into each other, before the curves and the colour wheel, so whole families of colours move together. Sat makes a colour stronger or weaker (its dot moves out or in); Hue turns it: red toward yellow, green toward cyan, blue toward purple (clockwise on the ring). Greys stay grey.',
+    'How to use: pick R, G or B, then drag its dot on the ring, or use the Sat and Hue sliders (−7 to +7). Reset clears the mix.',
+    fwLine('Firmware v0.30', 'saved with your looks as OM3MOD/CURVES.BIN (Export › Save to the SD card); the camera takes it at the next half-press, for each film that is still as you saved it.'),
+    'On the camera: Picture Mode › Mix: INFO picks R / G / B, the front dial Hue, the rear dial Sat.']);
   return h('div', { class: 'group cam' },
-    h('div', { class: 'cam-head' }, h('span', { class: 'lbl' }, pmIcon('mix'), 'Color Mix'),
+    h('div', { class: 'cam-head' }, h('span', { class: 'lbl' }, pmIcon('mix'), 'Color Mix', hp.q),
       hasMix(l) ? h('button', { class: 'link', onclick: () => { delete l.mix; renderEditor(); changed(); } }, 'Reset') : null),
+    hp.box,
     chips,
-    h('div', { class: 'cam-screen-wrap' }, top, svg), rowsBox,
-    h('p', { class: 'help' }, 'Mixes the camera\'s red, green and blue into each other, before the curves and the colour wheel: Sat (saturation) makes a colour stronger or weaker (its dot moves out or in), Hue turns it (red toward yellow, green toward cyan, blue toward purple; clockwise on the ring). Greys stay grey.'),
-    h('p', { class: 'help' }, h('b', {}, 'Firmware v0.30: '), 'saved with your looks as OM3MOD/CURVES.BIN (Export › Save to the SD card); the camera takes it at the next half-press, for each film that is still as you saved it. On the camera: Picture Mode › Mix: INFO picks R / G / B, the front dial Hue, the rear dial Sat.'));
+    h('div', { class: 'cam-screen-wrap' }, top, svg), rowsBox);
 }
 
 /** Blacks / Whites (v0.28, as the camera's grid row): Blacks across (− left, + right), Whites up (+) and down (−),
@@ -835,12 +875,17 @@ function bwPanel(l: Look, changed: () => void): HTMLElement {
   });
   draw();
   const big = Math.abs(l.tone.blacks) > 5 || Math.abs(l.tone.whites) > 5;
+  const hp = helpParts('Blacks / Whites', [
+    'The two ends of the tone curve. Blacks (left and right): + lifts the darkest tones for softer, faded blacks; − deepens them. Whites (up and down): + brightens the lightest tones; − tones them down for softer highlights.',
+    'How to use: click or drag on the grid, or use the arrow keys; 0 or Delete sets both to 0. The read-out shows Blacks then Whites.',
+    fwLine('Firmware v0.28', '−7 to +7 (±5 on older firmware).'),
+    'On the camera: Picture Mode › Blacks / Whites grid.']);
   return h('div', { class: 'group cam' },
-    h('div', { class: 'cam-head' }, h('span', { class: 'lbl' }, pmIcon('bw'), 'Blacks / Whites'), read,
+    h('div', { class: 'cam-head' }, h('span', { class: 'lbl' }, pmIcon('bw'), 'Blacks / Whites', hp.q), read,
       h('button', { class: 'link', onclick: () => { set(0, 0); checkpoint(); } }, 'Reset')),
+    hp.box,
     svg,
-    big ? needs28('Blacks / Whites past ±5') : null,
-    h('p', { class: 'help' }, 'Click or drag on the grid (or arrow keys). Blacks left and right: + lifts the darkest tones (softer, faded blacks), − deepens them. Whites up and down: + brightens the lightest tones, − tones them down. −7 to +7 needs firmware v0.28 (±5 before).'));
+    big ? needs28('Blacks / Whites past ±5') : null);
 }
 
 /** WB: the camera's fine-tune grid, A–B across and G–M up and down (−7..+7). Click a square, or use the arrow keys. */
@@ -896,12 +941,17 @@ function wbPanel(l: Look, changed: () => void): HTMLElement {
     else if (k === '0' || k === 'Delete' || k === 'Backspace') { set(0, 0); checkpoint(); e.preventDefault(); }
   });
   draw();
+  const hp = helpParts('WB Compensation', [
+    'Shifts the colour of the whole photo, added to the camera\'s own white balance in every WB mode: A (amber, warmer) or B (blue, cooler) across, G (green) or M (magenta) up and down.',
+    'How to use: click or drag on the grid, or use the arrow keys; 0 or Delete centres it. The read-out shows the shift as the camera writes it (for example A2.G1).',
+    fwLine('Firmware v0.26.1', 'past ±5 (up to ±7).'),
+    'On the camera: Picture Mode › WB grid.']);
   return h('div', { class: 'group cam' },
-    h('div', { class: 'cam-head' }, h('span', { class: 'lbl' }, 'WB Compensation'), read,
+    h('div', { class: 'cam-head' }, h('span', { class: 'lbl' }, 'WB Compensation', hp.q), read,
       h('button', { class: 'link', onclick: () => { set(0, 0); checkpoint(); } }, 'Reset')),
+    hp.box,
     wbModeRow(l, changed),
-    svg,
-    h('p', { class: 'help' }, 'Click or drag on the grid (or arrow keys). The look\'s shift, added to the camera\'s own WB in every WB mode (A amber / B blue, G green / M magenta). Past ±5 needs firmware v0.26.1.'));
+    svg);
 }
 
 /** v0.28 film WB: the WB mode (and Custom WB Kelvin) the camera switches to when this film is picked; the camera then
@@ -927,11 +977,14 @@ function wbModeRow(l: Look, changed: () => void): HTMLElement {
   }) : null;
   const odd = mode === 'underwater' || mode.startsWith('one_touch');
   return h('div', { class: 'wb-mode' },
-    h('div', { class: 'crow', title: 'The WB the camera switches to when you pick this film (Auto: none of its own). Changes you make on the camera are remembered for the film.' },
-      h('span', { class: 'cname' }, 'WB mode'), sel),
+    withHelp(h('div', { class: 'crow' }, h('span', { class: 'cname' }, 'WB mode'), sel), 'WB mode', [
+      'The white balance the camera switches to when you pick this film, for example Sunny for a daylight film or 3200 K for a tungsten film. Auto: the film has none of its own and the camera keeps the WB you set.',
+      'How to use: pick a mode; Custom WB adds a Kelvin slider. Changes you make on the camera afterwards are remembered for the film.',
+      'In the preview: shown as if the photo was taken in daylight (5300 K); Underwater and the one-touch modes are not shown.',
+      fwLine('Firmware v0.28', 'needed for a WB mode.')]),
     kIn ? h('div', { class: 'crow' }, h('span', { class: 'cname' }, 'Kelvin'), kIn, kOut) : null,
     mode !== 'auto' ? needs28('the WB mode') : null,
-    mode !== 'auto' ? h('p', { class: 'help' }, odd ? 'Not shown in the preview (it follows the water or your own measurement).' : 'The preview shows it as if the photo was taken in daylight (5300 K).') : null);
+    mode !== 'auto' && odd ? h('p', { class: 'help' }, 'Not shown in the preview (it follows the water or your own measurement).') : null);
 }
 
 /** The firmware chosen under Export › Firmware on the camera (v0.28 or later by default, from the v0.28 release). Settings a firmware can't
@@ -998,16 +1051,21 @@ function buildPreview() {
     else if (e.key === 'Home') { setCut(0); e.preventDefault(); } else if (e.key === 'End') { setCut(100); e.preventDefault(); }
   });
   setCut(S.cut);
+  const aspectHelp = helpParts('Image Aspect', [
+    'Shows the photo at one of the camera\'s Image Aspect shapes: 4:3 (the whole photo), 3:2, 16:9, 1:1, 3:4, and the crops 5:4, XPan and 21:9 (firmware v0.40).',
+    'It is a camera setting, not part of the look: the preview makes the look on the whole photo, then cuts it as the camera does, and the Border sits inside the cut.',
+    'How to use: pick a shape. On the camera: the super control panel or the Image Aspect menu.']);
   $('#preview').replaceChildren(
     h('div', { class: 'pv-wrap' }, frame, h('span', { class: 'badge' }, 'Before'), h('span', { class: 'badge r' }, 'After · approximate')),
     thumbs,
     h('div', { class: 'pv-opts' },
-      h('label', { class: 'aspect', title: 'Preview the photo at one of the camera\'s Image Aspect shapes (a camera setting, not part of the look): the look is made on the whole photo, then cut, and the Border sits inside the cut' },
+      h('label', { class: 'aspect' },
         'Image Aspect ',
         h('select', { onchange: (e: Event) => { S.aspect = (e.target as HTMLSelectElement).value; try { localStorage.setItem('caduceus.om3.aspect', S.aspect); } catch { /* storage blocked */ } schedulePreview(); } },
-          ...ASPECTS.map((a) => h('option', { value: a.id, selected: a.id === S.aspect }, a.label)))),
+          ...ASPECTS.map((a) => h('option', { value: a.id, selected: a.id === S.aspect }, a.label))), aspectHelp.q),
       h('span', { class: 'help' }, 'Includes Contrast, Sharp, Shading, Film Grain, Border, Glow, Halation and the lens corners.'),
       h('button', { class: 'link', onclick: () => $<HTMLInputElement>('#photo').click() }, 'Use your own photo…')),
+    aspectHelp.box,
     h('p', { class: 'help' }, 'Drag the line on the photo to compare before and after. Shading, grain, border, glow and the lens corners follow the camera\'s own maths, checked against photos from an OM-3; colours are close but not exact (strong blues and purples differ most), so check a new look on the camera. Your own photo never leaves this browser.'));
   pickImage(S.image);
 }
@@ -1421,36 +1479,55 @@ function renderOm3Editor(l: Look) {
           const v = l.tone_balance ?? 0;
           note.hidden = !v || (om3Fw28() && !!l.split);
           if (!om3Fw28()) { note.className = 'warn'; note.replaceChildren(h('b', {}, 'Needs firmware v0.28: '), 'the export is set to an older firmware, so Split Tone Balance is not previewed or saved. Choose "v0.28 or later" under Export › Firmware on the camera.'); }
-          else { note.className = 'help'; note.textContent = 'Split Tone Balance moves where the Shadows and Highlights tints meet: this film has no split tone yet (HSL › Shadows / Highlights).'; }
+          else { note.className = 'help'; note.textContent = 'This film has no split tone yet: add one on the Color wheel\'s Shadows or Highlights tab.'; }
         };
         const { inp, out } = slider(-5, 5, l.tone_balance ?? 0, (x) => { if (x) l.tone_balance = x; else delete l.tone_balance; show(); changed(); }, undefined, 'Split Tone Balance');
         show();
-        return [h('div', { class: 'crow', title: 'Where the Shadows and Highlights tints meet: − the shadow colour reaches further up, + the highlight colour further down' }, h('span', { class: 'cname' }, pmIcon('tb'), 'Split Tone Balance'), steps(inp), out), note];
+        return [withHelp(h('div', { class: 'crow' }, h('span', { class: 'cname' }, pmIcon('tb'), 'Split Tone Balance'), steps(inp), out), 'Split Tone Balance', [
+          'Moves where the two split-tone tints (Color wheel › Shadows and Highlights) meet: − lets the shadow colour reach further up into the mid-tones, + lets the highlight colour reach further down. It does nothing until the film has a split tone.',
+          'How to use: drag the slider or use − / +, −5 to +5; double-click to zero.',
+          fwLine('Firmware v0.28', 'needed for Tone Balance.')], note)];
       })()),
     wbPanel(l, changed),
     tonePanel(l, changed),
     bwPanel(l, changed),
     h('div', { class: 'group cam rows' },
-      crow('Contrast', OM3.contrast, () => l.advice.contrast ?? 0, (x) => { l.advice.contrast = x; }, 'The camera\'s Contrast for this look'),
+      crow('Contrast', OM3.contrast, () => l.advice.contrast ?? 0, (x) => { l.advice.contrast = x; }, [
+        'The camera\'s Contrast for this film, −2 to +2. + makes the picture punchier: on the OM-3 mostly brighter highlights, with slightly deeper shadows; − makes it flatter and softer.',
+        'How to use: drag the slider or use − / +; double-click to zero. For finer control of the tones, use Highlight & Shadow and Blacks / Whites.']),
       (() => {
         const { inp, out } = slider(SHARP.lo, SHARP.hi, l.advice.sharpness ?? 0, (x) => { l.advice.sharpness = x; changed(); }, sharpLabel, 'Sharpness');
-        return h('div', { class: 'crow', title: 'The camera\'s sharpening: 0 its normal, + crisper, − softer, −5 Off' }, h('span', { class: 'cname' }, 'Sharpness'), steps(inp), out);
+        return withHelp(h('div', { class: 'crow' }, h('span', { class: 'cname' }, 'Sharpness'), steps(inp), out), 'Sharpness', [
+          'The camera\'s sharpening for photos with this film: 0 is its normal, +1 and +2 crisper, −1 to −4 softer, −5 Off (no sharpening, the most film-like).',
+          'How to use: drag the slider or use − / +; double-click for 0. The preview shows the change at this size; up close the camera\'s effect is finer.',
+          fwLine('Firmware v0.22', 'needed below −2.')]);
       })()),
     h('div', { class: 'group cam rows' },
       cseg('Noise Filter', [['off', 'Menu'], ['film', 'Off'], ['fine', 'Low'], ['standard', 'Std'], ['high', 'High']], l.grain,
-        (x) => { l.grain = x as Look['grain']; renderEditor(); changed(); }, 'Noise reduction for photos with this look; Menu keeps the camera\'s menu setting'),
+        (x) => { l.grain = x as Look['grain']; renderEditor(); changed(); }, [
+          'The camera\'s noise reduction for photos with this film. Menu keeps whatever the camera\'s menu is set to; Off, Low, Std (Standard) and High override it for this film. Lower settings keep more fine detail and a little noise (more film-like); High smooths more, which helps at high ISO.',
+          'How to use: pick one. Not shown in the preview.']),
       cseg('Vignette Correction', [['off', 'Off'], ['on', 'On']], l.lens_correction ? 'on' : 'off', (x) => {
         if (x === 'on') l.lens_correction = true; else delete l.lens_correction;
         renderEditor(); changed();
-      }, 'Off = the lens\'s natural corners (the preview shows a typical prime at f/4: corners about 15 % darker); On = the camera\'s correction'),
-      crow('Shading Effect', OM3.shading, () => l.vignette, (x) => { l.vignette = x; }, 'The camera\'s Shading: − darker corners, + lighter'),
+      }, [
+        'Off leaves the lens\'s own darker corners, as many film cameras did; On lets the camera brighten them as it normally does.',
+        'How to use: pick Off or On. The preview shows Off as a typical prime at f/4 (corners about 15 % darker); wide-open apertures and wide lenses darken the corners more.',
+        fwLine('Firmware v0.21', 'needed for the choice; before it every film keeps the camera\'s correction.')]),
+      crow('Shading Effect', OM3.shading, () => l.vignette, (x) => { l.vignette = x; }, [
+        'The camera\'s own Shading, −5 to +5: − darkens the edges and corners toward black, + lightens them toward white; the middle of the picture is left alone.',
+        'Every level is strong: even 1 takes the corners most of the way, and each step adds a little more (measured on an OM-3).',
+        'How to use: drag the slider or use − / +; double-click to zero.']),
       (() => {
         const e = l.effect, v = !e ? 0 : e.type === 'clarity' ? -e.strength : e.strength;
         const { inp, out } = slider(-OM3.fx, OM3.fx, v, (x) => {
           l.effect = x === 0 ? null : x > 0 ? { type: 'bloom', strength: x } : { type: 'clarity', strength: -x };
           fxChanged();
         }, (x) => (x === 0 ? '0' : x > 0 ? `+${x}` : String(x)), 'Glow Effect');
-        return h('div', { class: 'crow', title: '+ Glow (a soft glow), − Clarity (local contrast)' }, h('span', { class: 'cname' }, pmIcon('glow'), 'Glow Effect'), steps(inp), out);
+        return withHelp(h('div', { class: 'crow' }, h('span', { class: 'cname' }, pmIcon('glow'), 'Glow Effect'), steps(inp), out), 'Glow Effect', [
+          '+ Glow: a soft, dreamy glow mixed into the photo (the camera\'s Soft Focus), 1 to 5. − Clarity: more local contrast, so textures and mid-tones look crisper, 1 to 5. A film has one or the other.',
+          'How to use: drag right for Glow, left for Clarity; double-click to zero.',
+          fwLine('Firmware v0.20', 'needed.')]);
       })(),
       ...(() => {
         const note = h('p', {});
@@ -1464,9 +1541,11 @@ function renderOm3Editor(l: Look) {
         afterPreview = show;
         const { inp, out } = slider(0, OM3.halation, l.halation ?? 0, (x) => { if (x) l.halation = x; else delete l.halation; changed(); }, (x) => (x ? `+${x}` : '0'), 'Halation Effect');
         show();
-        return [h('div', { class: 'crow', title: 'A red-orange glow around bright lights in darker scenes, as on cinema film (it fades out in bright scenes, as on the camera); works with or without Glow' }, h('span', { class: 'cname' }, pmIcon('halo'), 'Halation Effect'), steps(inp), out), note];
-      })(),
-      h('p', { class: 'help' }, 'Glow Effect: + Glow, − Clarity. Halation Effect needs firmware v0.28; saving a photo with it takes a little longer. Hover a row for what it does.')),
+        return [withHelp(h('div', { class: 'crow' }, h('span', { class: 'cname' }, pmIcon('halo'), 'Halation Effect'), steps(inp), out), 'Halation Effect', [
+          'A red-orange glow around bright lights in darker scenes, as on cinema film, 1 to 5. Like the camera, it fades out in bright daylight photos; pick a night photo with lights (Night street, Blue hour) to see it. Works with or without Glow.',
+          'How to use: drag the slider or use − / +; double-click to zero.',
+          fwLine('Firmware v0.28', 'needed; saving a photo with Halation takes a little longer.')], note)];
+      })()),
     h('div', { class: 'group cam rows' },
       ...(() => {                                // v0.40: Film Grain Off, 1..5 and Grain Size, as the camera's rows
         const note = h('p', { class: 'help' });
@@ -1480,9 +1559,16 @@ function renderOm3Editor(l: Look) {
         const sizeRow = cseg('Grain Size', [['1', 'Fine'], ['2', 'Medium'], ['3', 'Coarse']], String(l.grain_size ?? 2), (x) => {
           if (x === '2') delete l.grain_size; else l.grain_size = Number(x);
           renderEditor(); changed();
-        }, 'The size of the grain: Fine, Medium or Coarse (firmware v0.40)');
+        }, [
+          'How big the grain is: Fine, Medium or Coarse.',
+          'How to use: pick one. The looks file has no place for the size, so films start at Medium on the camera: set Fine or Coarse on the camera\'s Grain Size row after loading the looks.',
+          fwLine('Firmware v0.40', 'needed.')]);
         show();
-        return [h('div', { class: 'crow', title: 'Colour film grain, made by the camera as the photo develops: Off, 1 (light) to 5 (strong); firmware v0.40' }, h('span', { class: 'cname' }, 'Film Grain Effect'), steps(inp), out),
+        return [withHelp(h('div', { class: 'crow' }, h('span', { class: 'cname' }, 'Film Grain Effect'), steps(inp), out), 'Film Grain Effect', [
+          'Colour film grain the camera adds as the photo develops: Off, or 1 (light) to 5 (strong). It is the same in the shadows and the highlights, with a little colour speckle, as on colour film. The preview shows it as the photo looks at this size.',
+          'How to use: drag the slider or use − / +; then pick its size on Grain Size.',
+          'The looks file holds 2, 3 or 5 (Low / Med / High on firmware before v0.40); for 1 or 4, set Film Grain on the camera after loading the looks.',
+          fwLine('Firmware v0.40', 'needed for 1 to 5 and the size.')]),
           ...(l.film_grain ? [sizeRow] : []), note];
       })(),
       ...(() => {
@@ -1490,11 +1576,14 @@ function renderOm3Editor(l: Look) {
         const show = () => {
           note.hidden = !l.border;
           if (!om3Fw28()) { note.className = 'warn'; note.replaceChildren(h('b', {}, 'Needs firmware v0.40: '), 'the export is set to an older firmware, so the Border is not previewed or saved. Choose "v0.28 or later" under Export › Firmware on the camera.'); }
-          else { note.className = 'help'; note.textContent = 'The Border shows on firmware v0.40 and later (black from v0.40-beta); older firmware ignores it.'; }
+          else note.hidden = true;
         };
         const { inp, out } = slider(-OM3.border, OM3.border, l.border ?? 0, (x) => { if (x) l.border = x; else delete l.border; show(); changed(); }, (x) => (x > 0 ? `+${x} white` : x < 0 ? `${x} black` : '0'), 'Border');
         show();
-        return [h('div', { class: 'crow', title: 'A border around the photo, the same width on every side: + white, − black (1.5 % to 7.5 % of the short side)' }, h('span', { class: 'cname' }, 'Border'), steps(inp), out), note];
+        return [withHelp(h('div', { class: 'crow' }, h('span', { class: 'cname' }, 'Border'), steps(inp), out), 'Border', [
+          'A plain border around the photo, the same width on every side: + white, − black, from 1.5 % (1) to 7.5 % (5) of the photo\'s short side. JPEGs only: the photo keeps its size and the border covers its outer edge; at a crop (Image Aspect) it sits inside the crop.',
+          'How to use: drag right for white, left for black; double-click for none.',
+          fwLine('Firmware v0.40', 'needed (black from v0.40-beta); older firmware ignores it.')], note)];
       })(),
       grainWarn),
     h('div', { id: 'problems' }));
