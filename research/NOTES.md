@@ -8228,3 +8228,44 @@ Test driver tools/emulator/focus_stacking.mjs runs this routine with controlled 
   firmware-version-build-name-fits-after-a-lens (caught on the first package). Second package `f5771793…8c73`
   (patch.py --release v0.40-beta rebuilds it), suite **104 of 104**. **Camera-tested 2026-11-18** (owner: ".40 beta
   looks good. lets push the beta to github"). Published as a GitHub pre-release from try/v0.40-beta, as v0.40-alpha.
+
+## #86: a new film set made again in every mode, fix86-1 (2026-11-19; emulator only, camera test pending)
+Branch `fix/86-custom-mode-films` from try/v0.40-beta d0bfd03 (v0.40-beta2). Issue #86 (Cloud-01, v0.30.3): Set A,
+Assign C4, Set B, Assign C5: C4 showed Set B's films, and Set A again is ignored (the camera had it).
+- **Cause (code + om-emu on v0.40-beta2, 70e0d8c8…):** the camera holds one film list (P+LPTR). A per-mode set
+  ('OM3S') keeps per COLOR the look number and the slot (our rows), the camera its 18 settings per mode; nobody keeps
+  the films (records, names). A new LOOKS.BIN (`el_card` after the early load, `ub_pfl` at a half-press load) swaps
+  the list and leaves LIDX, the slots and the camera's values; `ss_get` puts a kept slot back wherever the look number
+  matches. So every mode with a film on a COLOR showed the new film's name over the old film's rows and settings, with
+  a '*' (om-emu, release LOOKS.BIN then the same 20 records reversed and renamed "B ..."): P "COLOR 1: FILM 5 B
+  Superia 400" with ColorPlus 200's slot (hue[0] 0xff); C1 "FILM 1 B Natura 1600" with Portra 400's slot; '*' on 1..6
+  in P (films not on a COLOR: `fl_fch` / `lg_fc` counted an EDITS record made from the old film, which `fl_sw` would
+  not load). INSTALL.md already promised "your changes to the films that didn't change" only.
+- **Owner (2026-11-19), of three options (A each custom mode keeps its 20 films: ~1.6 KB of M each, about 2 fit; B
+  keeps its 4 films: ~1.6 KB for all; C a new set replaces the films everywhere + FAQ): C.**
+- **fix86-1** (`firmware/src/newfilms.s`, ext13 +1 KB; hooks: el_card's LPTR store -> `nf_take`, ub_pfl's new-films
+  branch -> `nf_blk`, rc_go's ss_post -> `nf_post` (ext12 +8 B), `fl_fch` and `lg_fc` -> `nf_cur` (ext11 +16 B)):
+  at the swap, `nf_cmp` notes the films whose 64-byte record changed (names don't count) and `nf_now` marks each kept
+  set's looks on them (0x40 in the set's looks byte, so ss_get never copies that slot back) and writes OM3S at once
+  (`nf_wr`: ss_wr without the curves record, which ub_pfl has not loaded yet). rc_go then makes each COLOR now on a
+  changed film from the new film (ss_lib + its bit in ss_mask -> rc_put's 18 settings), and at each entry of a kept set
+  (dial change, first look, Recall) its marked looks still on their COLOR; a set that holds (P group, Hold) then keeps
+  its rows (ss_put clears the marks); a custom mode on Reset is made again at every entry (the camera brings its own
+  values back each time). A film's saved changes count for its '*' only when made from this build of it (`nf_cur`,
+  fl_sw's test). CADLOG CUSTOM MODES: "New film sets taken this power-on: N, films changed in the last M of 20, COLORs
+  made from the new films R, per-mode looks marked K".
+- **om-emu quirk found on the way (v0.40-beta2 too, not this fix):** off in C1, on in P with the dial turned while off:
+  om-emu keeps C1's COLOR block, so P shows '*' on its films (no new set involved). The camera passed these turns (k5,
+  k6, EL10), so the tests use live turns (`live_turn`).
+- **Tests** (emu_test.py, fixtures `LOOKS_B` / `LOOKS_ONE` from the release LOOKS.BIN): `new-film-set-made-again-in-a-
+  custom-mode`, `new-film-set-made-again-in-p`, `new-film-set-taken-in-video-made-again-in-photo`, `new-film-set-keeps-
+  changes-to-films-it-left` (FILM 2's Contrast change and '*' stay when a set changes only films 19 and 20; on
+  v0.40-beta2 that part holds too). `--without` v0.40-beta2: the first two **caught** (the '*' lines, not only the new
+  log line).
+- **The owner's steps in om-emu** (test package's three sets: SET-A "A ..." names, SET-B the records reversed "B ...",
+  BACK-TO-STANDARD the release LOOKS.BIN with byte 15 of one name 1, after its end: never shown, records unchanged so
+  EDITS / CURVES checks still match): after SET-B, P and C1 on B's films, no '*'; after BACK-TO-STANDARD, the standard
+  names in P and C1, no '*'.
+- **Build** of 5153cc0: E1479999.BIN `1427b0fd…6a57`, GUIDES.BIN `80bf3b7a…3cb9`, VERSION "v0.40-dev fix86-1 (#86: a
+  new film set in every mode)". Suite **109 of 109**. Package `test-builds/2026-11-19-fix86-1` (private folder: the
+  three sets, TEST-STEPS, go-back v0.40-beta2 `70e0d8c8…`). Camera test pending.
