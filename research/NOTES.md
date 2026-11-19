@@ -8621,6 +8621,13 @@ Assign C4, Set B, Assign C5: C4 showed Set B's films, and Set A again is ignored
   matches) with its GUIDES.BIN `4d3eb8a0…af95`; go-back v0.40 `1e039ee2…1c37` (patch.py --release v0.40) with v0.40's
   GUIDES.BIN `9460bf1a…4b1a`; TEST-STEPS: the chart test at Off / Fine / Medium / Coarse 1, 3, 5, Halation 5 + grain,
   a burst of 10, the log's time line.
+- **Fourier spectra (owner asked, 2026-11-19; picture `preview/grain-fourier-v040-vs-new.png` in the package):** Y of
+  the model tiles (768 x 768, power, log scale) and of the owner's v0.40 chart photos (mid-grey patch, 512 x 512,
+  averaged over 256 x 256 windows). v0.40 Coarse, model and camera alike: dark lines at +-1/3 cycle / px on both axes
+  (the box 3's zeros) with bright side lobes beyond: the square clumps and 1 px stripes. v0.40 Medium: the box 2's
+  square edge at +-1/2. v0.40 Fine and Medium: fine vertical streaks (the full-width strips' repeats). g4: smooth
+  round spectra, no lines or streaks; at Coarse the block joins add 0.002..0.005 % of the power at |f| > 0.4 (a fresh
+  band 0.006 %, g3's box side lobes 2.8 %), faint streaks only on the log scale.
 - **Camera-only:** the time per tile (v0.40 ~270 ms; guess: Fine quicker, Coarse about the same or a little slower),
   the look on photos (no squares, stripes or repeats), Halation with grain, bursts, start-up with the 4 KB longer boot
   copy.
