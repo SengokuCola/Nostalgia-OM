@@ -165,9 +165,10 @@ Image Aspect has three more choices, on the super control panel and in the Image
 ## Choosing what the shooting screen shows (v0.40-beta)
 
 Custom menu → **4. Information** → **Camera Info Settings** → **Information 1**, **2** or **3** (press ▶): after the
-camera's own four rows come 14 tick rows (Shooting Mode, Shutter Speed, Aperture Value, Exposure Comp., ISO, WB,
-Picture Mode, Image Stabilizer, AF Mode, Drive Mode, Metering, Record Mode, Remaining Files, Touch screen). Untick a row
-and that item leaves that display; INFO steps through your displays as before. Rear screen only, from the first
+camera's own four rows come 17 tick rows (Shooting Mode, Shutter Speed, Aperture Value, Exposure Comp., Exposure Level
+Meter, ISO, WB, Picture Mode, Image Stabilizer, AF Mode, Subject Detection, Drive Mode, Metering, Image Aspect, Record
+Mode, Remaining Files, Touch screen; Exposure Level Meter, Subject Detection and Image Aspect from v0.40-beta2). Untick
+a row and that item leaves that display; INFO steps through your displays as before. Rear screen only, from the first
 half-press after switch-on; the viewfinder, video and playback are unchanged.
 
 The camera's **Firmware Version** page (wrench tab, page 6) shows Caduceus's version under OM's.

@@ -8,6 +8,7 @@ What changed in each version of Caduceus for OM-3, newest first. To install or u
 
 | Version | Released | What's new |
 |---|---|---|
+| [v0.40-beta2](#v040-beta2-test-version) | 2026-11-18 (test version) | Three more screen-info rows: Subject Detection, Exposure Level Meter and Image Aspect, each hidden on its own |
 | [v0.40-beta](#v040-beta-test-version) | 2026-11-18 (test version) | Crops back at switch-on (#83) with the frame lines at their edges; looks shown in live view as you adjust them; black borders (Border −5..+5) and the border at every ratio; your own choice of screen info; faster grain; our version on the Firmware Version screen; faster looks and two fixes (#82); focus stacking with more lenses (#79) |
 | [v0.40-alpha](#v040-alpha-test-version) | 2026-11-17 (test version) | Crop modes XPan, 21:9 and 5:4; a white Border per film with a frame line in live view; our own film grain with strength 1–5 and Grain Size; safer start-up; Picture Mode stays open 30 s (#75) |
 | [v0.30.4-alpha](#v0304-alpha-test-version) | 2026-11-17 (test version) | Fix: no reboot when switching films fast (#72); the color wheel's label names the page (#64); our looks kept out of video and S&Q (#68) |
@@ -43,6 +44,16 @@ What changed in each version of Caduceus for OM-3, newest first. To install or u
 
 Versions are named v0.N from v0.18 on. Earlier builds were called "test N" while they were tried on the camera; the
 same number is used here (test 17 = v0.17).
+
+## v0.40-beta2 (test version)
+A test version (a GitHub pre-release; v0.30.3 stays the current version): v0.40-beta plus three more rows to choose
+from on the shooting screen. Camera-tested 2026-11-18 (the build before its release name).
+- **Three more screen-info rows:** Information 1, 2 and 3 now have 17 tick rows. **Subject Detection**, **Exposure
+  Level Meter** and **Image Aspect** each get their own row: AF Mode now hides only S-AF / C-AF, Exposure Comp. only
+  the number, Record Mode only the picture quality. Your choices are kept; an item that now has its own row shows
+  again until you untick that row.
+- The Firmware Version screen shows "0.40-b2" (the full name is one letter too long beside a Lens line).
+- For developers: the photo code kit reads a black Border as black.
 
 ## v0.40-beta (test version)
 A test version (a GitHub pre-release; v0.30.3 stays the current version): v0.40-alpha plus the changes below and two

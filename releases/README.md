@@ -5,6 +5,7 @@ card files it needs, the expected checksums, and short notes. No OM firmware is 
 
 | Version | What's new | Status |
 |---|---|---|
+| [v0.40-beta2](v0.40-beta2/NOTES.md) | Test version of v0.40: v0.40-beta plus three more screen-info rows (Subject Detection, Exposure Level Meter, Image Aspect), each hidden on its own | Test version (pre-release), camera-tested |
 | [v0.40-beta](v0.40-beta/NOTES.md) | Test version of v0.40: v0.40-alpha plus the crop back at switch-on (#83) with the frame lines at its edges, looks shown in live view as you adjust them, black borders and the border at every ratio, your own choice of screen info, faster grain, our version on the Firmware Version screen, PR #82 (faster looks, two fixes, by crombach) and PR #79 (focus stacking with more lenses, by Bensonson) | Test version (pre-release), camera-tested |
 | [v0.40-alpha](v0.40-alpha/NOTES.md) | Test version of v0.40: v0.30.4-alpha plus crop modes (XPan, 21:9, 5:4), a white Border per film with a live-view frame line, our own film grain (strength 1–5, Grain Size), safer start-up, and Picture Mode open 30 s (#75, by crombach) | Test version (pre-release), camera-tested |
 | [v0.30.4-alpha](v0.30.4-alpha/NOTES.md) | Test version of v0.30.4: v0.30.3 plus the fix for the reboot when switching films fast (#72), the color wheel's label naming the page (#64, by crombach) and our looks kept out of video and S&Q (#68, by crombach) | Test version (pre-release), camera-tested |
@@ -54,5 +55,5 @@ the launchers never copy them to the card.
 **v0.28-alpha** is a test version: it is published by hand as a GitHub pre-release from `feature/v0.28-halation`
 (not from `main`), and the launchers in its download make it by default. **v0.29-beta** is published the same way from
 `feature/films-in-camera`; it has no card files (they are built into the firmware). **v0.30.4-alpha** likewise from
-`try/v0.30.4`, **v0.40-alpha** from `try/v0.40-alpha`, and **v0.40-beta** from `try/v0.40-beta`.
+`try/v0.30.4`, **v0.40-alpha** from `try/v0.40-alpha`, and **v0.40-beta** and **v0.40-beta2** from `try/v0.40-beta`.
 See [CHANGELOG.md](../CHANGELOG.md) for the full history.
