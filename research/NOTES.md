@@ -8644,3 +8644,27 @@ Assign C4, Set B, Assign C5: C4 showed Set B's films, and Set A again is ignored
 - **Camera-only:** the time per tile (v0.40 ~270 ms; guess: Fine quicker, Coarse about the same or a little slower),
   the look on photos (no squares, stripes or repeats), Halation with grain, bursts, start-up with the 4 KB longer boot
   copy.
+- **g4 against real film (2026-11-19; analysis from the exact filters, not camera photos).** Sources the owner passed
+  on: a real-film measurement note (35 mm scans at 4000 dpi on a Coolscan V ED, public domain on Wikimedia Commons,
+  user Wiley.andrew.r; lags and power in camera pixels for a 35 mm frame filling 5184 px; power = the 2-D spectrum
+  along the sharp scan axis at 1/6, 1/3, ~1/2 cycle / px over the lowest frequencies), Newson, Faraj, Galerne, Delon,
+  "Realistic Film Grain Rendering", IPOL 7 (2017) (the open version of their CGF 2017 Boolean-model paper), and
+  D. Patrut, "Simple Physically-Based Film Grain Simulation: An Experiment" (2025).
+  - Clumps (lag 1 / 2 / 3; power 1/6 / 1/3 / 1/2): Ultramax 400 0.48 0.15 0.05; 0.61 0.24 0.12. Tri-X 400 0.42 0.13
+    0.04; 0.63 0.26 0.16. Ektar 100 0.59 0.24 0.11; 0.40 0.13 0.05. **g4 Medium 0.55 0.09 0; 0.66 0.16 0.04: the
+    right size, a little too smooth at the finest detail. g4 Coarse 0.75 0.30 0.05; 0.44 0.02 0**: softer than any
+    film there. Adding ~20 % (of the variance) single-pixel grain to the clumps: Medium 0.44 0.07 0; 0.67 0.20 0.09,
+    Coarse 0.60 0.24 0.04; 0.46 0.04 0.02 (closer to ISO 400 and to Ektar), still round. Fine (white) has no 35 mm
+    match at this scale (the note).
+  - Colour: real colour grain is strong and mostly blue-yellow (Cb / Y 1.04..1.25, Cr / Y 0.58..0.70: Cr about 0.56
+    of Cb), layers close to independent, as fine as the brightness grain. g4 has Cb = Cr and chroma at half height.
+  - Tone: real grain peaks at mid-grey and fades in shadows and highlights (the note's Ektar scene; the Boolean
+    model's coverage variance u (1 - u)), with bright-leaning specks at mid-grey (skew +0.4..+0.8). **Out of reach
+    for the tile:** the texture blend adds it at the same strength in every tone (camera-tested 2026-11-16). Both
+    references make the grain from the photo itself (Newson: discs at a density set by the tone, Gaussian 0.8 px,
+    2.4 s for a 512 x 512 grey on a parallel CPU; Patrut: a blue-noise texture stepped by the pixel value at 2x2..8x8
+    sub-pixels), which needs a pass over the photo (the CPU grain route took ~3 s, 2026-11-05).
+  - Strength (the note, model numbers): Film Grain 2 / 3 / 5 at Medium = 10.6 / 15.9 / 23.8 (8-bit), real Ektar 100
+    4.5 and Ultramax 400 7.6 (6.5..7.5 in a finished scan): level 1 is about ISO 100 film, 2 about ISO 400.
+  - Possible g5 (not built; the owner's call): ~20 % single-pixel grain in Medium and Coarse (a centre-tap boost in
+    the band pass), Cr weaker than Cb, chroma at full height. All three only change the band rows (the copies follow).
