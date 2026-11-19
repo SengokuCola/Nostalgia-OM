@@ -8457,3 +8457,75 @@ Assign C4, Set B, Assign C5: C4 showed Set B's films, and Set A again is ignored
   "B Superia 400" with no "*" (v0.40-beta2: the B name with a "*" and Set A's colours). Back-to-standard taken: COLOR 1
   "ColorPlus 200", FILM 6 Ektar 100 kept the owner's change ("Films with changes: 6"). Logs clean ("nothing unusual").
   #86 fixed on the camera; #85 and Halation h7 rode along (no shots held up).
+
+## LookLab matched to the camera: calibration cards 1-3 (2026-11-18; branch feature/looklab-camera-match; camera photos)
+- Owner: "the goal here is to perfectly (as possible) match looklab to the camera"; "shading is way way to subtle in
+  looklab"; "grain is also way off"; match the next release (the v0.41 line: grain 0..5 + Grain Size, Border -5..+5,
+  Gentler Shading s1). Three cards on the owner's OM-3 with v0.41-dev test 5 (E1479999.BIN 1e0d279e...): card 1 colour
+  tests (Colour Mix R / G / B hue and strength +-6, RGB curve points, mixes), card 2 effects (Shading -5..+5, Grain
+  Low / Med / High, Border +-3, Glow +3 / +5, Clarity 3, Sharp -5 / +2, Vignette Correction Off), card 3 the standard
+  20. A colour chart, OM 17 mm f/1.8 II at f/4, 1/30 s, ISO 200, JPEG; the photos stay private. Measured at 1296 x 972
+  (the camera's JPEG area-averaged 4x, LookLab rendering the plain photo of the same session): 24 patch medians (Lab,
+  change from the plain photo, camera vs LookLab), radial brightness, high-pass texture, spectra.
+- **Shading:** firmware s1 (firmware/shading.py on try/v0.41-dev) applied to the plain photo reproduces the camera's
+  radial profile within a few % at every level, so preview.ts now runs it as the firmware does (mask table, g in
+  256ths, darker Y g / lighter 1 - (1 - Y) g, colour toward grey). Patch error 1.3..6.6 -> 0.4..0.6 (noise floor 0.6).
+  The old preview (0.07 s r^1.5) was several times too weak. s2 / p4 (the Shading session) would need the new table.
+- **Grain:** the camera's g3 grain at full size Y sigma 10.6 / 15.9 / 23.8 for Low / Med / High (strength 2 / 3 / 5,
+  Medium) = the firmware model (16 x gain 650 / 1024 / 1536), the same in every tone (also in the shadows, where the
+  old preview had none). At preview size the old preview was 3-4x too weak (Y high-pass 1.4 / 2.0 / 2.8 against the
+  camera's 4.5 / 6.8 / 9.8). preview.ts now builds the g3 tile (box-filtered uniform noise, Y w x w, Cb / Cr half size
+  (w + 1) / 2) and shows each preview pixel as the tile's mean over the camera pixels it covers: Y 4.5 / 6.9 / 10.3,
+  Cb / Cr within 5 % after a 0.86 factor for the JPEG's half-size colour; lag-1..3 autocorrelation and spectrum match.
+  The "Fine" / "Coarse" shots were Medium (same texture as Med: the size was not set on the camera), so Grain Size is
+  previewed from the firmware model only. LOOKS.BIN holds Low / Med / High (strength 2 / 3 / 5); strength and size
+  live in the camera's curves record (byte G), so LookLab shows Grain Size as a preview-only choice.
+- **Border:** research/border/model.py widths on the preview (1.5..7.5 % of the short side, white / black); LookLab
+  writes it to LOOKS.BIN +48 (signed) for "v0.28 or later" exports (v0.25..v0.40 ignore the byte) and reads it back.
+- **Glow / Clarity / Sharp:** Glow's share is the firmware's (xb_gl 942..666: 0.08..0.35; fitted 0.18 / 0.33 at +3 /
+  +5) with a Soft Focus blur of sigma about 48 camera pixels and no brightening: the preview's x1.08 lift is gone on
+  OM-3 and its blur follows the camera's pixel scale (patch error 1.7 / 2.5 -> 0.8). Clarity already close (0.9). Sharp
+  was far too strong at preview size: now scaled to the camera's change at 1296 px (x (size / 1296)^2 on larger previews).
+- **Vignette Correction Off:** corners 0.84 of the centre at f/4 with this lens (1 - 0.18 r^2.4 in linear light); the
+  preview now darkens the corners that much for looks with the correction off (lens- and aperture-dependent).
+- **Contrast:** on the 9 standard films with Contrast +1 / +2 the camera's whites came out 4 (per step) brighter than
+  the preview; Contrast 0 films matched. OM3_CAL.contrast is a fitted per-step curve (lift up to +0.068 at 0.92, a dip
+  of 0.02 near 0.3); films left out of the fit 4.70 -> 4.37 and 3.99 -> 3.95. -1 / -2 assumed the mirror (no shots).
+- **Colour (not changed):** RGB curves 0.6..1.0 (good). Colour Mix 1.8..4.3: the matrix is right in scale and space
+  (scaling it, a sensor-space version or gamut handling all fit worse; each film's mix as it is beats none or half),
+  the misses are the most saturated blues / purples, which the camera moves less (its processing after the matrix).
+  A refit of the 12-sector engine on the films did not hold on films left out (4.26 -> 4.28, 3.62 -> 3.68), so OM3_CAL
+  stays; standard films 4.0 -> 3.7 after Contrast (the earlier fit's floor between two shoots was 2.3).
+- Card 3's first photo (FILM 1 Portra 400) carries an all-zero photo code: it was taken with the previous set's plain
+  FILM 1 (Portra 400's name, curves and mix), the other 19 with the standard values (photo codes = LOOKS.BIN records).
+  Most likely the shot came before the new set was loaded at the half-press (analysis). The log listed films 1-19 as
+  changed ('*'); not looked into.
+- **Shading back to the camera's own (2026-11-18, v0.41-dev test 7, owner: "the +2, -2"):** the preview now follows
+  the camera's own Shading, not s1. Its mask, measured on the Shading session's p1 wall photos (PB183489..493, f/1.8,
+  VC on and off): -2 and +2 are one mask m(r) (0 inside r 0.42, 0.05 at 0.52, 0.15 at 0.62, 0.28 at 0.72, 0.52 at 0.82,
+  0.79 at 0.92, 0.87 at 0.97), darker Y (1 - m), lighter 1 - (1 - Y)(1 - m); the preview matches both within 0.01.
+  Other levels estimated from the 2026-11-12 photos (room -1 / -3 / -5, wall -5 / +5) as (1 - m)^k, k 0.87 / 1 / 1.17 /
+  1.30 / 1.39: only +-2 is measured. Card 2's Shading photos were s1 and no longer apply.
+- **Every level measured (owner, 2026-11-18, v0.41-dev test 7; card backup 2026-11-18-shading-stock-levels,
+  PB183616..626: Shading 0, -5..-1, +1..+5, a plain wall, OM 17 mm f/1.8, ISO 500):** the camera's own mask per level
+  (exposure matched at the centre), darker / lighter: corner (r 0.975) -1 0.84 / +1 0.81, -2 0.89 / 0.86, -3 0.92 /
+  0.90, -4 0.94 / 0.92, -5 0.96 / 0.94; r 0.725 -1 0.23 .. -5 0.39, +1 0.27 .. +5 0.42; nothing inside r 0.4. Every
+  level is strong; the steps add a little. preview.ts keeps the ten measured rows (SHADE_DARK / SHADE_LIGHT) and
+  matches the photos within 2..6 of 255 at every radius; the (1 - m)^k estimate is gone. -2 agrees with probe p1.
+
+## LookLab for v0.40: crops, Film Grain 1..5 + Grain Size, black Border (2026-11-18; branch feature/looklab-camera-match)
+- cad (for the owner): LookLab's update for the full v0.40 (v0.40-beta notes: "LookLab doesn't know the black Border,
+  the grain strength and size, or the crops yet"). try/v0.40-beta merged in (ec472dd; its card formats are main's).
+- **Image Aspect (preview only, a camera setting):** 4:3, 3:2, 16:9, 1:1, 3:4 and v0.40's 5:4, XPan, 21:9 at the
+  camera's JPEG shapes (research/border/model.py: 5184 x 3456 / 2920, 3888 x 3888, 2912 x 3888, 4864 x 3888, 5184 x
+  1920 / 2224), centred, turned for an upright photo. The look is made on the whole frame (Shading, lens corners, grain
+  as on the sensor's frame: analysis, not camera-checked for the camera's own Shading at a crop), then cut; the
+  Border sits inside the cut, its width from the cut's short side (as bd_run).
+- **Film Grain Off / 1..5 + Grain Size Fine / Medium / Coarse** rows as the camera's. Card files carry only the level
+  (LOOKS.BIN +51: 1-2 Low, 3 Med, 4-5 High, the camera's gs_lv; the camera reads Low / Med / High as 2 / 3 / 5 Medium,
+  gs_dv); strength 1 / 4 and size live in the camera's curves record (G) and in no card file (CURVES.BIN's spare bytes
+  must be zero). LookLab keeps them in the look (share links, looks files) for the preview and says what to set on the
+  camera.
+- **Border** -5..+5 as before (LOOKS.BIN +48). The photo code writes +48 as a signed nibble (photocode.py: value & 15),
+  so LookLab now reads byte 48 signed (a black border was read as 11..15). firmware/photocode.py's UNSIGNED, docs/
+  PHOTO_CODE.md and the devkit reader still list 48 as unsigned (left for cad).
