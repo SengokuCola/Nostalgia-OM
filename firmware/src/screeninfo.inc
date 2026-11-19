@@ -1,8 +1,8 @@
 /* Screen info (feature/screen-info): ids and the id check, used by sl_get / sl_set / sl_cnt / sl_vbi / sl_sel /
  * ed_default before screeninfo.s (included at the end of editor.s) defines the handlers. */
- .set SIB, 0x7d00                 /* our setting ids SIB + 16 * page + k (clear of 0x7e00.. and the string ids) */
- .set SI_N, 48                    /* 3 pages x 16 */
- .set SI_K, 14                    /* items per page */
+ .set SIB, 0x7d00                 /* our setting ids SIB + 32 * page + k (clear of 0x7e00.. and the string ids) */
+ .set SI_N, 96                    /* 3 pages x 32 (s3; s2 had 16) */
+ .set SI_K, 17                    /* items per page (s3: 14 + subject detection, exposure meter, aspect) */
  .set SI_C, 0x6295c700            /* M image 0x62920700 + 0x3C000 */
  .set SI_U, 0xa295c700
  .set SI_MAGIC, 0x49334d4f        /* "OM3I" */

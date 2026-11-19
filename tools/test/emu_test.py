@@ -425,6 +425,12 @@ SI_HIDE_MODE = ('menu wait left wait left wait down wait ok wait down wait right
 SI_MASK1 = 'expect:mem:6295c70c=01000000'
 SI_MODE_ON, SI_MODE_OFF = 'expect:pxdiff:48,575,300,450', 'expect:pxsame:48,575,300,450'
 SI_MODE_ON_VIDEO = 'expect:pxdiff:62,574,300,450'
+# s3: Exposure Comp. split in two rows. Information 1's ninth row (Exposure Level Meter, bit 15) unticked: the meter's
+# centre tick (522, 575) goes, the +/- value's "0" (623, 566) stays.
+SI_HIDE_METER = ('menu wait left wait left wait down wait ok wait down wait right wait' + ' down wait' * 8 +
+                 ' ok wait menu wait menu wait menu wait')
+SI_METER_ON, SI_METER_OFF = 'expect:pxdiff:522,575,300,450', 'expect:pxsame:522,575,300,450'
+SI_EV_ON = 'expect:pxdiff:623,566,300,450'
 BORDER_TO_0 = f'{OPEN_BORDER}' + ' left wait' * 3 + ' expect:p:82=00 menu wait wait s1 wait wait'
 BORDER_TO_M3 = f'{OPEN_BORDER}' + ' left wait' * 3 + ' expect:p:82=fd menu wait wait s1 wait wait'   # black -3
 BORDER_FROM_M3 = f'{OPEN_BORDER}' + ' right wait' * 3 + ' expect:p:82=00 menu wait wait s1 wait wait'
@@ -691,6 +697,12 @@ TESTS = {
     'screen-info-waits-for-the-first-half-press': [
         Boot(f's1 wait wait {SI_HIDE_MODE} {SI_MASK1} s1 wait wait poweroff'),
         Boot(f'wait wait {SI_MASK1} expect:mem:{{si_ok}}=00 {SI_MODE_ON} s1 wait wait {SI_MODE_OFF} poweroff'),
+    ],
+    # screen info s3: a split row hides only its own part: Exposure Level Meter unticked hides the meter, and the
+    # exposure value (still under Exposure Comp.) stays.
+    'screen-info-meter-row-keeps-the-value': [
+        Boot(f's1 wait wait {SI_METER_ON} {SI_EV_ON} {SI_HIDE_METER} expect:mem:6295c70c=00800000 s1 wait wait '
+             f'{SI_METER_OFF} {SI_EV_ON} poweroff'),
     ],
     # screen info: video keeps its screen as it is (the movie mode icon stays with Shooting Mode unticked).
     'screen-info-not-in-video': [

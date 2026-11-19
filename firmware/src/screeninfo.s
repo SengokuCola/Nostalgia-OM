@@ -5,7 +5,8 @@
  *
  * Menu: build.py gives the pages Custom menu > 4. Information > Camera Info Settings > Information 1 / 2 / 3 (menu
  * item lists 0x10..0x12, row lists 0x15f..0x161) 14 more tick rows after the stock four, with our setting ids
- * SIB + 16 * page + k (k = item 0..13). Their values come only from here (sl_get / sl_set / sl_cnt / sl_vbi / sl_sel
+ * SIB + 32 * page + k (k = item 0..16; s3 split three rows: AF Mode / Subject Detection, Exposure Comp. /
+ * Exposure Level Meter, Record Mode / Image Aspect). Their values come only from here (sl_get / sl_set / sl_cnt / sl_vbi / sl_sel
  * / ed_default send them on): 1 shown (ticked, the default), 0 hidden.
  *
  * Kept in the unused tail of the camera's settings store M (as the films and custom-mode records are), at M + 0x3C000
@@ -137,11 +138,11 @@ si_tab:
  SIF 1, 88, 7
  SIF 2, 88, 24                    /* 2 Aperture Value */
  SIF 2, 88, 28
- SIF 3, 80, 5                     /* 3 Exposure Comp.: the value, its marker, the bar */
+ SIF 3, 80, 5                     /* 3 Exposure Comp.: the value, its marker */
  SIF 3, 80, 6
  SIF 3, 80, 80
- SIF 3, 80, 84
- SIF 3, 80, 88
+ SIF 15, 80, 84                   /* 15 Exposure Level Meter: the bar (s3; was under 3) */
+ SIF 15, 80, 88
  SIF 4, 4, 2                      /* 4 ISO */
  SIF 5, 4, 39                     /* 5 WB: icon, block, Kelvin (u16) */
  SIF 5, 4, 401
@@ -150,12 +151,12 @@ si_tab:
  SIF 6, 4, 60                     /* 6 Picture Mode (and our FILM label; u16 picture id) */
  SIF 6, 4, 61
  SIF 7, 4, 38                     /* 7 Image Stabilizer */
- SIF 8, 4, 36                     /* 8 AF Mode, face / eye detection */
- SIF 8, 4, 3
+ SIF 8, 4, 36                     /* 8 AF Mode */
+ SIF 14, 4, 3                     /* 14 Subject Detection: face / eye / subject icon (s3; was under 8) */
  SIF 9, 4, 40                     /* 9 Drive Mode */
  SIF 10, 4, 35                    /* 10 Metering */
- SIF 11, 4, 48                    /* 11 Record Mode: aspect, still quality, movie quality */
- SIF 11, 4, 49
+ SIF 16, 4, 48                    /* 16 Image Aspect (s3; was under 11) */
+ SIF 11, 4, 49                    /* 11 Record Mode: still quality, movie quality */
  SIF 11, 4, 50
  SIF 12, 8, 8                     /* 12 Remaining Files: shots left (u16, its shown flag), movie time left */
  SIF 12, 8, 9
@@ -253,8 +254,8 @@ si_bit:
  exthu d0
  add -SIB,d0
  mov d0,d1
- lsr 4,d1                         /* page */
- and 15,d0                        /* k */
+ lsr 5,d1                         /* page */
+ and 31,d0                        /* k */
  mov si_ram + 12,a0
  asl2 d1
  add d1,a0
@@ -399,16 +400,21 @@ si_pend:
  .byte 0
  .balign 4
 si_rows0:                         /* build.py: the pages' item records (28 B: the stock four, then ours) */
- .space 28 * 18
+ .space 28 * (4 + SI_K)
 si_rows1:
- .space 28 * 18
+ .space 28 * (4 + SI_K)
 si_rows2:
- .space 28 * 18
+ .space 28 * (4 + SI_K)
+si_rend:
+ .balign 4
+
+.section .ext11,"ax"               /* s3: .ext12 is full (v0.40-beta); the row lists sit in .ext11's tail */
+ .balign 4
 si_ord0:                          /* build.py: the pages' row lists (u16 setting ids) */
- .space 2 * 18
+ .space 2 * (4 + SI_K)
 si_ord1:
- .space 2 * 18
+ .space 2 * (4 + SI_K)
 si_ord2:
- .space 2 * 18
+ .space 2 * (4 + SI_K)
 si_end:
  .balign 4

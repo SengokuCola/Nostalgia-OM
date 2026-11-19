@@ -806,13 +806,16 @@ def build(defaults, testfile, out):
         put(*bufs[2], b''.join(recs_))
         struct.pack_into('<II', m, o(hdr) + 4, sy[bufs[2][0]], ni + 1)
     # Screen info (screeninfo.s, research/NOTES.md "Screen info"): the photo Information 1 / 2 / 3 pages of Camera Info
-    #   Settings (rear screen) get 14 tick rows after the stock four, setting ids SIB + 16 * page + k. Each page = an
+    #   Settings (rear screen) get 17 tick rows after the stock four, setting ids SIB + 32 * page + k. Each page = an
     #   item list (28 B records {u32 sid, u16 4, u16 label, u32 0x6156b26c, 16 B 0}; menu table entry {id, rows, n})
     #   and a row list (u16 sids; row table entry {mode, rows, n}); both move to copies with our rows added.
     SIB, SIK = sy['SIB'], sy['SI_K']
-    SI_LABELS = (4546, 4549, 2806, 4196, 2070, 968, 203, 147, 51, 4404, 4413, 3016, 3382, 3490)   # the camera's texts:
+    SI_LABELS = (4546, 4549, 2806, 4196, 2070, 968, 203, 147, 51, 4404, 4413, 3016, 3382, 3490, 4390, 4195, 70)   # the camera's texts:
     #   Shooting Mode, Shutter Speed, Aperture Value, Exposure Comp., ISO, WB, Picture Mode, Image Stabilizer, AF Mode,
-    #   Drive Mode, Metering, Record Mode, Remaining Files, Touch screen (WB / Picture Mode / IS / AF Mode as the movie pages)
+    #   Drive Mode, Metering, Record Mode, Remaining Files, Touch screen (WB / Picture Mode / IS / AF Mode as the movie pages),
+    #   s3: Subject Detection, Exposure Level Meter, Image Aspect (bits k stay; the rows go in SI_ROWS order)
+    SI_ROWS = (0, 1, 2, 3, 15, 4, 5, 6, 7, 8, 14, 9, 10, 16, 11, 12, 13)
+    assert sorted(SI_ROWS) == list(range(SIK))
     assert len(SI_LABELS) == SIK
     TICK = 0x6156b26c
     for pg, (ent, eid, rows, mrec, mode, order) in enumerate((
@@ -822,13 +825,13 @@ def build(defaults, testfile, out):
         assert u32(ent, 3) == (eid, rows, 4), hex(ent)
         recs_ = bytes(m[o(rows):o(rows) + 28 * 4])
         assert all(struct.unpack_from('<IHHI', recs_, 28 * k)[1:4:2] == (4, TICK) for k in range(4))
-        new = recs_ + b''.join(struct.pack('<IHHI16x', SIB + 16 * pg + k, 4, SI_LABELS[k], TICK) for k in range(SIK))
-        put('si_rows%d' % pg, 'si_rows%d' % (pg + 1) if pg < 2 else 'si_ord0', new)
+        new = recs_ + b''.join(struct.pack('<IHHI16x', SIB + 32 * pg + k, 4, SI_LABELS[k], TICK) for k in SI_ROWS)
+        put('si_rows%d' % pg, 'si_rows%d' % (pg + 1) if pg < 2 else 'si_rend', new)
         struct.pack_into('<2I', m, o(ent) + 4, sy['si_rows%d' % pg], 4 + SIK)
         rp, nr = u32(mrec + 4, 2)
         assert u32(mrec)[0] == mode and nr == 4 and struct.unpack_from('<4H', m, o(rp)) == order, hex(mrec)
         put('si_ord%d' % pg, 'si_ord%d' % (pg + 1) if pg < 2 else 'si_end',
-            struct.pack('<4H', *order) + struct.pack('<%dH' % SIK, *(SIB + 16 * pg + k for k in range(SIK))))
+            struct.pack('<4H', *order) + struct.pack('<%dH' % SIK, *(SIB + 32 * pg + k for k in SI_ROWS)))
         struct.pack_into('<2I', m, o(mrec) + 4, sy['si_ord%d' % pg], 4 + SIK)
     a = 0x6139e26c + 16 * 1                                         # picker title icon 1
     assert u32(a, 4) == (0xffff, 7, 7, 1), hex(a)
