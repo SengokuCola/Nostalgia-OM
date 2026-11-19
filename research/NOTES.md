@@ -8373,3 +8373,27 @@ Test driver tools/emulator/focus_stacking.mjs runs this routine with controlled 
 - **If shots still wait (camera):** try once in MF: if MF shoots freely, it is the AF; if not, the camera holds Single
   until the development ends, and the remaining lever is the pass's own time (pass A's ~0.55 s floor; options that
   change the look a little, such as reading every 4th row, are the owner's call).
+- **h7's fade back (owner, 2026-11-19, via cad: "go back to the h7 halation fade if it's faster"; commit 5e04be5):**
+  h8's wide layer (20f4107) reverse-applied in firmware/halation.py (BLUR3, WIDE), research/halation/model.py and
+  `hl_run`; `hl_run` and its helpers are now h7's code (diffed against 20f4107^) plus glow-shots-2's six calls. LookLab's
+  preview (webapp/src/preview.ts `om3Halation`) still draws h8's tail: not changed here (it must follow before a release).
+  - **om-emu (pin 0819080), emu_check.py on all 21 frames, each build against its own model: 21 of 21 bit-exact both.**
+    h7's counts equal the h7 notes of 2026-11-16 (big5 84,091,177), so the picture is v0.30.3 test 1's.
+
+    | Frame | h8 steps | h7 steps | h8 -> h7 | bytes changed h8 -> h7 | locks h8 -> h7 |
+    |---|---|---|---|---|---|
+    | big5 (20 MP night, 12 lights, L5) | 124.5 M | 84.1 M | -32 % | 6.03 -> 3.95 MB | 2143 -> 1310 |
+    | bigphoto5 (16 MP blue hour, L5) | 103.7 M | 85.3 M | -18 % | 5.49 -> 4.31 MB | 1559 -> 1384 |
+    | night5 / sparse5 (1.8 MP, L5) | 22.7 / 21.5 M | 16.8 / 16.6 M | -26 / -23 % | | |
+    | bluehour5 / taxi3 | 25.7 / 13.8 M | 20.9 / 10.3 M | -19 / -25 % | | |
+    | day5, neon5, paris5 (off) | the same | | 0 % | 0 | |
+
+    big5 by phase: pass A (`hl_pa`) 25.1 M in both; pass C (`hl_sp` + `hl_row` + `hl_lp`) 93.0 -> 56.4 M; the blur
+    5.1 -> 1.6 M.
+  - Camera estimate (analysis, the s2 rates): pass A's ~20 MB read (~0.55 s on 20 MP) is the same in both, so a
+    glowing 20 MP photo goes from ~1.2-1.7 s to roughly 20-30 % less, not to "instant". The pause while half-pressed
+    is what should let the next shot fire.
+- **Package glow-shots-2** (5e04be5, rebuilt from the commit: the same): "v0.40-dev glow-shots-2 (h7 halation, yields to
+  the shutter)", E1479999.BIN `1933a366…1c19`, GUIDES.BIN `22f57086…5ede`; `test-builds/2026-11-19-glow-shots-2`
+  (go back: glow-shots-1, v0.40-beta2). ext12 262,008 of 262,144; ext13 72,512 of 81,920.
+  Full suite (with --stock) on that build: **108 of 108 pass**.
