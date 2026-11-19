@@ -17145,11 +17145,8 @@ dg_bend:
  *   A. every 2nd row, every pair's Y0: e = Y0 - T (if > 0) summed into u16 64 x 64 px cells (E), and Y0 >> 2 summed
  *      into a second grid (Q); the cell's mean B = 4 Q / samples
  *   B. E: [1 2 1] / 4 (rounded, edges repeated), HL_BLUR times across, HL_BLUR times down; a broad copy HL_BLUR2 times
- *      (h4), mixed: v0 = (tight (256 - HL_MIX) + broad HL_MIX + 128) >> 8
- *   map: u by table (hl_lo / hl_hi); n = cells with u(v0) >= HL_COVU: none at n >= HL_COVHI % of the cells, full
- *      strength up to HL_COVLO %, faded between (sc). h8 (owner, v0.30.3 test 1: "the halation at 5 kinda just ends"):
- *      the broad copy blurred HL_BLUR3 times more (wide), v = v0 + ((wide HL_WIDE + 128) >> 8): a long, even tail
- *      (the bright-frame count n stays on v0). g = (((u(v) gmax) >> 8) sc) >> 8; w = min(255, HL_WMUL (255 - B))
+ *   map: u by table (hl_lo / hl_hi); n = cells with u >= HL_COVU: none at n >= HL_COVHI % of the cells, full strength
+ *      up to HL_COVLO %, faded between (sc); g = (((u gmax) >> 8) sc) >> 8; w = min(255, HL_WMUL (255 - B))
  *   C. per row g and w lerped between the two nearest cell rows, then per pair between cell centres:
  *      Y += ((255 - Y) g HL_KY) >> 16 per pixel; with c = (g w) >> 8: Cb / Cr += (c HL_KCB / HL_KCR) >> 8 (floor,
  *      clamped). h2 (camera h1: the fast grain is in the image before this pass): the chroma weight w comes from the
@@ -17517,7 +17514,7 @@ hl_run:
  add -1,d3
  bne 31b
 
- /* ---- the bright-frame count n: cells whose h4 mix gives u >= HL_COVU (h8: counted as before, u not kept) */
+ /* ---- the curve (u in place of E) and the bright-frame count n */
  mov (40,sp),a0
  mov (72,sp),d3
  clr d2
@@ -17537,7 +17534,8 @@ hl_run:
  mov hl_hi,a1
 42:
  add d0,a1
- movbu (a1),d0                    /* u of the h4 mix */
+ movbu (a1),d0                    /* u */
+ movhu d0,(a0)
  cmp HL_COVU,d0
  bcs 44f
  inc d2
@@ -17574,43 +17572,6 @@ hl_run:
  call hl_div,[d2,d3,a2,a3],20
 45:
  mov d0,(64,sp)
- /* ---- h8: the wide layer = the broad one blurred HL_BLUR3 more times (in place); the curve, u in place of E, from
-  * v = the h4 mix + ((wide HL_WIDE + 128) >> 8) (up to ~70 K: 32-bit, the hl_hi index clamped as before) */
- mov (104,sp),a0
- mov HL_BLUR3,d0
- mov (12,sp),d1                   /* GW | GH << 16 */
- call hl_blur,[d2,d3,a2,a3],44
- mov (40,sp),a0
- mov (104,sp),a2
- mov (72,sp),d3
-47:
- movhu (a2),d0
- mov HL_WIDE,d1
- mul d1,d0
- add 128,d0
- lsr 8,d0
- movhu (a0),d1
- add d1,d0                        /* v */
- cmp 1024,d0
- bcc 48f
- lsr 2,d0
- mov hl_lo,a1
- bra 49f
-48:
- lsr 8,d0
- cmp 255,d0
- bls 1f
- mov 255,d0
-1:
- mov hl_hi,a1
-49:
- add d0,a1
- movbu (a1),d0                    /* u */
- movhu d0,(a0)
- add 2,a0
- add 2,a2
- add -1,d3
- bne 47b
  mov (40,sp),a0                   /* g = (((u gmax) >> 8) sc) >> 8 */
  mov (72,sp),d3
  clr d2                           /* OR of g */
