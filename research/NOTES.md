@@ -8628,6 +8628,18 @@ Assign C4, Set B, Assign C5: C4 showed Set B's films, and Set A again is ignored
   square edge at +-1/2. v0.40 Fine and Medium: fine vertical streaks (the full-width strips' repeats). g4: smooth
   round spectra, no lines or streaks; at Coarse the block joins add 0.002..0.005 % of the power at |f| > 0.4 (a fresh
   band 0.006 %, g3's box side lobes 2.8 %), faint streaks only on the log scale.
+- **Faint lines in the first spectra picture were the measurement (owner, 2026-11-19: "I see some very very faint
+  ones in medium").** That picture took a 768 x 768 corner of the 1536-wide tile: the cut edge leaks a faint streak
+  pattern into the spectrum where the grain's own spectrum is small (the far left / right, strongest at Coarse,
+  whose 1-3-3-1 has a zero at the finest detail); filtered numpy random bytes and a tile with no copies at all
+  show the same. Taken over the whole tile half (768 x 1536, seamless both ways) there are none; the corrected
+  picture replaces the first in the package (`preview/grain-fourier-v040-vs-new.png`): g4 next to fresh noise with
+  no copies looks the same at every size. Measured (log spectrum divided by its smooth shape, 4 seeds): the copies
+  leave a faint mottle, Medium 0.084 (fresh noise 0.065, v0.40 0.24), slightly elongated along fy (correlation
+  over 6 bins 0.043 / 0.024 along fy / fx; fresh about 0, v0.40 0.50 / 0.21). It follows the block shape, not the
+  crossfades (joins made in the white noise before the filter, so with no crossfade at all, gave the same numbers):
+  40 x 64 px blocks bring it to 0.077 and 0.015 / 0.020 (32 x 64: 0.075, 0.009 / 0.011), repeats down to 0.008 /
+  0.011, at an estimated 20..25 % more work for Medium and Coarse (twice the joins). Not built; the owner's call.
 - **Camera-only:** the time per tile (v0.40 ~270 ms; guess: Fine quicker, Coarse about the same or a little slower),
   the look on photos (no squares, stripes or repeats), Halation with grain, bursts, start-up with the 4 KB longer boot
   copy.
