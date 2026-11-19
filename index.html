@@ -7,11 +7,11 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23f08a3c'/%3E%3Cpath d='M16 5v22M11 10c5 0 10 3 10 6s-10 3-10 6 5 4 10 4M21 10c-5 0-10 3-10 6s10 3 10 6-5 4-10 4' stroke='%23141414' stroke-width='2' fill='none'/%3E%3C/svg%3E">
 <meta property="og:type" content="website">
 <meta property="og:title" content="Caduceus for OM-3">
-<meta property="og:description" content="20 film looks and a colour editor built into the OM SYSTEM OM-3's own Picture Mode. Free and open source.">
+<meta property="og:description" content="20 film looks, a colour editor, our own film grain, borders and XPan, 21:9 and 5:4 crops, built into the OM SYSTEM OM-3. Free and open source.">
 <meta property="og:image" content="https://androidfanman.github.io/caduceus-om3/pages/showcase/img/films/meadow-01.jpg">
 <meta property="og:url" content="https://androidfanman.github.io/caduceus-om3/">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="description" content="Caduceus for OM-3: 20 film looks and a colour editor built into the OM SYSTEM OM-3's own Picture Mode. See it on the camera's screens.">
+<meta name="description" content="Caduceus for OM-3: 20 film looks, a colour editor, our own film grain, borders and XPan, 21:9 and 5:4 crops, built into the OM SYSTEM OM-3. See it on the camera's screens.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -229,9 +229,22 @@ footer a { color: var(--muted); }
 .log-sec .more-rows { color: var(--faint); margin-top: 4px; }
 @media (max-width: 980px) { .log-wrap { grid-template-columns: 1fr; } }
 
+/* v0.40: the crop modes */
+.crop { display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 5fr); gap: 36px; align-items: start; }
+.sensor { position: relative; aspect-ratio: 4 / 3; border-radius: var(--radius); overflow: hidden; background: #000; box-shadow: 0 24px 60px rgba(0,0,0,.5); }
+.sensor img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.sensor .dim { filter: brightness(.3) saturate(.5); }
+.sensor .cut { clip-path: inset(var(--t) var(--s)); transition: clip-path .45s ease; }
+.sensor .frame { position: absolute; inset: var(--t) var(--s); border: 2px solid #3fd14b; pointer-events: none; transition: inset .45s ease; }
+.sensor .lab { position: absolute; left: 12px; bottom: 12px; padding: 4px 10px; border-radius: 999px; background: rgba(0,0,0,.62); font-size: 13px; font-weight: 600; }
+@media (prefers-reduced-motion: reduce) { .sensor .cut, .sensor .frame { transition: none; } }
+.crop-text h3 { font-size: 24px; font-weight: 800; margin-bottom: 10px; }
+.crop-text p, .crop-text li { color: #c9ced8; }
+.crop-text ul { margin: 12px 0 22px; padding-left: 20px; display: grid; gap: 6px; }
+
 /* responsive */
 @media (max-width: 980px) {
-  .hero .in, .viewer, .hal { grid-template-columns: 1fr; }
+  .hero .in, .viewer, .hal, .crop { grid-template-columns: 1fr; }
   .hero-visual { max-width: 640px; }
   .editor { grid-template-columns: 1fr; }
   .rows { display: flex; overflow-x: auto; scrollbar-width: none; }
@@ -261,7 +274,7 @@ footer a { color: var(--muted); }
   <a class="brand" href="./">Caduceus for OM-3</a>
   <a class="tab opt" href="#films">Films</a>
   <a class="tab opt" href="#editor">Colour editor</a>
-  <a class="tab opt" href="#v030">New in v0.30</a>
+  <a class="tab opt" href="#v040">New in v0.40</a>
   <a class="tab opt" href="#help">Help</a>
   <a class="tab" href="pages/install/">Install</a>
   <a class="tab" href="looklab/">LookLab</a>
@@ -276,13 +289,13 @@ footer a { color: var(--muted); }
     <div>
       <div class="eyebrow">Open-source firmware for the OM-3</div>
       <h1>Film looks, built into your OM-3.</h1>
-      <p class="sub">Caduceus adds 20 film looks and a full colour editor to the camera's own Picture Mode. Pick a film, shoot, and the JPEG comes out with that look.</p>
+      <p class="sub">Caduceus adds 20 film looks and a full colour editor to the camera's own Picture Mode, plus XPan, 21:9 and 5:4 crops. Pick a film, shoot, and the JPEG comes out with that look.</p>
       <div class="ctas">
         <a class="btn primary" href="#films">See the films</a>
         <a class="btn" href="looklab/">Open LookLab</a>
         <a class="btn" href="pages/install/">How to install</a>
       </div>
-      <div class="facts"><span><b>20</b> film looks, 18 colour matched</span><span><b>15</b> settings per film</span><span><b>Any</b> SD card (v0.29)</span><span><b>Free</b> and open source</span></div>
+      <div class="facts"><span><b>20</b> film looks, 18 colour matched</span><span><b>17</b> settings per film</span><span><b>3</b> crop modes (v0.40)</span><span><b>Free</b> and open source</span></div>
     </div>
     <div class="hero-visual" aria-label="The camera's Picture Mode list stepping through the films, with a photo in each film's look">
       <div class="hero-photo fade" id="heroPhoto">
@@ -298,39 +311,91 @@ footer a { color: var(--muted); }
 
 <main>
 
-<section id="v030">
+<section id="v040">
   <div class="in">
     <div class="head">
-      <div class="eyebrow">New in v0.30</div>
-      <h2>Shape each film’s colour, right on the camera.</h2>
-      <p>Two new rows for each film, Color Mix and RGB curves, and the 20 films regraded with them against scans of the real films. Plus a Picture Mode laid out in the order the camera works on a photo, with a picture for every row.</p>
+      <div class="eyebrow">New in v0.40</div>
+      <h2>New shapes, borders and our own grain.</h2>
+      <p>Three crop modes, a black or white border for each film, film grain with a strength and a size, looks you can watch change in live view, and your own choice of what the shooting screen shows.</p>
     </div>
-    <div class="three">
+    <div class="crop">
       <div>
-        <div class="lcd"><div class="screen"><img alt="Camera screen: the Color Mix page, a ring with red, green and blue as dots; red is chosen, Sat +3, Hue +4" src="pages/showcase/img/screens/row-mix.png" loading="lazy"></div></div>
-        <p class="cap"><b>Color Mix.</b> Make red, green or blue stronger or weaker, or turn it toward its neighbour. Each colour is a dot on the ring: the front dial turns it, the rear dial moves it out or in. Greys stay grey.</p>
+        <div class="sensor" id="sensor" style="--t: 25.31%; --s: 0%">
+          <img class="dim" alt="" src="pages/showcase/img/demos/crop-full.jpg" loading="lazy">
+          <img class="cut" alt="The sample photo cut to XPan" src="pages/showcase/img/demos/crop-full.jpg" loading="lazy">
+          <div class="frame"></div>
+          <span class="lab" id="cropLab">XPan · 5184 × 1920</span>
+        </div>
+        <div class="photo-bar">
+          <div class="chips" id="cropChips" role="group" aria-label="Crop mode"></div>
+          <span class="note">Illustration: the whole 4:3 frame, the part the camera keeps lit, the green line where its frame lines sit.</span>
+        </div>
+      </div>
+      <div class="crop-text">
+        <h3>Crop modes: XPan, 21:9 and 5:4</h3>
+        <p>Three more Image Aspect choices, on the super control panel and in the Image Aspect menus. The JPEG is saved at that shape; RAW keeps the whole sensor with the crop marked, as for the camera’s own ratios.</p>
+        <ul>
+          <li>Live view shows the crop, with the camera’s green frame lines at its edges, on the rear screen and in the viewfinder. The grid, the focus target and the histogram fit inside it.</li>
+          <li>The crop is back as soon as you switch on.</li>
+          <li>Playback shows XPan, 21:9 or 5:4 next to the quality.</li>
+          <li>Photos only. The idea comes from <a href="https://github.com/cakelesscoder/caduceus-ep7">Caduceus for the E-P7</a>.</li>
+        </ul>
+        <div class="lcd"><div class="screen"><img alt="Camera screen: the super control panel with Image Aspect set to XPan" src="pages/showcase/img/screens/scp-xpan.png" loading="lazy"></div></div>
+      </div>
+    </div>
+    <div class="three" style="margin-top:44px">
+      <div>
+        <div class="lcd"><div class="screen"><img alt="Camera screen: the Border row set to −3 (black), under Film Grain and Grain Size" src="pages/showcase/img/screens/row-border.png" loading="lazy"></div></div>
+        <p class="cap"><b>A border, black or white.</b> A new Border row for each film, −5 to +5: minus is black, plus is white, the same width on every side. It fits inside the photo at every ratio, crops included. JPEG only; RAW is untouched.</p>
       </div>
       <div>
-        <div class="lcd"><div class="screen"><img alt="Camera screen: the RGB curves page with the blue curve raised at point 2 and lowered at point 4" src="pages/showcase/img/screens/row-rgb.png" loading="lazy"></div></div>
-        <p class="cap"><b>RGB curves.</b> A tone curve for each of red, green and blue, with five points from black to white: add a colour to the shadows, take it out of the highlights, cross-process.</p>
+        <div class="lcd"><div class="screen"><img alt="Camera screen: the Film Grain row set to +5" src="pages/showcase/img/screens/row-grain.png" loading="lazy"></div></div>
+        <p class="cap"><b>Our own film grain.</b> Film Grain now goes Off and 1 to 5, in colour, with no extra wait after the photo. Highlights stay white, and Halation keeps its glow.</p>
       </div>
       <div>
-        <div class="lcd"><div class="screen"><img alt="Camera screen: Picture Mode on FILM 1, the rows down the left with their new pictures" src="pages/showcase/img/screens/film-01.png" loading="lazy"></div></div>
-        <p class="cap"><b>A new Picture Mode.</b> The film and its colour first, then white balance and tone, then lens and effects, five rows a page, each with its own picture.</p>
+        <div class="lcd"><div class="screen"><img alt="Camera screen: Grain Size set to Coarse" src="pages/showcase/img/screens/row-grain-size.png" loading="lazy"></div></div>
+        <p class="cap"><b>Grain Size:</b> Fine, Medium or Coarse, on its own row under Film Grain, kept with each film.</p>
+      </div>
+    </div>
+    <p style="margin-top:14px"><a class="more" href="#editor">See the border and the grain on a photo →</a></p>
+    <div class="three" style="margin-top:44px">
+      <div>
+        <div class="lcd"><div class="screen"><img alt="Camera screen: Information 1 with tick rows for Exposure Comp., ISO, WB, Picture Mode, Image Stabilizer, AF Mode and Drive Mode, some unticked" src="pages/showcase/img/screens/info-list.png" loading="lazy"></div></div>
+        <p class="cap"><b>Choose what the shooting screen shows.</b> Custom menu → 4. Information → Camera Info Settings → Information 1, 2 or 3: 14 more tick rows, from Shooting Mode and Shutter Speed to Remaining Files and Touch screen.</p>
+      </div>
+      <div>
+        <div class="lcd"><div class="screen compare" style="--pos: 50%">
+          <img class="before" alt="Camera screen: the shooting screen with every item" src="pages/showcase/img/screens/info-before.png" loading="lazy">
+          <img class="after" alt="Camera screen: the same with seven items unticked" src="pages/showcase/img/screens/info-after.png" loading="lazy">
+          <span class="lab l">All</span><span class="lab r">Seven unticked</span>
+          <div class="bar"></div>
+          <input type="range" min="0" max="100" value="50" aria-label="Compare the shooting screen with every item and with seven unticked">
+        </div></div>
+        <p class="cap"><b>Untick a row</b> and that item leaves that display; INFO steps through your displays as before. Rear screen only, from the first half-press; the viewfinder is unchanged.</p>
+      </div>
+      <div>
+        <div class="lcd"><div class="screen"><img alt="Camera screen: Firmware Version, with Caduceus : 0.40 under the body's version" src="pages/showcase/img/screens/fwver.png" loading="lazy"></div></div>
+        <p class="cap"><b>Our version on the camera.</b> MENU → wrench tab, page 6 → Firmware Version shows Caduceus’s version under OM’s, also with a lens on. (The emulator has no body version: on the camera it reads 1.1.)</p>
       </div>
     </div>
     <div class="cards" style="margin-top:22px">
       <div class="card">
-        <h3>Ready at switch-on</h3>
-        <p>The right film and your changes are there as soon as you switch on, in every mode, before the first half-press.</p>
+        <h3>Watch the look change</h3>
+        <p>Split toning, Split Tone Balance, the RGB curves and Blacks / Whites now show in live view as you turn the dials, with no half-press.</p>
       </div>
       <div class="card">
-        <h3>A fuller debug log</h3>
-        <p>When something goes wrong, the log now reports everything: what the camera loaded, the film on each COLOR, its own settings, each custom mode and the last 32 shutter presses.</p>
-        <a class="more" href="#debuglog">See an example →</a>
+        <h3>Quicker looks</h3>
+        <p>Switching films and turning the dials on the colour wheel, Color Mix and RGB pages are quicker, with no flash between the white balance grid and Highlight &amp; Shadow. Border, Glow, Halation, Split Tone Balance and Film Grain now step the same way as Contrast on the dial.</p>
+      </div>
+      <div class="card">
+        <h3>Focus stacking with more lenses</h3>
+        <p>Lenses the camera otherwise refuses for focus stacking, for example the M.Zuiko 17mm F1.8 II, can be used.</p>
+      </div>
+      <div class="card">
+        <h3>Picture Mode stays open</h3>
+        <p>With no key, dial or tap, Picture Mode now stays open for 30 seconds; it used to close after 8. The Shading Effect stays the camera’s own.</p>
       </div>
     </div>
-    <p style="margin-top:14px"><a class="more" href="#editor">See every row and what it does to a photo →</a></p>
   </div>
 </section>
 
@@ -377,9 +442,9 @@ footer a { color: var(--muted); }
 <section id="editor">
   <div class="in">
     <div class="head">
-      <div class="eyebrow">Picture Mode rows · new order in v0.30</div>
+      <div class="eyebrow">Picture Mode rows</div>
       <h2>A colour editor on the camera.</h2>
-      <p>Press OK on a film and its settings run down the left of the screen, five rows to a page, in the order the camera applies them to a photo: the film and its colour first, then white balance and tone, then lens and effects, then grain. Each row has a small picture of what it does. Change any of them on the camera and the photo follows at once. Pick a setting to see its screen on the camera and what it does to a photo.</p>
+      <p>Press OK on a film and its settings run down the left of the screen, five rows to a page, in the order the camera applies them to a photo: the film and its colour first, then white balance and tone, then lens and effects, then grain and the border. Each row has a small picture of what it does. Change any of them on the camera and the photo follows at once; from v0.40 live view follows split toning, Split Tone Balance, the RGB curves and Blacks / Whites as you turn the dials. Pick a setting to see its screen on the camera and what it does to a photo.</p>
     </div>
     <div class="editor">
       <div class="rows" id="rows" role="tablist" aria-label="Settings"></div>
@@ -506,6 +571,42 @@ footer a { color: var(--muted); }
         <p class="cap"><b>Here, one press for the 2&times; tele-converter.</b> (v0.29.3)</p>
       </div>
     </div>
+  </div>
+</section>
+
+<section id="v030">
+  <div class="in">
+    <div class="head">
+      <div class="eyebrow">New in v0.30</div>
+      <h2>Shape each film’s colour, right on the camera.</h2>
+      <p>Two new rows for each film, Color Mix and RGB curves, and the 20 films regraded with them against scans of the real films. Plus a Picture Mode laid out in the order the camera works on a photo, with a picture for every row.</p>
+    </div>
+    <div class="three">
+      <div>
+        <div class="lcd"><div class="screen"><img alt="Camera screen: the Color Mix page, a ring with red, green and blue as dots; red is chosen, Sat +3, Hue +4" src="pages/showcase/img/screens/row-mix.png" loading="lazy"></div></div>
+        <p class="cap"><b>Color Mix.</b> Make red, green or blue stronger or weaker, or turn it toward its neighbour. Each colour is a dot on the ring: the front dial turns it, the rear dial moves it out or in. Greys stay grey.</p>
+      </div>
+      <div>
+        <div class="lcd"><div class="screen"><img alt="Camera screen: the RGB curves page with the blue curve raised at point 2 and lowered at point 4" src="pages/showcase/img/screens/row-rgb.png" loading="lazy"></div></div>
+        <p class="cap"><b>RGB curves.</b> A tone curve for each of red, green and blue, with five points from black to white: add a colour to the shadows, take it out of the highlights, cross-process.</p>
+      </div>
+      <div>
+        <div class="lcd"><div class="screen"><img alt="Camera screen: Picture Mode on FILM 1, the rows down the left with their new pictures" src="pages/showcase/img/screens/film-01.png" loading="lazy"></div></div>
+        <p class="cap"><b>A new Picture Mode.</b> The film and its colour first, then white balance and tone, then lens and effects, five rows a page, each with its own picture.</p>
+      </div>
+    </div>
+    <div class="cards" style="margin-top:22px">
+      <div class="card">
+        <h3>Ready at switch-on</h3>
+        <p>The right film and your changes are there as soon as you switch on, in every mode, before the first half-press.</p>
+      </div>
+      <div class="card">
+        <h3>A fuller debug log</h3>
+        <p>When something goes wrong, the log now reports everything: what the camera loaded, the film on each COLOR, its own settings, each custom mode and the last 32 shutter presses.</p>
+        <a class="more" href="#debuglog">See an example →</a>
+      </div>
+    </div>
+    <p style="margin-top:14px"><a class="more" href="#editor">See every row and what it does to a photo →</a></p>
   </div>
 </section>
 
@@ -687,7 +788,7 @@ footer a { color: var(--muted); }
 </main>
 
 <footer><div class="in">
-  <p><b>About these pictures.</b> The camera screens are the v0.29 firmware (the camera-tested build f2) running in <a href="https://github.com/flatpanda/om-emu">om-emu</a>, an emulator of the OM-3: the firmware's own drawing, not photos of a camera. The emulator can't draw the colour wheel, so the wheels are drawn by us in LookLab's style, from the values on each screen. The film and setting photos are previews from LookLab: close to what the camera makes, but not camera JPEGs. Noise Filter and Vignette Correction aren't in the preview, so their photos are illustrations.</p>
+  <p><b>About these pictures.</b> The camera screens are the v0.40 firmware running in <a href="https://github.com/flatpanda/om-emu">om-emu</a>, an emulator of the OM-3: the firmware's own drawing, not photos of a camera. The colour wheel pages are from v0.30 (the emulator leaves v0.40's dial label blank there), and the emulator can't draw the wheel itself, so the wheels are drawn by us in LookLab's style, from the values on each screen. The emulator has no body version or live picture. The film and setting photos are previews from LookLab: close to what the camera makes, but not camera JPEGs. Noise Filter, Vignette Correction, Film Grain, Grain Size, the Border and the crop modes aren't in the preview, so their photos are illustrations (the border at the camera's own widths, the crops at its own sizes).</p>
   <p><b>Sample photos</b> (public domain): meadow, portrait, taxi and the canal at blue hour from Unsplash (CC0); Paris by Pierre Blaché, Bourtzi harbour by Jebulon (CC0) and Roy's Motel &amp; Cafe at dusk by Blervis (CC0), all on Wikimedia Commons. <a href="https://github.com/androidfanman/caduceus-om3/blob/main/webapp/public/samples/CREDITS.md">Credits</a>.</p>
   <p>Caduceus for OM-3 is an independent open-source project, part of the <a href="https://github.com/cakelesscoder/caduceus-ep7">Caduceus</a> family. It is not made or supported by OM Digital Solutions. <a href="https://github.com/androidfanman/caduceus-om3">Source on GitHub</a> · <a href="https://discord.gg/fKpcKGsNPY">Discord</a> · <a href="https://github.com/androidfanman/caduceus-om3/issues/new?template=bug.yml">Report a problem</a>.</p>
 </div></footer>
@@ -725,6 +826,24 @@ footer a { color: var(--muted); }
     const r = c.querySelector('input');
     r.addEventListener('input', () => c.style.setProperty('--pos', r.value + '%'));
   });
+
+  // ---- v0.40 crop modes: the part of the 4:3 frame the camera keeps (from the JPEG sizes, out of 5184 x 3888)
+  const CROPS = [['XPan', '5184 × 1920', '25.31%', '0%'], ['21:9', '5184 × 2224', '21.40%', '0%'], ['5:4', '4864 × 3888', '0%', '3.09%']];
+  const sensor = $('sensor'), cropChips = $('cropChips');
+  const showCrop = (k) => {
+    const [name, size, t, s] = CROPS[k];
+    sensor.style.setProperty('--t', t); sensor.style.setProperty('--s', s);
+    $('cropLab').textContent = `${name} · ${size}`;
+    sensor.querySelector('.cut').alt = `The sample photo cut to ${name}`;
+    cropChips.querySelectorAll('.chip').forEach((b, j) => b.setAttribute('aria-pressed', String(j === k)));
+  };
+  CROPS.forEach(([name], k) => {
+    const b = document.createElement('button');
+    b.className = 'chip'; b.type = 'button'; b.textContent = name;
+    b.addEventListener('click', () => showCrop(k));
+    cropChips.appendChild(b);
+  });
+  showCrop(0);
 
   // ---- hero: step through the films on a mix of photos
   const HERO_SAMPLES = ['meadow', 'portrait', 'paris', 'taxi'];
@@ -794,6 +913,8 @@ footer a { color: var(--muted); }
   const PV = '<b>LookLab preview</b> on a neutral look: only this setting changes';
   const ILL = '<b>Illustration</b>: LookLab preview doesn’t model this setting';
   const CROP = '<b>LookLab preview</b>, a 100% crop';
+  const GRAIN = '<b>Illustration</b>, a 100% crop: our grain’s own pattern (LookLab can’t preview it yet)';
+  const BORDER = '<b>Illustration</b>: the camera’s own border widths';
   const WHEEL = 'On the camera (emulator screen; <b>wheel drawn by us</b>, the emulator can’t draw it)';
   const HSL_PAGES = [
     { id: 'color', name: 'Color', screen: 'hsl-color', demo: 'hsl-color', labs: ['Original', 'Blue −5'],
@@ -829,12 +950,17 @@ footer a { color: var(--muted); }
     { id: 'noise', group: 'Page 3', pic: 'Its setting in words.', name: 'Noise Filter', labs: ['Off', 'High'], note: ILL, text: 'Off, Low, Std or High, set per film: from all the grit of a high ISO to smooth.' },
     { id: 'vignette', pic: 'Its setting in words.', name: 'Vignette Correction', labs: ['Off', 'On'], note: ILL,
       text: 'Off keeps the lens’s natural darker corners; On lets the camera correct them.' },
-    { id: 'shading', pic: 'The camera’s own shading picture.', name: 'Shading Effect', labs: ['Original', 'Shading −5'], text: 'Darker or lighter corners, as an effect, −5 to +5.' },
+    { id: 'shading', pic: 'The camera’s own shading picture.', name: 'Shading Effect', labs: ['Original', 'Shading −5'], text: 'Darker or lighter corners, as an effect, −5 to +5: the camera’s own Shading Effect.' },
     { id: 'glow', pic: 'A white dot with a soft glow round it.', name: 'Glow Effect', labs: ['Original', 'Glow +5'],
       text: '+1 to +5 adds a soft glow around the light; −1 to −5 adds Clarity (crisper local contrast) instead.' },
     { id: 'halation', pic: 'A white dot in a red-orange ring.', name: 'Halation Effect', tag: 'v0.28', labs: ['Halation 0', 'Halation 5'], before: 'pages/showcase/img/halation/neon-0.jpg', after: 'pages/showcase/img/halation/neon-5.jpg',
       text: 'A red-orange glow around bright lights, as on cinema film, 0 to 5. Works with or without Glow.' },
-    { id: 'grain', group: 'Page 4', pic: 'The camera’s own grain picture.', name: 'Film Grain Effect', labs: ['Off', 'High'], note: CROP, text: 'Off, Low, Med or High. Added in colour, with no extra wait after the photo.' },
+    { id: 'grain', group: 'Page 4', pic: 'The camera’s own grain picture.', name: 'Film Grain Effect', tag: 'v0.40', labs: ['Off', '+5'], note: GRAIN,
+      text: 'Our own colour grain, Off and 1 to 5, added with no extra wait after the photo. Highlights stay white, and Halation keeps its glow with grain on. A film’s old Low / Med / High became 2 / 3 / 5.' },
+    { id: 'grain-size', pic: 'The camera’s grain picture, with the size under it.', name: 'Grain Size', tag: 'v0.40', labs: ['Fine', 'Coarse'], note: GRAIN,
+      text: 'Fine, Medium or Coarse: how big the grain is, at any strength. Both at +5 here.' },
+    { id: 'border', pic: 'A small frame.', name: 'Border', tag: 'v0.40', labs: ['Border +3 (white)', 'Border −3 (black)'], note: BORDER,
+      text: 'A border on the photo, −5 to +5, the same width on every side: minus is black, plus is white. JPEG only: the photo keeps its size and the border covers its outer edge, inside the photo at every ratio, crops included; RAW is untouched. In live view a thin frame line shows where its inner edge will be (from the first half-press; not in video).' },
   ];
   const rowsBox = $('rows'), pagesBox = $('hslPages');
   let curRow = 0, curPage = 0;
