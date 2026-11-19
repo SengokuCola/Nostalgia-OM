@@ -104,11 +104,12 @@ SEC_NOT6, SEC_WITH6, SEC_OMEMU = 0x1f, 0x3f, 0x7f     # SEC_OMEMU: the word as o
 MX_SITE, MX_ROW = 0x6051485a, 0x605144ef               # hook_mx; the camera's row scaling it calls
 TONE_SITE = 0x605197d7                                 # hook_tone; the stock goes on at TONE_NEXT
 LV_SITE, LV_SKIP, LV_X = 0x6046b8bb, 0x6046b94f, 0x6046b8ee   # hook_lv (a COLOR request); the stock: no flags
-# grain g3 (faster tile, 2026-11-17): tg_fill called directly (FLUSH stubbed) must give every byte of
-# research/grain/tile_model.py: the band + strips tile when the whole tile is in one 128 MB window segment (Fine, Coarse),
-# the full box-filter tile (g2c's) when it is across an edge. About 40 s.
+# grain g4 (round clumps, fewer repeats, 2026-11-19; g3 2026-11-17): tg_fill called directly (FLUSH stubbed) must give
+# every byte of research/grain/tile_model.py: g4_tile (band + blocks) when the whole tile is in one 128 MB window
+# segment (Fine, Medium, Coarse), g4_full (all 768 rows the band's way) when it is across an edge.
 GRAINTILE = 'grain-tile-matches-the-model'
-GRAINTILE_CASES = [('fine-fast', 1, 0xb0100000), ('coarse-fast', 3, 0xb0100000), ('medium-across-an-edge', 2, 0xaff00000)]
+GRAINTILE_CASES = [('fine-fast', 1, 0xb0100000), ('medium-fast', 2, 0xb0100000), ('coarse-fast', 3, 0xb0100000),
+                   ('medium-across-an-edge', 2, 0xaff00000)]
 REAR_DIAL = 0x9032                               # the rear dial's event (cv_ev); a1 its signed clicks
 # (name, a1): first no clicks (the value as it is), then a fast turn of 3, then one past the range.
 DIAL_CASES = [('as-is', 0), ('up-3', -3), ('down-20', 20)]
@@ -1781,7 +1782,7 @@ def run_graintile(emu, build, out, card0):
     sym = elf_symbols(build / 'p.elf')
     tg = f"{sym['tg_sb']:#x}"                        # tg_sb, tg_n, tg_nb, tg_ms, tg_nf; tg_own, tg_bad, tg_w
     spec = [{'name': name, 'pc': 'B', 'stop': ['B+7'], 'max': 100000000,
-             'mem': [['B', 'dd'], ['B+1', f"={sym['tg_fill']:#x}-B"], ['B+5', 'f078'],    # call tg_fill,[..],120
+             'mem': [['B', 'dd'], ['B+1', f"={sym['tg_fill']:#x}-B"], ['B+5', 'f028'],    # call tg_fill,[..],40
                      [f"{sym['FLUSH']:#x}", 'dfc010'], [f"{sym['tg_own']:#x}", f'{w:02x}'],
                      [f"{sym['tg_bad']:#x}", '00']],
              'regs': {'d0': hex(bus)}, 'read': [[hex(bus), 1536 * 3072], [tg, 23]]}
@@ -1805,7 +1806,7 @@ def run_graintile(emu, build, out, card0):
             errors.append(f"{name}: made {'the full way' if fast else 'the fast way'}, not "
                           f"{'the fast way' if fast else 'the full way'} (tg_nf {nf})")
         nf0 = nf
-        want = (tm.fast_tile if fast else tm.full_tile)(w, sb)
+        want = (tm.g4_tile if fast else tm.g4_full)(w, sb)
         if not np.array_equal(tile, want):
             rows = sorted(set(np.nonzero(tile != want)[0].tolist()))
             errors.append(f'{name}: {int((tile != want).sum())} bytes differ from the model, rows {rows[:12]}')
