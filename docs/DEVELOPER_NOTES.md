@@ -409,7 +409,9 @@ Stock: OLY_E_147_1100_0000_0000_3.BIN sha 8c133084…696d, main 5e8d376e…7d59.
 - `tools/test/hooks.json`: `hook_si`, `hook_rr`, `hook_fv`, #79's site and the frame-table entries, each with the owner's
   OK. Suite on test 9: 99 of 99; on the beta build: see the release commit.
 - `firmware/VERSION` "v0.40-beta (crops at switch-on, live looks, black borders)": this exact package is the one under the
-  camera test; E1479999.BIN 741c17da…fee1, `patch.py --release v0.40-beta` makes it byte for byte.
+  camera test; E1479999.BIN f5771793…8c73, `patch.py --release v0.40-beta` makes it byte for byte. The
+  Firmware Version page shows VERSION's first word without its "v" (at most 9 letters, the room beside a Lens line):
+  the first beta package (741c17da…fee1) showed no line of ours with a lens on (owner's camera).
 
 ## v0.40-alpha (try/v0.40-alpha = crop round 10 + section gates + PR #76 + try/v0.30.4; test 1, camera-tested 2026-11-17; GitHub pre-release)
 

@@ -260,7 +260,11 @@ def build(defaults, testfile, out):
     (out / 'lgver.inc').write_text(f'lg_ver:\n .asciz "{ver}"\n')
     # fwver 1: the version's short name (VERSION's first word) for the camera's Firmware Version screen (fwver.s)
     short = ver.split()[0]                        # fv_add shows it only if it fits whole (up to 14 letters)
-    assert short.isascii()
+    # v0.40-beta (owner's camera, 2026-11-18: "our firmware isnt listed in the firmware section on the menu anymore"):
+    # with a lens on, the page has room for 9 letters and "v0.40-beta" has 10, so the line was left out. The page
+    # shows the name without its "v", as the camera's own "Body : 1.1", and a name must fit beside a Lens line.
+    short = short[1:] if short.startswith('v') else short
+    assert short.isascii() and len(short) <= 9, f'{short!r}: the Firmware Version page shows at most 9 letters with a lens on'
     fv = [ord(c) for c in short] + [0] * max(1, 16 - len(short))   # 16 shorts at least (the tests put names there)
     (out / 'fvver.inc').write_text('fv_ver:\n .short ' + ', '.join(map(str, fv)) + '\n')
     import halation                               # v0.28: the halation numbers and tables (firmware/halation.py)

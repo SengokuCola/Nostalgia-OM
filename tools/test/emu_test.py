@@ -939,6 +939,11 @@ TESTS = {
         Boot(f's1 wait wait {FV_NAME("v0.00-longname")} {FV_WALK} {FV_AT}=02 {FV_LINE(1, "v0.00-longname")} '
              'ok wait wait expect:atmem expect:ink:565,305,770,360 poweroff'),
     ],
+    # ... the build's own name (VERSION's first word without its "v") fits after a Lens line: v0.40-beta's "v0.40-beta"
+    # (10 letters) did not, and the camera showed no line of ours with a lens on (owner, 2026-11-18).
+    'firmware-version-build-name-fits-after-a-lens': [
+        Boot(f's1 wait wait {FV_LENS} {FV_WALK} {FV_AT}=03 ok wait wait expect:atmem poweroff'),
+    ],
     # ... after a Lens line ours is the third (9 letters of room) ...
     'firmware-version-our-line-after-a-lens': [
         Boot(f's1 wait wait {FV_LENS} {FV_NAME("v0.00-abc")} {FV_WALK} {FV_AT}=03 {FV_LINE(2, "v0.00-abc")} '

@@ -20,8 +20,8 @@ camera-tested on its own (2026-11-18); this package is being tested as a whole.
   Image Stabilizer, AF Mode, Drive Mode, Metering, Record Mode, Remaining Files, Touch screen). Untick a row and that
   item leaves that display. Rear screen only; from the first half-press after switch-on.
 - **Faster film grain:** the grain picture is made about a third faster.
-- **Our version on the camera:** MENU → wrench tab, page 6 → Firmware Version shows "Caduceus : v0.40-beta" under
-  OM's version.
+- **Our version on the camera:** MENU → wrench tab, page 6 → Firmware Version shows "Caduceus : 0.40-beta" under
+  OM's version (also with a lens on).
 - **Faster looks and two fixes** ([#82](https://github.com/androidfanman/caduceus-om3/pull/82), by crombach): film
   switching and dial clicks on the colour wheel, Mix and RGB pages do less work; no more one-frame flash between the
   WB table and the Highlight & Shadow page; Border, Glow, Halation, Tone Balance and Film Grain step the same way as
