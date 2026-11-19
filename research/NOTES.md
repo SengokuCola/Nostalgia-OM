@@ -8668,3 +8668,6 @@ Assign C4, Set B, Assign C5: C4 showed Set B's films, and Set A again is ignored
     4.5 and Ultramax 400 7.6 (6.5..7.5 in a finished scan): level 1 is about ISO 100 film, 2 about ISO 400.
   - Possible g5 (not built; the owner's call): ~20 % single-pixel grain in Medium and Coarse (a centre-tap boost in
     the band pass), Cr weaker than Cb, chroma at full height. All three only change the band rows (the copies follow).
+    The centre-tap boost (same random bytes, 2-D kernel 1-3-1 x 1-3-1 with the centre 9 -> 12..14) gives Medium
+    lag 0.46..0.41, power 0.69..0.71 / 0.22..0.26 / 0.09..0.12, still round (axis / diagonal 0.99); Coarse (one
+    centre tap 9 -> 17..21) lag 0.65..0.58, power 0.47..0.49 / 0.04..0.06 / 0.01..0.03.
