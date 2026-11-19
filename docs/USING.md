@@ -55,7 +55,7 @@ The rows under Picture Mode change the film (or the COLOR) you're on, straight a
 | **Vignette Correction** | Off = the lens's natural darker corners. On = the camera corrects them. |
 | **Shading** | Darker or lighter corners, as an effect. |
 | **Glow Effect** | +1 to +5 adds a soft glow. −1 to −5 adds Clarity (crisper local contrast). 0 = off. |
-| **Halation Effect** | 0 to 5: a red-orange glow around bright lights, as on cinema film (CineStill). Works with or without Glow; fades out in bright daylight scenes. The halo fades gradually away from the light. Saving takes a little longer with it on (much less since v0.30.3). |
+| **Halation Effect** | 0 to 5: a red-orange glow around bright lights, as on cinema film (CineStill). Works with or without Glow; fades out in bright daylight scenes. The halo fades away from the light. Saving takes a little longer with it on (much less since v0.30.3, and less again since v0.40-beta3). |
 | **Film Grain Effect** | Off, Low, Med or High. Added in colour, with no extra wait after the photo. From v0.40-alpha: our own colour grain, Off and 1 to 5 (a film's Low / Med / High become 2 / 3 / 5); highlights stay white and Halation keeps its glow. |
 | **Grain Size** | From v0.40-alpha: Fine, Medium or Coarse, for Film Grain. |
 | **Border** | From v0.40-alpha: a white border, 0 (off) to 5, the same width on every side; from v0.40-beta the row runs from −5 to +5: minus is black, plus is white. JPEG only: the photo keeps its size and the border covers its outer edge; RAW is untouched. In live view a thin frame line shows where its inner edge will be (from the first half-press; not in video). |
