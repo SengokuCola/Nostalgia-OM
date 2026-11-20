@@ -8671,3 +8671,11 @@ Assign C4, Set B, Assign C5: C4 showed Set B's films, and Set A again is ignored
     The centre-tap boost (same random bytes, 2-D kernel 1-3-1 x 1-3-1 with the centre 9 -> 12..14) gives Medium
     lag 0.46..0.41, power 0.69..0.71 / 0.22..0.26 / 0.09..0.12, still round (axis / diagonal 0.99); Coarse (one
     centre tap 9 -> 17..21) lag 0.65..0.58, power 0.47..0.49 / 0.04..0.06 / 0.01..0.03.
+- **g5 preview (2026-11-19; model only, owner: "Make a preview now"):** g4 with the centre tap +4 (Medium, 9 -> 13)
+  / +12 (Coarse) and Cr sigma 9 (Cb 16). K = round(sigma / (73.9 sqrt(sum k^2)) 65536) over the 2-D kernel
+  (Medium 981, Coarse 515), add from (sum k) = 29 / 76. Exact model (seed 0x12345678, whole tile): Medium lag 0.43
+  0.05 0, power 0.61 0.22 0.12 (Ultramax 400 0.48 0.15 0.05; 0.61 0.24 0.12); Coarse 0.58 0.20 0.02; 0.43 0.05 0.03;
+  Y 48 / 16, Cb 16, Cr 9; repeats tile / 640 Medium 0.008 / 0.015, Coarse 0.010 / 0.016 (g4 0.009 / 0.015, 0.011 /
+  0.018); spectra round with an even floor at the edges, no lines. With no boost and Cr 16 the model equals g4 byte
+  for byte. Full-height chroma left out: at Medium / Coarse the colour grain is already about the size of the
+  brightness grain (lag 1 about 0.5 / 0.77 against Y 0.55 / 0.75). Pictures in the private test-builds folder.
