@@ -8702,3 +8702,9 @@ Assign C4, Set B, Assign C5: C4 showed Set B's films, and Set A again is ignored
   colour specks a little finer, as real film's). Repeats Cr 0.008..0.012. Pictures (grey, photo, Fourier: brightness,
   blue-yellow, red-green) in the private test-builds folder; owner's verdict pending. Firmware cost (estimate):
   the colour band twice as many rows; Coarse uses the existing 4-tap vertical pass.
+- **Cost of the colour fix (estimate from the loops, 2026-11-19; not built):** colour band rows 64 -> 128 a channel;
+  tg_vt about 4.5 / 7.75 (a new 2-tap loop) / 10.5 / 12.75 instructions a pixel at 1 / 2 / 3 / 4 taps, tg_h1c 9,
+  tg_h3c 16 (1-6-1 about 17). Extra a tile: Fine and Medium +2.0 M, Coarse +3.2 M (om-emu v0.40.1: 9.5 / 18.7 / 24.2
+  M). At the camera's v0.40.1 rate (Coarse 322 ms for 24.2 M): Fine ~126 -> ~152 ms, Medium ~248 -> ~274 ms, Coarse
+  322 -> ~365 ms (+26 / +26 / +43 ms). Work buffer +1,536 B (Coarse's 3-row colour rings): 15,816 B. Fine and Medium
+  had no bands: keeping their colour at half height costs nothing there (only Coarse +43 ms).
