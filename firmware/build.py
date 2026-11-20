@@ -33,6 +33,9 @@ class P:                                   # toolchain and stock identity (set f
 LAYOUT = HERE / 'vendor' / 'caduceus-bundles-layout.json'    # Caduceus (Apache-2.0) bundle-table layout
 HOOKS = {'.hook_sb_done': (0x6054c30f, bytes.fromhex('f1ecf064803e')),
          '.hook_af_write': (0x609a0e4f, bytes.fromhex('fc83e4ab3ea3')),
+         '.hook_zaf_lv': (0x609ed0d4, bytes.fromhex('dd5d6190ff0004')),
+         '.hook_zaf_eng': (0x60902150, bytes.fromhex('fc8e0ca33ca3')),
+         '.hook_zaf_llk1': (0x6098fcc4, bytes.fromhex('87fca955f43da3')),
          '.hook_dr_abs': (0x60901b15, bytes.fromhex('ddfd50a0ffb014')),
          '.hook_dr_sync': (0x60901b91, bytes.fromhex('dd2b5ba0fff020')),
          '.hook_dr_async': (0x60901bc9, bytes.fromhex('ddea5fa0ff3010')),

@@ -223,8 +223,23 @@ fs_arm: /* first card-ready half press; no DEBUG.TXT dependency */
  call fopen,[],4
  cmp 0,a0
  beq fs_arm_ready
+ mov a0,a2
+ clr d0
+ movbu d0,(4,sp)
+ mov sp,a0
+ inc4 a0
+ mov a2,a1
+ mov 1,d0
+ mov 1,d1
+ call fread,[d2,d3,a2,a3],24
+ mov a2,a0
  call fclose,[d2,a2,a3],16
  mov 1,d0
+ movbu (4,sp),d1
+ cmp 50,d1
+ bne 1f
+ mov 2,d0
+1:
  mov d0,(PH_MODE)
 fs_arm_ready:
  mov 1,d0

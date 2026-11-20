@@ -5,7 +5,7 @@
 .balign 4
 .set SW_CAP,512
 .set SW_PAGE,64
-.set SW_STRIDE,128
+.set SW_STRIDE,160
 .set SW_ROWS,sw_rows+0x40000000
 .set SW_HEAD,sw_head+0x40000000
 .set SW_RELEASE,sw_release+0x40000000
@@ -13,18 +13,21 @@
 .set SW_FI_INIT,sw_fi_init+0x40000000
 .set SW_FI_SEQ,sw_fi_seq+0x40000000
 .set SW_FI_PREV,sw_fi_prev+0x40000000
+.set SW_RAW_AB,sw_raw_ab+0x40000000
 sw_head: .long 0
 sw_release: .long 0
 sw_last_view: .long 0
 sw_fi_init: .long 0
 sw_fi_seq: .long 0
 sw_fi_prev: .space 12,0
+sw_raw_ab: .space 12,0
 sw_rows: .space SW_CAP*SW_STRIDE
 
 /* Call stock Focus Indicator getter 0x60153ee1 outside LOCK.
  * Guard lens record bounds and divisor monotonicity before invoking stock.
  * Returns d0 = valid | (index << 8) | (dir << 16) | (invoked << 31). */
 sw_sample_fi:
+ call sw_sample_raw_ab,[d2,d3,a2,a3],44
  clr d0
  mov d0,(4,sp)
  movbu (0xa32d3d32),d0
@@ -93,7 +96,10 @@ sw_capture:
  mov (a3),d2
  mov d2,d0
  and 511,d0
- asl 7,d0
+ asl 5,d0
+ mov d0,d1
+ asl 2,d0
+ add d1,d0
  mov SW_ROWS,a2
  add d0,a2
  mov a3,a0
@@ -341,6 +347,9 @@ sw_capture:
  mov d0,(116,a2)
  mov d0,(120,a2)
  mov d0,(124,a2)
+ mov d0,(128,a2)
+ mov d0,(132,a2)
+ mov d0,(136,a2)
  mov (0xa33e99ec),a0
  call sw_valid_zaf_ptr,[],0
  cmp 0,d0
@@ -352,23 +361,72 @@ sw_capture:
  call sw_valid_zaf_ptr,[],0
  cmp 0,d0
  beq 95f
- mov (2104,a0),d0
+ movhu (1052,a0),d0
+ movhu (3158,a0),d1
+ asl 16,d1
+ or d1,d0
  mov d0,(116,a2)
 95:
  mov (0xa33e99f4),a0
  call sw_valid_zaf_ptr,[],0
  cmp 0,d0
  beq 96f
- mov (2104,a0),d0
+ movhu (1052,a0),d0
+ movhu (3158,a0),d1
+ asl 16,d1
+ or d1,d0
  mov d0,(120,a2)
 96:
  mov (0xa33e99fc),a0
  call sw_valid_zaf_ptr,[],0
  cmp 0,d0
  beq 97f
- mov (4208,a0),d0
+ mov (2104,a0),d0
  mov d0,(124,a2)
+ mov (6316,a0),d0
+ mov d0,(136,a2)
 97:
+ mov (0xa33e9a08),a0
+ call sw_valid_zaf_ptr,[],0
+ cmp 0,d0
+ beq 98f
+ mov (2104,a0),d0
+ mov d0,(128,a2)
+98:
+ mov (0xa33e99c8),a0
+ call sw_valid_zaf_ptr,[],0
+ cmp 0,d0
+ beq 99f
+ mov (2104,a0),d0
+ mov d0,(132,a2)
+99:
+ /* Route A v4 tail: Layer 0 raw A/B words + 1D lag xcorr + hook/ctrl state. */
+ mov SW_RAW_AB,a0
+ mov (a0),d0
+ mov d0,(140,a2)
+ mov (4,a0),d0
+ mov d0,(144,a2)
+ mov (8,a0),d0
+ mov d0,(148,a2)
+ mov (ZAF_LV_CNT),d0
+ and 0xffff,d0
+ mov (ZAF_LLK1_CNT),d1
+ asl 16,d1
+ or d1,d0
+ mov d0,(152,a2)
+ clr d0
+ movhu d0,(156,a2)
+ mov (0xa33f3644),a0
+ call sw_valid_zaf_ptr,[],0
+ cmp 0,d0
+ beq 995f
+ movhu (20,a0),d0
+ movhu d0,(156,a2)
+995:
+ movbu (0xa33ca30c),d0
+ movbu d0,(158,a2)
+ movbu (0xa33df455),d0
+ movbu d0,(159,a2)
  mov d2,(SW_HEAD)
  ret [d2,d3,a2,a3],24
 
@@ -391,6 +449,124 @@ sw_valid_zaf_ptr:
 1:
  clr d0
  ret [],0
+
+/* Leaf check: is a0 a 4-byte-aligned DRAM pointer safe for +1.87MB PDAF plane? */
+sw_valid_pdaf_ptr:
+ mov a0,d0
+ and 3,d0
+ bne 1f
+ cmp 0x62000000,a0
+ bcs 1f
+ cmp 0x71e00000,a0
+ bcs 2f
+ cmp 0xa2000000,a0
+ bcs 1f
+ cmp 0xb1e00000,a0
+ bcc 1f
+2:
+ mov 1,d0
+ ret [],0
+1:
+ clr d0
+ ret [],0
+
+/* Outside LOCK: sample raw center A/B words and compute 1D u16 SAD cross-corr
+ * (lags -8..+8 over 32 samples) on the latest completed Layer 0 raw A/B slot. */
+sw_sample_raw_ab:
+ mov SW_RAW_AB,a0
+ clr d0
+ mov d0,(a0)
+ mov d0,(4,a0)
+ mov 0x8000,d0
+ mov d0,(8,a0)
+ movhu (0xa33e9c8c),d0
+ cmp 4,d0
+ bcc 9f
+ asl 4,d0
+ mov 0xa33e9be0,a1
+ add d0,a1
+ mov (a1),a2
+ mov 0xa33e9c20,a1
+ add d0,a1
+ mov (a1),a3
+ mov a2,a0
+ call sw_valid_pdaf_ptr,[],0
+ cmp 0,d0
+ beq 9f
+ mov a3,a0
+ call sw_valid_pdaf_ptr,[],0
+ cmp 0,d0
+ beq 9f
+ add 933888,a2
+ add 933888,a3
+ mov SW_RAW_AB,a0
+ mov (a2),d0
+ mov d0,(a0)
+ mov (a3),d0
+ mov d0,(4,a0)
+ mov a2,(16,sp)
+ mov a3,(20,sp)
+ mov 0x7fffffff,d0
+ mov d0,(4,sp)                     /* min_sad */
+ clr d0
+ mov d0,(8,sp)                     /* max_sad */
+ mov -32768,d0
+ mov d0,(12,sp)                    /* best_lag */
+ mov 0,a2                          /* lag_idx = 0..16 -> lag = lag_idx - 8 */
+1:
+ mov (16,sp),a0                    /* ptrA = base_a */
+ mov (20,sp),a1                    /* ptrB = base_b - 16 + 2*lag_idx */
+ add -16,a1
+ mov a2,d0
+ add d0,d0
+ add d0,a1
+ clr d2                            /* sad = 0 */
+ mov 32,d3
+2:
+ movhu (a0),d0
+ movhu (a1),d1
+ sub d1,d0
+ cmp 0,d0
+ bge 3f
+ not d0
+ inc d0
+3:
+ add d0,d2
+ add 2,a0
+ add 2,a1
+ add -1,d3
+ bne 2b
+ mov (4,sp),d0
+ cmp d0,d2
+ bcc 4f
+ mov d2,(4,sp)
+ mov a2,d0
+ add -8,d0
+ mov d0,(12,sp)
+4:
+ mov (8,sp),d0
+ cmp d2,d0
+ bcc 5f
+ mov d2,(8,sp)
+5:
+ inc a2
+ cmp 17,a2
+ bne 1b
+ mov (8,sp),d0
+ mov (4,sp),d1
+ sub d1,d0
+ lsr 4,d0
+ cmp 65535,d0
+ bls 6f
+ mov 65535,d0
+6:
+ asl 16,d0
+ mov (12,sp),d1
+ and 0xffff,d1
+ or d1,d0
+ mov d0,(SW_RAW_AB+8)
+9:
+ ret [d2,d3,a2,a3],44
 
 /* Hash 8 words near the center (+0xe4000 = 933888 B, mid of 1,866,240 B plane)
  * of a raw PDAF buffer pointer in a1, if aligned and inside DRAM bounds. */
@@ -477,7 +653,10 @@ sw_flush:
 sw_copy_row:
  mov d2,d0
  and 511,d0
- asl 7,d0
+ asl 5,d0
+ mov d0,d1
+ asl 2,d0
+ add d1,d0
  mov SW_ROWS,a2
  add d0,a2
  clr d0
@@ -486,7 +665,7 @@ sw_copy_row:
  mov (a2),d1
  cmp d2,d1
  bne sw_raced
- mov 32,d1
+ mov 40,d1
 5:
  mov (a2),d0
  mov d0,(a3)
@@ -588,7 +767,7 @@ sw_quiet: .long 0
 sw_saved: .long 0
 sw_number: .long 0
 sw_file: .ascii "OMSW"
- .long 3
+ .long 4
 sw_session: .long 0
 sw_first: .long 0
 sw_count: .long 0

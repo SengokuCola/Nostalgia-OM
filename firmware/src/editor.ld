@@ -1,6 +1,9 @@
 SECTIONS {
   .hook_sb_done 0x6054c30f : { *(.hook_sb_done) }
   .hook_af_write 0x609a0e4f : { *(.hook_af_write) }
+  .hook_zaf_lv 0x609ed0d4 : { *(.hook_zaf_lv) }
+  .hook_zaf_eng 0x60902150 : { *(.hook_zaf_eng) }
+  .hook_zaf_llk1 0x6098fcc4 : { *(.hook_zaf_llk1) }
   .hook_dr_abs 0x60901b15 : { *(.hook_dr_abs) }
   .hook_dr_sync 0x60901b91 : { *(.hook_dr_sync) }
   .hook_dr_async 0x60901bc9 : { *(.hook_dr_async) }
@@ -325,3 +328,6 @@ dr_stock_mft_ofs = 0x602f3ee9;
 dr_stock_mft_ofs2 = 0x602f3ee9;
 af_stock_return = 0x609a0e55;
 sw_stock_fi = 0x60153ee1;
+zaf_stock_lens_ptr = 0x602f3231;
+zaf_eng_resume = 0x60902156;
+zaf_llk1_resume = 0x6098fccb;

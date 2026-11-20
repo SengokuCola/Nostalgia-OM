@@ -120,6 +120,11 @@ fs_diag_text:
  mov 1,d3
  clr d2
  call fs_diag_words,[d2,d3,a2,a3],24
+ LGS zaf_hook_label
+ mov zaf_hook_fields,a2
+ mov 4,d3
+ mov 1,d2
+ call fs_diag_words,[d2,d3,a2,a3],24
 9:
  ret [d2,d3,a2,a3],24
 
@@ -163,6 +168,10 @@ fs_diag_states:
 sb_diag_fields:
  .long sb_enabled+0x40000000,SB_JOBS,SB_DRIVE,sb_produced+0x40000000,SB_CONSUMED,SB_REFUSED,SB_RESULT
 sb_diag_label: .asciz "\r\nBEEP on jobs drive queued consumed refused lastResult: "
+.balign 4
+zaf_hook_fields:
+ .long PH_MODE,ZAF_LV_CNT,ZAF_ENG_CNT,ZAF_LLK1_CNT
+zaf_hook_label: .asciz "ZAF_UNLOCK ph_mode lv_bypass eng_zaf_only llk1_guard: "
 .balign 4
 fs_diag_regs:
  .long 0x60,0x390,0x3a8,0x3c0,0x3d8,0x400,0x42c,0x430

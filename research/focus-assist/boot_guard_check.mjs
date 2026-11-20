@@ -50,6 +50,19 @@ try {
     const sb = lab.call(0x6054c30f-IMAGE_BASE+0x50000000,{d3:desc},null,[0xf0,76],10000,
       new Set([sy.sb_record_done,sy.sb_reply_join]));
     assert.equal(sb.pc,bits & 0x20 ? sy.sb_record_done : sy.sb_reply_join);
+    for (const arm of [0,1]) {
+      lab.sim.word(sy.FS_ON, arm);
+      const armed = Boolean(arm && (bits & 0x20));
+      const zLv = lab.call(0x609ed0d4-IMAGE_BASE+0x50000000,{d0:0,d2:0x1700},null,[0xf0,36],10000,
+        new Set([sy.zaf_lv_armed,sy.zaf_stock_lens_ptr]));
+      assert.equal(zLv.pc,armed ? sy.zaf_lv_armed : sy.zaf_stock_lens_ptr);
+      const zEng = lab.call(0x60902150-IMAGE_BASE+0x50000000,{d1:0x1234,d3:3},null,[0xf0,44],10000,
+        new Set([sy.zaf_eng_armed,sy.zaf_eng_resume]));
+      assert.equal(zEng.pc,armed ? sy.zaf_eng_armed : sy.zaf_eng_resume);
+      const zLlk = lab.call(0x6098fcc4-IMAGE_BASE+0x50000000,{d0:0,d1:472},null,[0xe0,44],10000,
+        new Set([sy.zaf_llk1_armed,sy.zaf_llk1_resume]));
+      assert.equal(zLlk.pc,armed ? sy.zaf_llk1_armed : sy.zaf_llk1_resume);
+    }
   }
   // Execute the assembled first-event routine with a mounted marker and a
   // successful RTOS task allocation. DisplayLab.call verifies the entire

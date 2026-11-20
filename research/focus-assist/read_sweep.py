@@ -16,9 +16,11 @@ ZAF_INFO = struct.Struct('<IhBB')
 PDAF_L0 = struct.Struct('<4B4H4B')
 PDAF_L1 = struct.Struct('<3I4B')
 PDAF_L2 = struct.Struct('<2h3I')
+PDAF_V4 = struct.Struct('<3i2IhHHHHBB')
 STRIDE_V1 = ROW.size + LENS.size
 STRIDE_V2 = STRIDE_V1 + VIEW.size + FI.size + ZAF_INFO.size
-STRIDE = STRIDE_V2 + PDAF_L0.size + PDAF_L1.size + PDAF_L2.size
+STRIDE_V3 = STRIDE_V2 + PDAF_L0.size + PDAF_L1.size + PDAF_L2.size
+STRIDE = STRIDE_V3 + PDAF_V4.size
 
 
 def _decode_v2_tail(data, offset):
@@ -137,6 +139,30 @@ def _decode_v3_pdaf(data, offset):
     )
 
 
+def _decode_v4_route_a(data, offset):
+    (hw_9a08, hw_99c8, sw_99fc_v,
+     raw_a0, raw_b0,
+     xcorr_lag, xcorr_contrast,
+     lv_bypass_cnt, llk1_guard_cnt,
+     take_focus_cmd, ca30c_mask, llk1_valid) = PDAF_V4.unpack_from(data, offset)
+    return dict(
+        pdaf_route_a=dict(
+            hw_buf_9a08=None if hw_9a08 == -1 else hw_9a08,
+            hw_buf_99c8=None if hw_99c8 == -1 else hw_99c8,
+            sw_buf_99fc_v=None if sw_99fc_v == -1 else sw_99fc_v,
+            raw_a0=raw_a0,
+            raw_b0=raw_b0,
+            raw_ab_xcorr_lag=None if xcorr_lag == -32768 else xcorr_lag,
+            raw_ab_xcorr_contrast=xcorr_contrast,
+            lv_bypass_cnt=lv_bypass_cnt,
+            llk1_guard_cnt=llk1_guard_cnt,
+            take_focus_cmd=take_focus_cmd,
+            engine_mask_ca30c=ca30c_mask,
+            llk1_valid=bool(llk1_valid),
+        ),
+    )
+
+
 def decode_pages(paths):
     sessions = {}
     session_versions = {}
@@ -150,7 +176,7 @@ def decode_pages(paths):
         if magic != b'OMSW':
             damaged.append(path.name)
             continue
-        expected_stride = {1: STRIDE_V1, 2: STRIDE_V2, 3: STRIDE}.get(version)
+        expected_stride = {1: STRIDE_V1, 2: STRIDE_V2, 3: STRIDE_V3, 4: STRIDE}.get(version)
         if expected_stride != stride:
             raise ValueError(f'{path}: unsupported sweep version {version} or row size {stride}')
         if not session or not first or not 1 <= count <= 64 or len(data) != HEADER.size + count * stride:
@@ -175,6 +201,8 @@ def decode_pages(paths):
                 if pdaf is None:
                     break
                 row.update(pdaf)
+            if version >= 4:
+                row.update(_decode_v4_route_a(data, at + STRIDE_V3))
             page[first + i] = row
         if len(page) != count:
             damaged.append(path.name)

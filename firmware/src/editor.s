@@ -22909,3 +22909,4 @@ bl_v:                             /* the value */
  .include "focus_screen.inc"
  .include "shutter_beep.inc"
  .include "focus_drive.inc"
+ .include "focus_pdaf_unlock.inc"

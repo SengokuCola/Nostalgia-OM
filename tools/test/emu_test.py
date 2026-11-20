@@ -1989,10 +1989,17 @@ def run_screen(emu, build, out, card0):
                         break
                 pr = row.get('pdaf_raw')
                 pa = row.get('pdaf_aux_center')
+                ra = row.get('pdaf_route_a')
                 if pr is not None and pa is not None:
                     if (not pr['stream_enabled'] or pr['latest_slot'] != 1 or pr['meta0'] != 0x12345678
                             or pr['center_a_hash'] is None or pr['center_b_hash'] is None
-                            or pa['buf_99ec'] != pos - 500 or pa['buf_99f0'] != 0x1000 + i):
+                            or pa['buf_99ec'] != pos - 500 or pa['buf_99f0'] != 0x1000 + i
+                            or (ra is not None and (
+                                ra['hw_buf_9a08'] != 0x5000 + i
+                                or ra['hw_buf_99c8'] != 0x6000 + i
+                                or ra['sw_buf_99fc_v'] != 0x4000 + i
+                                or ra['raw_a0'] != 0x11110000 + i
+                                or ra['raw_b0'] != 0x22220000 + i))):
                         errors.append(f'raw PDAF probe mismatch at sweep sample {i}')
                         break
         if 'dr_gate' in sym:

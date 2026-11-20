@@ -1,5 +1,9 @@
 {
  "hooks": {
+  "hook_af_write": {
+   "addr": "0x609a0e4f",
+   "len": 6
+  },
   "hook_ag": {
    "addr": "0x610833b3",
    "len": 5
@@ -84,9 +88,69 @@
    "addr": "0x611d10fb",
    "len": 8
   },
+  "hook_dr_abs": {
+   "addr": "0x60901b15",
+   "len": 7
+  },
+  "hook_dr_abs2": {
+   "addr": "0x6092f70b",
+   "len": 7
+  },
+  "hook_dr_async": {
+   "addr": "0x60901bc9",
+   "len": 7
+  },
+  "hook_dr_main": {
+   "addr": "0x60901bf2",
+   "len": 7
+  },
+  "hook_dr_mft_move": {
+   "addr": "0x609ae38b",
+   "len": 7
+  },
+  "hook_dr_mft_move2": {
+   "addr": "0x609ae396",
+   "len": 7
+  },
+  "hook_dr_mft_ofs": {
+   "addr": "0x609aeb13",
+   "len": 7
+  },
+  "hook_dr_mft_ofs2": {
+   "addr": "0x609af02d",
+   "len": 7
+  },
+  "hook_dr_sub": {
+   "addr": "0x60901c05",
+   "len": 7
+  },
+  "hook_dr_sync": {
+   "addr": "0x60901b91",
+   "len": 7
+  },
   "hook_ex": {
    "addr": "0x60457578",
    "len": 8
+  },
+  "hook_fs_image": {
+   "addr": "0x60210fd3",
+   "len": 8
+  },
+  "hook_fs_level": {
+   "addr": "0x60211067",
+   "len": 5
+  },
+  "hook_fs_stop": {
+   "addr": "0x601f158a",
+   "len": 7
+  },
+  "hook_fs_th": {
+   "addr": "0x601f1d66",
+   "len": 8
+  },
+  "hook_fs_tick": {
+   "addr": "0x601f15c4",
+   "len": 7
   },
   "hook_fv": {
    "addr": "0x6120b698",
@@ -180,6 +244,10 @@
    "addr": "0x611c3cb5",
    "len": 8
   },
+  "hook_sb_done": {
+   "addr": "0x6054c30f",
+   "len": 6
+  },
   "hook_sc": {
    "addr": "0x610cdf05",
    "len": 6
@@ -248,73 +316,17 @@
    "addr": "0x605048c1",
    "len": 6
   },
-  "hook_af_write": {
-   "addr": "0x609a0e4f",
+  "hook_zaf_eng": {
+   "addr": "0x60902150",
    "len": 6
   },
-  "hook_dr_abs": {
-   "addr": "0x60901b15",
+  "hook_zaf_llk1": {
+   "addr": "0x6098fcc4",
    "len": 7
   },
-  "hook_dr_abs2": {
-   "addr": "0x6092f70b",
+  "hook_zaf_lv": {
+   "addr": "0x609ed0d4",
    "len": 7
-  },
-  "hook_dr_async": {
-   "addr": "0x60901bc9",
-   "len": 7
-  },
-  "hook_dr_main": {
-   "addr": "0x60901bf2",
-   "len": 7
-  },
-  "hook_dr_mft_move": {
-   "addr": "0x609ae38b",
-   "len": 7
-  },
-  "hook_dr_mft_move2": {
-   "addr": "0x609ae396",
-   "len": 7
-  },
-  "hook_dr_mft_ofs": {
-   "addr": "0x609aeb13",
-   "len": 7
-  },
-  "hook_dr_mft_ofs2": {
-   "addr": "0x609af02d",
-   "len": 7
-  },
-  "hook_dr_sub": {
-   "addr": "0x60901c05",
-   "len": 7
-  },
-  "hook_dr_sync": {
-   "addr": "0x60901b91",
-   "len": 7
-  },
-  "hook_fs_image": {
-   "addr": "0x60210fd3",
-   "len": 8
-  },
-  "hook_fs_level": {
-   "addr": "0x60211067",
-   "len": 5
-  },
-  "hook_fs_stop": {
-   "addr": "0x601f158a",
-   "len": 7
-  },
-  "hook_fs_th": {
-   "addr": "0x601f1d66",
-   "len": 8
-  },
-  "hook_fs_tick": {
-   "addr": "0x601f15c4",
-   "len": 7
-  },
-  "hook_sb_done": {
-   "addr": "0x6054c30f",
-   "len": 6
   }
  },
  "patch_sites": [
@@ -975,7 +987,7 @@
   "0x61571cf4:1",
   "0x61571cf8:12",
   "0x615863aa:1",
-  "0x615863ac:4",
+  "0x615863ad:3",
   "0x61596f02:1",
   "0x61596f04:4",
   "0x615adcc8:4",

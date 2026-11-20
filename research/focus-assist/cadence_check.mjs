@@ -122,6 +122,7 @@ if (sy.sw_flush) {
  lab.sim.word(0xa33e99e8,0xaa094900);lab.sim.word(0xa33e99ac,0xa7c53c00);
  lab.sim.word(0xa33e99ec,0xaa0c0000);lab.sim.word(0xa33e99f0,0xaa0e0000);
  lab.sim.word(0xa33e99f4,0xaa0e2000);lab.sim.word(0xa33e99fc,0xaa0e4000);
+ lab.sim.word(0xa33e9a08,0xaa0e8000);lab.sim.word(0xa33e99c8,0xaa0ec000);
  lab.sim.word(0xa33f2c38,0);lab.sim.write(slot+10536,Uint8Array.of(0));
  lab.sim.write(slot+10556,Uint8Array.of(1));lab.sim.write(0xa32d3d32,Uint8Array.of(1));
  lab.sim.word(0xa32c9c24,lens);
@@ -149,9 +150,10 @@ if (sy.sw_flush) {
   half(0x6299748e,pos);
   lab.sim.word(0x62997474,i<=500?50000+i:50500);
   half(0x6a0c0000+1052,pos-500);
-  lab.sim.word(0x6a0e0000+2104,0x1000+i);
-  lab.sim.word(0x6a0e2000+2104,0x2000+i);
-  lab.sim.word(0x6a0e4000+4208,0x3000+i);
+  half(0x6a0e0000+1052,0x1000+i);half(0x6a0e0000+3158,0);
+  half(0x6a0e2000+1052,0x2000+i);half(0x6a0e2000+3158,0);
+  lab.sim.word(0x6a0e4000+2104,0x3000+i);lab.sim.word(0x6a0e4000+6316,0x4000+i);
+  lab.sim.word(0x6a0e8000+2104,0x5000+i);lab.sim.word(0x6a0ec000+2104,0x6000+i);
   lab.sim.word(0x66600000+933888,0x11110000+i);
   lab.sim.word(0x66900000+933888,0x22220000+i);
   lab.sim.word(slot+10552,100000+i);
