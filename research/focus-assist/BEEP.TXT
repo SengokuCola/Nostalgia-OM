@@ -1,0 +1,1 @@
+Enable the optional OM-3 electronic still capture confirmation. Remove this file and restart to mute it.

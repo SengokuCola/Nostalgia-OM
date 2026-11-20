@@ -111,6 +111,11 @@ LV_SITE, LV_SKIP, LV_X = 0x6046b8bb, 0x6046b94f, 0x6046b8ee   # hook_lv (a COLOR
 GRAINTILE = 'grain-tile-matches-the-model'
 GRAINTILE_CASES = [('fine-fast', 1, 0xb0100000), ('medium-fast', 2, 0xb0100000), ('coarse-fast', 3, 0xb0100000),
                    ('medium-across-an-edge', 2, 0xaff00000)]
+FOCUS = 'focus-probe-readonly-and-bounds'
+CONTRAST = 'contrast-probe-snapshot-and-ring'
+SCREEN = 'focus-screen-native-pipeline-and-opt-in'
+CAMERA = 'camera-log-layout-and-refresh-replay'
+XPAN = 'xpan-live-capture-and-shutter-beep'
 REAR_DIAL = 0x9032                               # the rear dial's event (cv_ev); a1 its signed clicks
 # (name, a1): first no clicks (the value as it is), then a fast turn of 3, then one past the range.
 DIAL_CASES = [('as-is', 0), ('up-3', -3), ('down-20', 20)]
@@ -390,6 +395,7 @@ class Boot:
     mode_dial: int = MODE_DIAL_P
     photo_switch: int = PHOTO_SWITCH_PHOTO    # None leaves PSET0 unset: the movie switch
     no_log: bool = False                           # no debug log may be on the card after this boot
+    language: str = 'en'
     card: dict = field(default_factory=dict)   # OM3MOD file name -> a FIXTURES key put on the card before this boot,
                                                # or None to remove the file
     watch: tuple = ()                              # build symbols: each time the code reaches one is a hit
@@ -749,6 +755,22 @@ def ck_line(mem, card, matches, on_builtin, with_values):
 
 
 TESTS = {
+    'focus-probe-log': [Boot('expect:mem:{cf_latest}=00000000 s1 wait wait poweroff', expect=[
+        r'^FOCUS PROBE 2 - raw lens state, NOT focus accuracy',
+        r'^FP \d+ valid=\d+ status=\d+ inhibit=\d+ dir=\d+ record=[01] pos=-?\d+ lo=-?\d+ hi=-?\d+$',
+        r'^Card files: all match this firmware$',
+    ])],
+    'zh-cn-film-control-titles': [
+        Boot('s1 wait wait ' + ' '.join(
+            f'expect:str:{sid:x}=' + (text + '\0').encode('utf-16le').hex()
+            for sid, text in [(0x7f00, '暗角校正'), (0x7f01, '标准'),
+                              (0x7f02, '黑色 / 白色'), (0x7f03, '白色'),
+                              (0x7f04, '白平衡补偿'), (0x7f05, 'G-M'),
+                              (0x7f06, '柔光效果'), (0x7f07, '边框'),
+                              (0x7f08, '胶片光环'), (0x7f09, '分离色调平衡'),
+                              (0x7f65, '关闭'), (0x7f66, '开启'), (0x7f0a, '颗粒大小')])
+             + ' poweroff', expect=[r'^Card files: all match this firmware$'], language='zh-CN'),
+    ],
     'boot-smoke': [
         Boot('s1 wait wait poweroff', expect=[
             r'^Card files: all match this firmware$',
@@ -1230,6 +1252,13 @@ def check_emu_pin(emu):
     emu_rev = git('rev-parse', 'HEAD', cwd=pathlib.Path(emu).parent) or '?'
     if emu_rev != pinned:
         sys.exit(f'om-emu is at {emu_rev[:7]}, but {pin} names {pinned[:7]}: run research/setup.sh')
+    spec = importlib.util.spec_from_file_location('camera_fidelity', REPO / 'tools/emulator/camera_fidelity.py')
+    overlay = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(overlay)
+    try:
+        print('Camera fidelity overlay:', overlay.verify(pathlib.Path(emu).parent))
+    except ValueError as error:
+        sys.exit(str(error))
     age = (datetime.date.today() - datetime.date.fromisoformat(checked)).days
     if age > EMU_MAX_AGE_DAYS:
         print(f'om-emu: the pin was last checked {age} days ago. Run tools/emulator/bump_om_emu.sh.', file=sys.stderr)
@@ -1336,7 +1365,7 @@ def elf_symbols(path):
 
 
 def boot_key(boot):
-    return (boot.tokens, boot.mode_dial, boot.photo_switch, tuple(sorted(boot.card.items())), boot.watch, boot.hits,
+    return (boot.tokens, boot.mode_dial, boot.photo_switch, boot.language, tuple(sorted(boot.card.items())), boot.watch, boot.hits,
             boot.env, boot.tids)
 
 
@@ -1360,7 +1389,7 @@ def run_boot(emu, build, d, i, boot, card, syms, fixtures=None):
             syms.update({k: f'{v:x}' for k, v in elf_symbols(build / 'p.elf').items()})
         tokens = tokens.format_map(syms)
     env = {**os.environ, 'OM_EMU_MODEL': MODEL, 'NV_FILE': str(d / 'nv.bin'), 'MODE0': str(boot.mode_dial),
-           'PSET0': str(boot.photo_switch)}
+           'PSET0': str(boot.photo_switch), 'OM3_LANGUAGE': boot.language}
     env.update(writer_env(build))
     if boot.watch:
         env.update(WATCH=','.join(syms[n] for n in boot.watch), WSTR='1', WBOOT='1')
@@ -1812,6 +1841,347 @@ def run_graintile(emu, build, out, card0):
             rows = sorted(set(np.nonzero(tile != want)[0].tolist()))
             errors.append(f'{name}: {int((tile != want).sum())} bytes differ from the model, rows {rows[:12]}')
     return GRAINTILE, errors
+def run_xpan(emu, build, out, card0):
+    dest = out / XPAN
+    dest.mkdir(parents=True, exist_ok=True)
+    marker = dest / 'BEEP.TXT'
+    marker.write_text('Electronic shutter confirmation\n')
+    enabled = dest / 'enabled.omsd'
+    shutil.copyfile(card0, enabled)
+    card_tool(emu, 'put', enabled, marker, 'OM3MOD/BEEP.TXT')
+    errors = []
+    for name, script, args in [('tft-enabled', 'session_check.mjs', ['tft', enabled]),
+                               ('evf-enabled', 'session_check.mjs', ['evf', enabled]),
+                               ('evf-off', 'session_check.mjs', ['evf'])]:
+        result = node(REPO/'research/xpan'/script, emu, build, *args,
+                      env={**os.environ, 'OM_EMU_MODEL': MODEL}, timeout=300)
+        (dest / (name + '.log')).write_text(result.stdout + result.stderr)
+        if result.returncode:
+            errors.append(name + ' failed: see ' + name + '.log')
+    return XPAN, errors
+
+
+def run_camera(emu, build, out):
+    d = out / CAMERA
+    d.mkdir(parents=True, exist_ok=True)
+    (d / 'symbols.json').write_text(json.dumps(elf_symbols(build / 'p.elf')))
+    shutil.copyfile(REPO / 'tools/emulator/camera-fidelity.json', d / 'emulator-overlay.json')
+    errors = []
+    for name, args in [('compositor', [pathlib.Path(emu) / 'checks/check_camera_layout.mjs']),
+                       ('boot-guard', [REPO / 'research/focus-assist/boot_guard_check.mjs', emu, build, d / 'symbols.json']),
+                       ('contrast-screen', [REPO / 'research/focus-assist/contrast_screen_check.mjs', emu, build, d / 'symbols.json']),
+                       ('evf-fields', [REPO / 'research/focus-assist/evf_field_check.mjs', emu, build, d / 'symbols.json']),
+                       ('continuity', [REPO / 'research/focus-assist/continuity_check.mjs', emu, build, d / 'symbols.json', 'stable']),
+                       ('replay', [REPO / 'research/focus-assist/camera_replay.mjs', emu, build, d / 'symbols.json', d])]:
+        r = node(*args, env={**os.environ, 'OM_EMU_MODEL': MODEL}, timeout=300)
+        (d / (name + '.log')).write_text(r.stdout + r.stderr)
+        if r.returncode:
+            errors.append(name + ' failed: see ' + name + '.log')
+    return CAMERA, errors
+
+
+def run_screen(emu, build, out, card0):
+    """Built capture/render/composite code plus actual first-half-press marker gate."""
+    d = out / SCREEN
+    d.mkdir(parents=True, exist_ok=True)
+    sym = elf_symbols(build / 'p.elf')
+    (d / 'symbols.json').write_text(json.dumps(sym))
+    r = node(REPO / 'research/focus-assist/firmware_screen_check.mjs', emu, build,
+             d / 'symbols.json', d, env={**os.environ, 'OM_EMU_MODEL': MODEL})
+    (d / 'pipeline.log').write_text(r.stdout + r.stderr)
+    errors = [] if r.returncode == 0 else ['native pipeline failed (pipeline.log)']
+    if r.returncode == 0:
+        reports = json.loads((d / 'firmware-screen-results.json').read_text())
+        for device in ('tft', 'evf'):
+            if not any(row.get('device') == device and row.get('cameraAlignedOffset')
+                       and row.get('bufferSwapRetainsEpoch') and row.get('stockDisabledLayerRecovered')
+                       for row in reports):
+                errors.append(f'{device}: missing camera-offset / TH recovery regression')
+    decoder_spec = importlib.util.spec_from_file_location('screen_decoder', REPO / 'research/focus-assist/read_screen.py')
+    decoder = importlib.util.module_from_spec(decoder_spec)
+    decoder_spec.loader.exec_module(decoder)
+    if r.returncode == 0:
+        for device in ('tft', 'evf'):
+            report = decoder.decode((d / f'{device}-diagnostic.txt').read_text())
+            for phase in ('PRE', 'POST'):
+                row = report[f'{device.upper()}_{phase}']
+                if not row['samples'] or not row['DMAEN'] & 32 or row['IMG1DMALD'] == 0:
+                    errors.append(f'{device}: missing active {phase} geometry')
+                if phase == 'POST' and (row['IMG2AREA1'] & 65535, row['IMG2AREA2'] & 65535) != (128, 128):
+                    errors.append(f'{device}: wrong saved tile size')
+            if report['SD']['cap'] != 1 or report['SD']['why'] != 2 or report['SL']['IMG1FMT'] != 3:
+                errors.append(f'{device}: diagnostic lost injected format rejection')
+    r = node(REPO / 'research/focus-assist/cadence_check.mjs', emu, build, card0,
+             d / 'symbols.json', d, env={**os.environ, 'OM_EMU_MODEL': MODEL})
+    (d / 'cadence.log').write_text(r.stdout + r.stderr)
+    if 'dr_gate' in sym:
+        drive_spec = importlib.util.spec_from_file_location(
+            'drive_decoder', REPO / 'research/focus-assist/read_lens_drive.py')
+        drive_decoder = importlib.util.module_from_spec(drive_spec)
+        drive_spec.loader.exec_module(drive_decoder)
+    if r.returncode:
+        errors.append('native DISPLAY cadence failed (cadence.log)')
+    else:
+        traced = d / 'FOCUSTRC.BIN'
+        card_tool(emu, 'get', d / 'focus-trace.omsd', 'OM3MOD/FOCUSTRC.BIN', traced)
+        spec = importlib.util.spec_from_file_location('trace_decoder', REPO / 'research/focus-assist/read_focus_trace.py')
+        trace_decoder = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(trace_decoder)
+        snapshot = trace_decoder.decode(traced.read_bytes())
+        if 'sw_flush' in sym:
+            sweep = json.loads((d / 'sweep-range.json').read_text())
+            pages = []
+            for i in range(1, sweep['lastFile'] + 1):
+                page = d / f'ZS{i:06}.BIN'
+                card_tool(emu, 'get', d / 'sweep-card.omsd', 'OM3MOD/' + page.name, page)
+                pages.append(page)
+            sys.path.insert(0, str(REPO / 'research/focus-assist'))
+            from read_sweep import decode_pages
+            trace = decode_pages(pages)
+            session, restarted = trace['sessions']
+            if (restarted['session'] != sweep['lastFile'] or restarted['missing_ranges']
+                    or [row['seq'] for row in restarted['rows']] != [1]):
+                errors.append('second session lost its tail or overwrote previous pages')
+            if session['missing_ranges'] or trace['damaged_pages']:
+                errors.append('torn page or missing sweep history')
+            rows_by_id = {e['seq']: e for e in session['rows']}
+            for i in range(sweep['total']):
+                row = rows_by_id.get(sweep['first'] + i)
+                pos = 250 + min(i, 500)
+                if not row or (row['lens_position'], row['published_values'][0], row['publish_token']) != (
+                        pos, pos - 500, 100000 + i):
+                    errors.append(f'sweep lost a paired lens/zone sample at {i}')
+                    break
+        if 'dr_gate' in sym:
+            drive = d / 'LENSDRV.BIN'
+            card_tool(emu, 'get', d / 'drive-trace.omsd', 'OM3MOD/LENSDRV.BIN', drive)
+            rows = [r for r in drive_decoder.decode(drive.read_bytes())['events']
+                    if r.get('ofs_time') == 320 and r['kind'] == 'mft_offset_vd']
+            if [r['ofs_move'] for r in rows] != [-137, 137]:
+                errors.append('signed lens offsets missing from shutter-saved SD trace')
+            elif not 0 < ((rows[1]['submit_tick'] - rows[0]['submit_tick']) & 0x7fffffff) < 0x40000000:
+                errors.append('driver submission clock did not advance between packets')
+            if 'zr_sample' in sym:
+                zone_path = d / 'ZAFZONE.BIN'
+                card_tool(emu, 'get', d / 'drive-trace.omsd', 'OM3MOD/ZAFZONE.BIN', zone_path)
+                zone_spec = importlib.util.spec_from_file_location(
+                    'zone_decoder', REPO / 'research/focus-assist/read_zaf_zone.py')
+                zone_decoder = importlib.util.module_from_spec(zone_spec)
+                zone_spec.loader.exec_module(zone_decoder)
+                zones = zone_decoder.decode(zone_path.read_bytes())
+                for layout in (1, 2):
+                    if not any(e['layout'] == layout and e['publish_token'] == 4241 + layout
+                               and e['bank'] == 1 and e['published_values'] == [None, 88]
+                               and [c['value'] for c in e['inputs']] == [-101-layout-i for i in range(4)]
+                               and [c['flag'] for c in e['inputs']] == list(range(4))
+                               for e in zones['events']):
+                        errors.append(f'missing verified raw cells or published centre for layout {layout}')
+                if zones['missing'] or not any(e['slot'] == 255 and not e['inputs']
+                                               for e in zones['events']):
+                    errors.append('invalid allocation or invalid slot was accepted')
+            if 'aw_entry' in sym:
+                af_file = d / 'AFWRITE.BIN'
+                card_tool(emu, 'get', d / 'drive-trace.omsd', 'OM3MOD/AFWRITE.BIN', af_file)
+                af_spec = importlib.util.spec_from_file_location(
+                    'af_decoder', REPO / 'research/focus-assist/read_af_writes.py')
+                af_decoder = importlib.util.module_from_spec(af_spec)
+                af_spec.loader.exec_module(af_decoder)
+                af_trace = af_decoder.decode(af_file.read_bytes())
+                writes = [e for e in af_trace['events'] if e['af_value'] in (-137, 137)]
+                expected = [(-137, '0x6099ebeb'), (137, '0x6099eed3')]
+                if af_trace['missing'] or [(e['af_value'], e['call_site']) for e in writes] != expected:
+                    errors.append('AF producer values or return sites missing from saved trace')
+                elif len(rows) == 2 and any(not 0 < ((r['submit_tick'] - w['write_tick']) & 0x7fffffff)
+                                            < 0x40000000 for r, w in zip(rows, writes)):
+                    errors.append('producer writes and drive submissions use inconsistent clocks')
+        if not any(row['device'] == 'TFT' and row['outcome'] == 'published'
+                   and row['coarse'] and row['filtered'] is not None for row in snapshot['rows']):
+            errors.append('no measured TFT publish in shutter-saved card trace')
+    enabled = d / 'enabled.omsd'
+    shutil.copyfile(card0, enabled)
+    marker = d / 'FOCUS.TXT'
+    marker.write_text('Experimental visual screen; no AF measurement.\n')
+    card_tool(emu, 'put', enabled, marker, 'OM3MOD/FOCUS.TXT')
+    card_tool(emu, 'rm', enabled, 'OM3MOD/DEBUG.TXT')
+    logged = d / 'enabled-debug.omsd'
+    shutil.copyfile(card0, logged)
+    card_tool(emu, 'put', logged, marker, 'OM3MOD/FOCUS.TXT')
+    gate_fields = ['FS_ON', 'FS_CHECKED', 'FS_FRAMES', 'FS_OWNER']
+    if 'PH_MODE' in sym:
+        card_tool(emu, 'put', logged, REPO / 'research/focus-assist/ZAF.TXT', 'OM3MOD/ZAF.TXT')
+        gate_fields.append('PH_MODE')
+    spec = [{'name': 'gate', 'pc': 'B', 'stop': ['B'], 'max': 1,
+             'read': [[hex(sym[k]), 4] for k in gate_fields]}]
+    for name, card, tokens, expected in [
+            ('before-halfpress', enabled, 'wait ncall', [0, 0, 0, 0]),
+            ('enabled-without-debug', enabled, 's1 wait wait ncall', [1, 1, 0, 0]),
+            ('enabled-with-debug', logged, 's1 wait wait s1 ncall', [1, 1, 0, 0]),
+            ('absent-marker', card0, 's1 wait wait ncall', [0, 1, 0, 0])]:
+        sub = d / name
+        sub.mkdir(exist_ok=True)
+        if 'PH_MODE' in sym:
+            expected = [*expected, int(name == 'enabled-with-debug')]
+        got = run_ncall(emu, build, sub, card, tokens, spec)
+        if isinstance(got, str):
+            errors.append(f'{name}: {got}')
+        elif [int.from_bytes(bytes.fromhex(v), 'little') for v in got['gate']['mem']] != expected:
+            errors.append(f'{name}: unexpected opt-in state {got["gate"]["mem"]}')
+        if name == 'enabled-with-debug' and not isinstance(got, str):
+            if 'dr_gate' in sym:
+                trace = sub / 'LENSDRV.BIN'
+                card_tool(emu, 'get', sub / 'card.omsd', 'OM3MOD/LENSDRV.BIN', trace)
+                if drive_decoder.decode(trace.read_bytes())['missing']:
+                    errors.append('incomplete shutter-saved lens drive trace')
+            lines = read_log(emu, sub / 'card.omsd', sub / 'cadlog.txt')
+            if not lines or decoder.decode('\n'.join(lines))['SC']['on'] != 1:
+                errors.append('screen diagnostics missing from actual CADLOG file')
+            elif 'Build: ' + (REPO / 'firmware/VERSION').read_text().strip() not in lines:
+                errors.append('CADLOG has stale build identifier')
+    return SCREEN, errors
+
+
+def run_contrast(emu, build, out, card0):
+    """Native sampler: exact copies, read-only sources, slot wrap and ABI."""
+    d = out / CONTRAST
+    d.mkdir(parents=True, exist_ok=True)
+    sym = elf_symbols(build / 'p.elf')
+    specs, expects = [], {}
+    for event, zero in [(1, True), (8, False), (9, False)]:
+        name = f'event-{event}'
+        raw = bytes(1496) if zero else bytes((k*17+event) & 255 for k in range(1496))
+        config = bytes(range(16))
+        lens = struct.pack('<IBBBBHhhh', event, 1, 0, 2, 1, 4362, 690, 222, 1693)
+        source_fp = b'\0' * ((event & 7)*16) + lens + b'\0' * ((7-(event & 7))*16)
+        buf = bytearray(b'\xa5' * 12800)
+        r = memoryview(buf)[(event & 7)*1600:((event & 7)+1)*1600]
+        struct.pack_into('<I', r, 0, event)
+        r[4:20], r[20:36] = lens, config
+        struct.pack_into('<I', r, 36, 0x12345678)
+        struct.pack_into('<H', r, 40, 37)
+        r[44] = 1
+        r[48:56] = r[56:64] = raw[-8:]
+        r[64:1560] = raw
+        h = 0
+        for (v,) in struct.iter_unpack('<I', raw):
+            h = ((h * 33) & 0xffffffff) ^ v
+        struct.pack_into('<I', r, 1560, h)
+        expects[name] = (buf.hex(), raw.hex(), config.hex(), source_fp.hex(), event)
+        specs.append(dict(name=name, pc='B', stop=['B+7'], max=20000,
+            regs={'d2':'0x22222222','d3':'0x33333333','a2':'0x66666666','a3':'0x77777777'},
+            mem=[['B','dd'],['B+1',f'={sym["cf_take"]:#x}-B'],['B+5','f018'],
+                 [hex(sym['lg_n']), struct.pack('<I', event).hex()],
+                 [hex(sym['fp_rows']),source_fp.hex()], [hex(sym['cf_rows']),'a5'*12800],
+                 ['0x62fa1d94',raw.hex()], ['0xa33d07ba',config.hex()],
+                 ['0xa33f3624','78563412'],['0x62fa1d90','2500'],['0xa33cf880','01']],
+            read=[[hex(sym['cf_rows']),12800],['0x62fa1d94',1496],['0xa33d07ba',16],
+                  [hex(sym['fp_rows']),128],[hex(sym['cf_latest']),4],
+                  ['0xa33f3624',4],['0x62fa1d90',2],['0xa33cf880',1]]))
+    res = run_ncall(emu, build, d, card0, 's1 wait wait ncall', specs)
+    if isinstance(res, str):
+        return CONTRAST, [res]
+    errors = []
+    for name, (rows, raw, config, lens, event) in expects.items():
+        o = res[name]
+        if o['mem'] != [rows, raw, config, lens, struct.pack('<I',event).hex(), '78563412','2500','01']:
+            errors.append(f'{name}: snapshot/hash wrong, source modified, or write outside selected slot')
+        for reg,val in [('d2','22222222'),('d3','33333333'),('a2','66666666'),('a3','77777777')]:
+            if o['regs'][reg] != val:
+                errors.append(f'{name}: clobbered {reg}')
+        if int(o['regs']['pc'],16) != ((int(o['regs']['sp'],16)-0x6000)&~0xff)+7:
+            errors.append(f'{name}: did not return with original stack')
+    # Check the actual filesystem output from the half-press before injected calls.
+    saved = d / 'CFPROBE.BIN'
+    got = node(f'{emu}/bin/card.mjs', 'get', d / 'card.omsd', 'OM3MOD/CFPROBE.BIN', saved)
+    if got.returncode:
+        errors.append('half-press did not save CFPROBE.BIN')
+    else:
+        module_spec = importlib.util.spec_from_file_location('contrast_decoder', REPO / 'research/focus-assist/read_contrast.py')
+        decoder = importlib.util.module_from_spec(module_spec)
+        module_spec.loader.exec_module(decoder)
+        data = saved.read_bytes()
+        try:
+            decoded = decoder.decode(data)
+            if not decoded['rows']:
+                errors.append('saved contrast ring is empty')
+            (d / 'decoded.json').write_text(json.dumps(decoded, indent=2))
+            damaged = bytearray(data)
+            slot = decoded['rows'][0]['event'] % 8
+            damaged[32 + slot*1600 + 64] ^= 1
+            for bad in (data[:-1], bytes(damaged)):
+                try:
+                    decoder.decode(bad)
+                    errors.append('decoder accepted truncated/corrupt snapshot')
+                except ValueError:
+                    pass
+        except ValueError as exc:
+            errors.append(f'invalid saved snapshot: {exc}')
+    gate_dir = d / 'without-debug'
+    gate_dir.mkdir(exist_ok=True)
+    boot = Boot('s1 wait wait expect:mem:{cf_latest}=00000000 poweroff',
+                card={'DEBUG.TXT': None, 'CFPROBE.BIN': None, 'CADLOG.TXT': None})
+    gate_card, lines, gate_errors, fatal = run_boot(emu, build, gate_dir, 0, boot, card0, {})
+    errors.extend(gate_errors)
+    if fatal:
+        errors.append(fatal)
+    elif lines is not None or node(f'{emu}/bin/card.mjs', 'get', gate_card,
+                                  'OM3MOD/CFPROBE.BIN', gate_dir / 'unexpected.bin').returncode == 0:
+        errors.append('diagnostic files written without DEBUG.TXT')
+    return CONTRAST, errors
+
+
+def run_focus(emu, build, out, card0):
+    """Execute the sampler against valid/missing/bad pointers. No optical claims."""
+    d = out / FOCUS
+    d.mkdir(parents=True, exist_ok=True)
+    sym = elf_symbols(build / 'p.elf')
+    record = bytearray(64)
+    for off, val in [(40, -123), (22, -1000), (36, 2000)]:
+        struct.pack_into('<h', record, off, val)
+    spec = []
+    cases = [('outside-record-window', 1, 0xa7f01000, False),
+             ('cached-valid', 1, 0x62f01000, True),
+             ('uncached-valid', 1, 0xa2f01000, True),
+             ('missing', 0, 0xa2f01000, False),
+             ('null', 1, 0, False), ('peripheral', 1, 0x9b480000, False),
+             ('unaligned', 1, 0xa2f01001, False),
+             ('end-of-dram', 1, 0xa3fffffc, False)]
+    for name, valid, ptr, accepted in cases:
+        mem = [['B', 'dd'], ['B+1', f'={sym["fp_take"]:#x}-B'], ['B+5', 'f018'],
+               [hex(sym['lg_n']), '09000000'], [hex(sym['fp_rows']), 'a5' * 128],
+               ['0xa32d3d32', f'{valid:02x}'], ['0xa32c9c28', '0200'],
+               ['0x62997490', '01'], ['0x62997470', '02'],
+               ['0xa32c9c24', f'={ptr}']]
+        if accepted:
+            mem.append([hex(ptr), record.hex()])
+        spec.append({'name': name, 'pc': 'B', 'stop': ['B+7'], 'mem': mem,
+                     'regs': {'d2': '0x22222222', 'd3': '0x33333333',
+                              'a2': '0x66666666', 'a3': '0x77777777'},
+                     'read': [[hex(sym['fp_rows']), 128], ['0xa32d3d32', 1],
+                              ['0xa32c9c28', 2], ['0x62997490', 1], ['0x62997470', 1]]
+                             + ([[hex(ptr), 64]] if accepted else [])})
+    res = run_ncall(emu, build, d, card0, 's1 wait wait ncall', spec)
+    if isinstance(res, str):
+        return FOCUS, [res]
+    errors = []
+    for name, valid, ptr, accepted in cases:
+        got = res[name]
+        expected = struct.pack('<IBBBB Hhhh', 9, valid, 1, 2, int(accepted), 2,
+                               *([-123, -1000, 2000] if accepted else [-32768] * 3))
+        rows = bytes.fromhex(got['mem'][0])
+        if rows != b'\xa5' * 16 + expected + b'\xa5' * 96:
+            errors.append(f'{name}: bad row or writes outside selected ring slot')
+        if got['mem'][1:5] != [f'{valid:02x}', '0200', '01', '02']:
+            errors.append(f'{name}: changed stock state')
+        if accepted and got['mem'][5] != record.hex():
+            errors.append(f'{name}: changed lens record')
+        for reg, val in [('d2', '22222222'), ('d3', '33333333'), ('a2', '66666666'), ('a3', '77777777')]:
+            if got['regs'][reg] != val:
+                errors.append(f'{name}: clobbered {reg}')
+        return_pc = ((int(got['regs']['sp'], 16) - 0x6000) & ~0xff) + 7
+        if got['steps'] > 200 or int(got['regs']['pc'], 16) != return_pc:
+            # B is the driver's aligned scratch address relative to SP.
+            errors.append(f'{name}: did not return with original stack')
+    return FOCUS, errors
 
 
 def run_dial(emu, build, out, card0):
@@ -2330,7 +2700,7 @@ def newest_looks():
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('build', type=pathlib.Path)
-    ap.add_argument('--only', nargs='+', choices=sorted([*TESTS, AUDIT, STACKING, HALATION, BORDER, SHADING, SHTAKE, ENGINE, DIAL, VIDEO, GRAINMIX, CROPHIST, CROPPL, CROPQ, GATES, GRAINTILE, *DIRECT, *STATIC]))
+    ap.add_argument('--only', nargs='+', choices=sorted([*TESTS, AUDIT, STACKING, HALATION, BORDER, SHADING, SHTAKE, ENGINE, DIAL, VIDEO, GRAINMIX, CROPHIST, CROPPL, CROPQ, GATES, GRAINTILE, FOCUS, CONTRAST, SCREEN, CAMERA, XPAN, *DIRECT, *STATIC]))
     ap.add_argument('--jobs', type=lambda v: max(1, int(v)), default=DEFAULT_JOBS)
     ap.add_argument('--out', type=pathlib.Path)
     ap.add_argument('--looks', type=pathlib.Path)
@@ -2353,7 +2723,7 @@ def main():
     looks = (a.looks or newest_looks()).resolve()
     make_card(emu, build, looks, card0)
     fixtures = make_fixtures(out, looks)
-    names = a.only or sorted([*TESTS, AUDIT, STACKING, HALATION, BORDER, SHADING, SHTAKE, ENGINE, DIAL, VIDEO, GRAINMIX, CROPHIST, CROPPL, CROPQ, GATES, GRAINTILE, *DIRECT, *STATIC])
+    names = a.only or sorted([*TESTS, AUDIT, STACKING, HALATION, BORDER, SHADING, SHTAKE, ENGINE, DIAL, VIDEO, GRAINMIX, CROPHIST, CROPPL, CROPQ, GATES, GRAINTILE, FOCUS, CONTRAST, SCREEN, CAMERA, XPAN, *DIRECT, *STATIC])
     stock = static_check.find_stock(a.stock) if any(n in STATIC for n in names) else None
     runs = [(n, k) for n in names for k in range(1, a.repeat + 1)]
     print(f'{len(names)} tests{f" x {a.repeat}" if a.repeat > 1 else ""} on {build}, results in {out}')
@@ -2404,6 +2774,16 @@ def main():
                 return run_graintile(emu, build, d, card0)
             if n in DIRECT:
                 return DIRECT[n](emu, build, d, card0)
+            if n == FOCUS:
+                return run_focus(emu, build, d, card0)
+            if n == CONTRAST:
+                return run_contrast(emu, build, d, card0)
+            if n == SCREEN:
+                return run_screen(emu, build, d, card0)
+            if n == CAMERA:
+                return run_camera(emu, build, d)
+            if n == XPAN:
+                return run_xpan(emu, build, d, card0)
             first = shared.get((k, boot_key(TESTS[n][0])))
             return run_test(n, TESTS[n], emu, build, card0, d, first and first.result(), fixtures)
         except static_check.Skip as e:

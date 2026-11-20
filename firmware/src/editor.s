@@ -2672,6 +2672,8 @@ pm_list:                          /* item ids, in the order the owner reads them
 .set IC_BWG, 0x7f70               /* v0.28 our 8 pictures for the camera's WB grid while it is the Blacks / Whites grid */
 .set IC_BW, 0x7f7f                 /* v0.28 g2 the Blacks / Whites row's left cell with its values (bw_desc, wb_draw) */
 .set ST_VIG, 0x7f00               /* our string ids (st_get answers them; the camera's table has ~6000) */
+.set ST_OFF_ZH, 0x7f65
+.set ST_ON_ZH, 0x7f66
 .set ST_STD, 0x7f01
 .set ST_BKS, 0x7f02                 /* "Blacks" */
 .set ST_WHS, 0x7f03                 /* "Whites" */
@@ -2867,8 +2869,8 @@ vf_l1:                            /* the left column: "Vignette" over Off / On *
  OPT 0, 3, IC_V0
  OPT 1, 3, IC_V1
 vf_l2:                            /* the strip: the camera's Off / On icons */
- OPT 0, 3, VF_I0
- OPT 1, 3, VF_I1
+ OPT 0, 4, ST_OFF_ZH
+ OPT 1, 4, ST_ON_ZH
 bw_l0:                            /* v0.28 Blacks / Whites grid row: the title "Blacks / Whites" */
  OPT 0, 4, ST_BKS
 bw_l1:                            /* the left column: "Blk/Wht" over the values (wb_draw; before it: "Blk" / "Wht") */
@@ -2985,6 +2987,16 @@ gr_lc:
 /* st_get <- jmp from the string getter 0x610f56a6 (its frame: `call ..,[d2],8`; d0 id -> a0 the UTF-16 string):
  * our own strings, else as stock (language index 0x610f56bd, then the table lookup at 0x610f56ac). */
 st_get:
+ cmp ST_OFF_ZH,d0
+ bne 90f
+ mov off_zh_str,a0
+ ret [d2],8
+90:
+ cmp ST_ON_ZH,d0
+ bne 91f
+ mov on_zh_str,a0
+ ret [d2],8
+91:
  cmp ST_GZT,d0                    /* g2: "Grain Size" .. "Coarse" (gs_strs) */
  bcs 50f
  cmp ST_CRS + 1,d0
@@ -3087,40 +3099,42 @@ cr_stk:
  jmp str_back
 .balign 2
 bks_str:                          /* "Blacks / Whites" (v0.28 the grid row) */
- .short 66, 108, 97, 99, 107, 115, 32, 47, 32, 87, 104, 105, 116, 101, 115, 0
+ .short 40657, 33394, 32, 47, 32, 30333, 33394, 0  /* zh-CN: 黑色 / 白色 */
 whs_str:
- .short 87, 104, 105, 116, 101, 115, 0
+ .short 30333, 33394, 0  /* zh-CN: 白色 */
 abs_str:                          /* v0.25 the WB grid row's title; colour menu (test 7): "WB Compensation" */
- .short 87, 66, 32, 67, 111, 109, 112, 101, 110, 115, 97, 116, 105, 111, 110, 0
+ .short 30333, 24179, 34913, 34917, 20607, 0  /* zh-CN: 白平衡补偿 */
 gms_str:                          /* "G-M" */
  .short 71, 45, 77, 0
 glc_str:                          /* "Glow" (v0.25 owner: + Glow, - Clarity; the row is named for its + side); test 7 "Glow Effect" */
- .short 71, 108, 111, 119, 32, 69, 102, 102, 101, 99, 116, 0
+ .short 26580, 20809, 25928, 26524, 0  /* zh-CN: 柔光效果 */
 bdr_str:                          /* borders: "Border" (was "Frame") */
- .short 66, 111, 114, 100, 101, 114, 0
+ .short 36793, 26694, 0
 hal_str:                          /* v0.28 "Halation"; colour menu (test 7): "Halation Effect" */
- .short 72, 97, 108, 97, 116, 105, 111, 110, 32, 69, 102, 102, 101, 99, 116, 0
+ .short 33014, 29255, 20809, 29615, 0  /* zh-CN: 胶片光环 */
 tbl_str:                          /* v0.28 "Tone Balance"; colour menu (test 7): "Split Tone Balance" */
- .short 83, 112, 108, 105, 116, 32, 84, 111, 110, 101, 32, 66, 97, 108, 97, 110, 99, 101, 0
+ .short 20998, 31163, 33394, 35843, 24179, 34913, 0  /* zh-CN: 分离色调平衡 */
 gzt_str:                          /* g2: "Grain Size", then ": Fine" / ": Medium" / ": Coarse", "Coarse" */
- .short 71, 114, 97, 105, 110, 32, 83, 105, 122, 101, 0
+ .short 39063, 31890, 22823, 23567, 0
 gz0_str:
- .short 71, 114, 97, 105, 110, 32, 83, 105, 122, 101, 58, 32, 70, 105, 110, 101, 0
+ .short 39063, 31890, 22823, 23567, 65306, 32454, 0
 gz1_str:
- .short 71, 114, 97, 105, 110, 32, 83, 105, 122, 101, 58, 32, 77, 101, 100, 105, 117, 109, 0
+ .short 39063, 31890, 22823, 23567, 65306, 20013, 0
 gz2_str:
- .short 71, 114, 97, 105, 110, 32, 83, 105, 122, 101, 58, 32
+ .short 39063, 31890, 22823, 23567, 65306
 crs_str:
- .short 67, 111, 97, 114, 115, 101, 0
+ .short 31895, 0
  .balign 4
 gs_strs:
  .long gzt_str, gz0_str, gz1_str, gz2_str, crs_str
  .balign 2
  .balign 16
 std_str:                          /* "Std" */
- .short 83, 116, 100, 0
+ .short 26631, 20934, 0  /* zh-CN: 标准 */
+off_zh_str: .short 20851,38381,0
+on_zh_str: .short 24320,21551,0
 vig_str:                          /* "Vignette Correction", UTF-16 */
- .short 86, 105, 103, 110, 101, 116, 116, 101, 32, 67, 111, 114, 114, 101, 99, 116, 105, 111, 110, 0
+ .short 26263, 35282, 26657, 27491, 0  /* zh-CN: 暗角校正 */
 
 /* ch_id: `call ch_id,[d2,d3,a2],20`, d1 = our id base (NRB / VFB) -> d0 = base + k on COLOR 1-4 (picture modes
  * 54/55/56/64), else 0. As 0x611c308a (Film Grain's lookup) answers its callers. */
@@ -11764,6 +11778,9 @@ lg_pr:                            /* jmp from pr_ed, pr_hook's frame: as `call e
  call ck_card,[d2,d3,a2,a3],24    /* v0.30 test 9: CURVES.BIN, after el_card's films */
  call cr_hp,[d2,d3,a2,a3],20      /* crop modes: the first shutter event after an early load (crop.s) */
  call cm_hp,[d2,d3,a2,a3],24      /* k4: in P / A / S / M, their films and choice now (kept in M) */
+ call fs_arm,[d2,d3,a2,a3],24
+ call sb_arm,[d2,d3,a2,a3],32
+sb_arm_return:
  call lg_write,[d2,d3,a2,a3],40
  call ex_live,[d2,d3,a2,a3],48    /* v0.28 pc1: the film's settings now, for the next photo's code */
  call lg_ptm,[d2,d3],12           /* glow-shots-1: how long the shutter waited for our code at this event */
@@ -11860,11 +11877,15 @@ lg_write:                         /* frame 40: (0) call slot, (4) handle */
  call lg_cam,[d2,d3,a2,a3],24     /* dl8: the camera's own values at this event (a3 = the entry) */
  call lg_crf,[d2,d3,a2,a3],24     /* dl8: a few cached reads (buttons, dials, the rest of the camera) */
  call lg_line,[d2,d3,a2,a3],24    /* dl8: this event's line, made once */
+ call fp_take,[d2,d3,a2,a3],24
+ call cf_take,[d2,d3,a2,a3],24
  call lg_due,[],0                 /* v0.30.3: write the file now? (d0; uses d0, d1) */
  cmp 0,d0
  bne 18f
  jmp lg_out                       /* noted in memory only; the next write has it */
 18:
+ mov (SW_HEAD),d0
+ mov d0,(SW_RELEASE)
  mov (lg_tid),d0                  /* #85: with the log writer, not while it copies lg_buf (lg_bc); else lg_bb = 1. */
  cmp 0,d0                         /* (8,sp) LOCK's token, (12,sp) lg_bc: d2 / d3 / a2 / a3 stay as the build had them */
  ble 19f
@@ -11894,6 +11915,8 @@ lg_write:                         /* frame 40: (0) call slot, (4) handle */
  mov lg_bend,a0
  mov a0,(lg_lim)
  call lg_sum,[d2,d3,a2,a3],24     /* the build, SUMMARY */
+ call fs_diag_text,[d2,d3,a2,a3],24
+ call fp_text,[d2,d3,a2,a3],24
  call lg_stc,[d2,d3,a2,a3],24     /* START-UP (kept text while its inputs are the same) */
  call lg_now,[d2,d3,a2,a3],24     /* NOW (ours) */
  call lg_cnow,[d2,d3,a2,a3],24    /* CAMERA */
@@ -12030,6 +12053,7 @@ lg_wk:
 1:
  mov LG_POLL,d0
  call sdl_dly_tsk,[d2,a2,a3],16
+ call sw_flush,[d2,d3,a2,a3],32
  mov (lg_n),d0
  mov d0,d1
  sub d3,d1
@@ -12100,6 +12124,9 @@ lg_wkw:                           /* the writer's fwrite (tests watch it) */
  call fwrite,[d2,d3,a2,a3],24
  mov (4,sp),a0
  call fclose,[d2,a2,a3],16
+ call cf_write,[d2,d3,a2,a3],24
+ call fs_trace_save,[d2,d3,a2,a3],32
+ call dr_save,[d2,d3,a2,a3],32
  mov (lg_wt0),d0                  /* glow-shots-1: -> lg_wms (this write), lg_wmx (the longest) */
  mov (USCLK),d1
  sub d1,d0
@@ -22877,3 +22904,8 @@ bl_v:                             /* the value */
  .include "fwver.s"               /* our version on the camera's Firmware Version screen (ext13) */
 
  .include "newfilms.s"            /* #86: a new film set made again in every mode (ext13) */
+
+ .include "focus_probe.inc"
+ .include "focus_screen.inc"
+ .include "shutter_beep.inc"
+ .include "focus_drive.inc"

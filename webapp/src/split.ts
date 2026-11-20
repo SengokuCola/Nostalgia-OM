@@ -11,8 +11,8 @@ import { CHANNELS, curveDelta, type RgbCurves } from './curves';
 export interface Split { sh_color: number; sh: number; hl_color: number; hl: number }
 /** The wheel's colours, clockwise from 12 o'clock, as on the camera (and their swatch colours for the editor). */
 export const SPLIT_COLOURS: [string, string][] = [
-  ['Yellow', '#f2d600'], ['Orange', '#f59a00'], ['Orange-red', '#f05a00'], ['Red', '#e0102a'], ['Magenta', '#d4157a'], ['Violet', '#7a33cc'],
-  ['Blue', '#1f5fe0'], ['Blue-cyan', '#1d96e0'], ['Cyan', '#16c0d0'], ['Green-cyan', '#18b583'], ['Green', '#2fae3a'], ['Yellow-green', '#9cc414'],
+  ['黄', '#f2d600'], ['橙', '#f59a00'], ['橙红', '#f05a00'], ['红', '#e0102a'], ['品红', '#d4157a'], ['紫', '#7a33cc'],
+  ['蓝', '#1f5fe0'], ['蓝青', '#1d96e0'], ['青', '#16c0d0'], ['青绿', '#18b583'], ['绿', '#2fae3a'], ['黄绿', '#9cc414'],
 ];
 /** K per strength step (R, G, B) for each colour: the firmware's st_k table (4.8 Cb/Cr units at the weight peak per step). */
 export const SPLIT_K: [number, number, number][] = [

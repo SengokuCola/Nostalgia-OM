@@ -12,6 +12,7 @@ import argparse
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from scipy import ndimage
+import zh_cn
 
 FONT = '/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed.ttf'
 W, H = 46, 46                      # slider-row icon
@@ -33,6 +34,9 @@ STYLE = {10: (0.88, (0.20, 0.40, 0.60))}   # width, coverage thresholds (as the 
 def word(txt, cap, maxw, sx=1.0, font=None):
     """The word's ink coverage 0..1, cap height `cap`, `sx` times its width, squeezed to fit maxw; and its baseline row
     in that array."""
+    if txt in zh_cn.WORDS:
+        cov = zh_cn.coverage(zh_cn.WORDS[txt], cap, maxw)
+        return cov, cov.shape[0] - 1
     S = 8
     f = ImageFont.truetype(font or FONT, 100 * S)
     im = Image.new('L', (100 * S * (len(txt) + 1), 200 * S), 0)

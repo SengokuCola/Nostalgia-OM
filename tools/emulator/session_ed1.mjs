@@ -24,7 +24,7 @@ const nvram = process.env.NV_FILE ? (await import(EMU + '/host/nvram.mjs')).file
 const env = { rom, resBlock: loadBlock(), createHash, card, ...(nvram ? { nvram } : {}),
   deflate: (b, l) => new Uint8Array(zlib.deflateSync(b, { level: l })), inflate: (b) => new Uint8Array(zlib.inflateSync(b)) };
 const DEV = process.env.DEVICE || 'tft';   // framelines-1: DEVICE=evf runs and shoots the viewfinder (1024 x 768)
-const pl = new Player({ ...PLAYER_PARSER, no_browser: true, idle: 'off', a15: 'on', out: '<out>', no_wait_on_error: true, device: DEV },
+const pl = new Player({ ...PLAYER_PARSER, lang: process.env.OM3_LANGUAGE || "en", no_browser: true, idle: 'off', a15: 'on', out: '<out>', no_wait_on_error: true, device: DEV },
   { ...env, wallClock: () => performance.now() / 1000 });
 const WATCH = new Set((process.env.WATCH || '').split(',').filter(Boolean).map((x) => parseInt(x, 16) >>> 0));
 let curStep = 'start'; const hits = [];
@@ -295,6 +295,31 @@ for (const t of SCRIPT.split(/\s+/).filter(Boolean)) {
   else if (t.startsWith('expect:count:')) {
     const [pc, want] = t.slice(13).split('='), c = counts.get(parseInt(pc, 16) >>> 0), got = c ? String(c.n) : 'not counted';
     if (got !== want) { console.error(`expect:count ${pc}: ${got}, not ${want}`); process.exit(1); }
+  }
+  else if (t.startsWith('expect:str:')) {
+    // Call the real string getter (including our hook), then check UTF-16 bytes.
+    const [idText, hex] = t.slice(11).split('='), id = parseInt(idText, 16);
+    const dd = Debugger.attach(lab.sim, { lab }), saved = dd.m.getRegs().slice();
+    const sp = (saved[8] - 0x800) & ~3, stub = sp - 0x100, callAt = stub + 6;
+    const rel = (0x610f56a6 - callAt) | 0;
+    dd.write(stub, new Uint8Array([0xfc, 0xcc, id & 255, id >> 8, 0, 0,
+      0xdd, rel & 255, rel >> 8 & 255, rel >> 16 & 255, rel >>> 24, 0x80, 0x08, 0xcb, 0xcb]));
+    const r = saved.slice(); r[9] = stub >>> 0; r[8] = sp >>> 0; r[14] = 0; dd.m.setRegs(r);
+    let n = 0;
+    while ((dd.m.getRegs()[9] >>> 0) !== ((callAt + 7) >>> 0) && n < 5000000) { dd.m.step(); n++; }
+    const got = n === 5000000 ? 'timeout' : Buffer.from(rd(dd.m.getRegs()[4], hex.length / 2)).toString('hex');
+    dd.m.setRegs(saved);
+    if (got !== hex) { console.error(`expect:str ${idText}: ${got}, not ${hex}`); process.exit(1); }
+    // The camera ships a subset font: a valid UTF-16 title can still lose glyphs.
+    const { FONT_SLOT } = await import(EMU + '/src/lab/resources.mjs');
+    for (const c of Buffer.from(hex, 'hex').toString('utf16le')) {
+      const cp = c.charCodeAt(0);
+      if (cp < 128) continue;
+      const page = u32(FONT_SLOT[0] + 16 + 4 * (cp >> 8));
+      if (!page || !u32(page + 4 * (cp & 255))) {
+        console.error(`expect:str ${idText}: active font has no glyph for ${c}`); process.exit(1);
+      }
+    }
   }
   else if (t === 'strpoke') {
     const dd = Debugger.attach(lab.sim, { lab });

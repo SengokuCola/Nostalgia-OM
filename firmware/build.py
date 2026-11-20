@@ -31,7 +31,24 @@ class P:                                   # toolchain and stock identity (set f
     STOCK = None
 
 LAYOUT = HERE / 'vendor' / 'caduceus-bundles-layout.json'    # Caduceus (Apache-2.0) bundle-table layout
-HOOKS = {'.hook_color': (0x60518615, bytes.fromhex('cd6cfdf060')),
+HOOKS = {'.hook_sb_done': (0x6054c30f, bytes.fromhex('f1ecf064803e')),
+         '.hook_af_write': (0x609a0e4f, bytes.fromhex('fc83e4ab3ea3')),
+         '.hook_dr_abs': (0x60901b15, bytes.fromhex('ddfd50a0ffb014')),
+         '.hook_dr_sync': (0x60901b91, bytes.fromhex('dd2b5ba0fff020')),
+         '.hook_dr_async': (0x60901bc9, bytes.fromhex('ddea5fa0ff3010')),
+         '.hook_dr_main': (0x60901bf2, bytes.fromhex('dd1d69a0ff200c')),
+         '.hook_dr_sub': (0x60901c05, bytes.fromhex('ddc86aa0ff200c')),
+         '.hook_dr_abs2': (0x6092f70b, bytes.fromhex('dd07759dffb014')),
+         '.hook_dr_mft_move': (0x609ae38b, bytes.fromhex('dd175f94ffe01c')),
+         '.hook_dr_mft_move2': (0x609ae396, bytes.fromhex('dd535b94ffe020')),
+         '.hook_dr_mft_ofs': (0x609aeb13, bytes.fromhex('ddd65394ffe020')),
+         '.hook_dr_mft_ofs2': (0x609af02d, bytes.fromhex('ddbc4e94ffe020')),
+         '.hook_fs_image': (0x60210fd3, bytes.fromhex('5c045078aa00c827')),
+         '.hook_fs_level': (0x60211067, bytes.fromhex('f82304f202')),
+         '.hook_fs_tick': (0x601f15c4, bytes.fromhex('dda7480100e030')),
+         '.hook_fs_stop': (0x601f158a, bytes.fromhex('ddb64801000004')),
+         '.hook_fs_th': (0x601f1d66, bytes.fromhex('938002cd6444b010')),
+         '.hook_color': (0x60518615, bytes.fromhex('cd6cfdf060')),
          '.hook_crs': (0x60061183, bytes.fromhex('470c93cd79fd0000')),   # crop modes: the settings store write (power-off)
          '.hook_crb': (0x6006120e, bytes.fromhex('fccf80d273a3')),       # crop modes: the buffer before the write (menus)
          '.hook_crg': (0x611cb24d, bytes.fromhex('5c0870f85309')),       # crop round 3: the GUI screen spec's ratio byte
@@ -147,13 +164,13 @@ def poly_sites(m, o):
     return out
 RECORD_KEYS = {0x615adcc4: 0x1540, 0x615adcfc: 0x1541, 0x615add34: 0x1542, 0x615add6c: 0x1543}
 SHUTTER_CONTEXT = (0x604151fc, '5810fae0fffffac80001c80e5810fae0fffffac80101c9095c0c')
-EXT1 = (0x6031e920, 0x6031eff0)          # section-1 tail (FF from 0x6031e910, end 0x6031f000)
+EXT1 = (0x6031e910, 0x6031f000)          # section-1 tail (FF from 0x6031e910, end 0x6031f000)
 EXT4 = (0x60a8f100, 0x60a8f7f0)
 EXT10 = (0x61aa4300, 0x61aa47f0)
 EXT8 = (0x617e45f0, 0x617e47f0)            # section-8 tail (FF from 0x617e45e0, end 0x617e4800)
 EXT11 = (0x60f49800, 0x60f59800)           # v0.23: section 6 extended by 64 KiB (loader end word 0x60045e9c raised; camera-proven GX2)
 EXT12 = (0x60f59800, 0x60f99800)           # v0.27: section 6 extended by 256 KiB more (camera-proven GX3, 2026-11-10)
-EXT13 = (0x60fac000, 0x60fc0000)           # v0.30 test 10: the debug log, after the RGB work area (GX4-proven reserve to 0x6103f000);
+EXT13 = (0x60fac000, 0x6103f000)           # v0.30 test 10: the debug log, after the RGB work area (GX4-proven reserve to 0x6103f000);
                                             # gentler Shading s1: + 16 KB for the vignette pass and its tables (still inside the reserve)
 EXT3 = (0x6081fe10, 0x6081fffc)            # section-3 tail (FF from 0x6081fe00, end 0x60820000)
 EXT5 = (0x60adb5b0, 0x60adb7f0)            # section-5 tail (FF from 0x60adb5a0, end 0x60adb800)
@@ -425,6 +442,14 @@ def build(defaults, testfile, out):
     print('SIZE .ext13', len(b13), EXT13[1] - EXT13[0], file=sys.stderr)
     assert EXT13[0] + len(b13) <= EXT13[1] and set(m[o(EXT13[0]):o(EXT13[1])]) <= {0xff}, len(b13)
     m[o(EXT13[0]):o(EXT13[0]) + len(b13)] = b13
+    # Populate the immutable class map after loading the split-screen section.
+    start = o(sy['fs_map'])
+    offsets = {0:0, 4:1, -4:2, 132:3, -132:4}
+    shape = bytes(5 if v == 65535 else 6 if v == 65534 else offsets[v-i]
+                  for i,v in enumerate(struct.unpack_from('<8192H', m, start)))
+    start = o(sy['fs_shape'])
+    assert m[start:start+len(shape)] == bytes(len(shape))
+    m[start:start+len(shape)] = shape
     # v0.23 new Picture Mode choice rows (Noise Filter, Shading Comp.): the item table (17 x 40 B at 0x6154c2a8) -> it_tab
     # (the stock 17, then our 4), at both lookups (mov table,a0 ... cmp 17,d1); the rows join the column's 9 row switches
     IT = 0x6154c2a8

@@ -1,4 +1,21 @@
 SECTIONS {
+  .hook_sb_done 0x6054c30f : { *(.hook_sb_done) }
+  .hook_af_write 0x609a0e4f : { *(.hook_af_write) }
+  .hook_dr_abs 0x60901b15 : { *(.hook_dr_abs) }
+  .hook_dr_sync 0x60901b91 : { *(.hook_dr_sync) }
+  .hook_dr_async 0x60901bc9 : { *(.hook_dr_async) }
+  .hook_dr_main 0x60901bf2 : { *(.hook_dr_main) }
+  .hook_dr_sub 0x60901c05 : { *(.hook_dr_sub) }
+  .hook_dr_abs2 0x6092f70b : { *(.hook_dr_abs2) }
+  .hook_dr_mft_move 0x609ae38b : { *(.hook_dr_mft_move) }
+  .hook_dr_mft_move2 0x609ae396 : { *(.hook_dr_mft_move2) }
+  .hook_dr_mft_ofs 0x609aeb13 : { *(.hook_dr_mft_ofs) }
+  .hook_dr_mft_ofs2 0x609af02d : { *(.hook_dr_mft_ofs2) }
+  .hook_fs_image 0x60210fd3 : { *(.hook_fs_image) }
+  .hook_fs_level 0x60211067 : { *(.hook_fs_level) }
+  .hook_fs_tick 0x601f15c4 : { *(.hook_fs_tick) }
+  .hook_fs_stop 0x601f158a : { *(.hook_fs_stop) }
+  .hook_fs_th   0x601f1d66 : { *(.hook_fs_th) }
   .hook_color   0x60518615 : { *(.hook_color) }
   .hook_crs     0x60061183 : { *(.hook_crs) }   /* crop modes: the settings store write (power-off: M patched in RAM) */
   .hook_crb     0x6006120e : { *(.hook_crb) }   /* crop modes: the buffer before the write (after a menu) */
@@ -8,7 +25,7 @@ SECTIONS {
   .hook_crq     0x60c7c18a : { *(.hook_crq) }   /* crop round 10: the play component's record-mode lookup (reads only) */
   .hook_crr     0x611133cd : { *(.hook_crr) }   /* crop round 10: SimplePlayCommon's quality lookup */
   .hook_shutter 0x60415216 : { *(.hook_shutter) }
-  .ext1         0x6031e920 : { *(.ext1) }
+  .ext1         0x6031e910 : { *(.ext1) }
   .ext4         0x60a8f100 : { *(.ext4) }
   .hook_set     0x60b8798b : { *(.hook_set) }
   .hook_pmod    0x6129ba07 : { *(.hook_pmod) }
@@ -281,3 +298,29 @@ cr_rc_j       = 0x60c0d35f;         /* ratioToConvertSize: mov d0,(4,a1); retf [
 cr_oa_j       = 0x60c14b95;         /* getOutputAspect: mov d0,(16,sp) */
 cr_spec_back  = 0x611cb253;         /* crop round 3: after the screen spec's ratio byte */
 cr_dhm_back   = 0x60dc4bb7;         /* crop round 5: Set_Histogram_CalcMode after its entry */
+
+cap_lock      = 0x60075f73;
+cap_unlock    = 0x60075fbc;
+ov_hold       = 0x6020f1c0;
+fs_stock_update = 0x60205e6b;
+fs_zaf_clock = 0x60023c05;
+fs_stock_stop = 0x60205e40;
+fs_th_check  = 0x601f61cd;
+fs_th_resume = 0x601f1d6e;
+fs_native_image = 0x60210fdb;
+fs_native_skip = 0x60211000;
+fs_native_level = 0x6021106c;
+sb_reply_join = 0x6054c315;
+sb_sound_route = 0x6041aeae;
+sb_shutter_sound = 0x60449dbb;
+dr_stock_abs = 0x60306c12;
+dr_stock_sync = 0x603076bc;
+dr_stock_async = 0x60307bb3;
+dr_stock_main = 0x6030850f;
+dr_stock_sub = 0x603086cd;
+dr_stock_abs2 = 0x60306c12;
+dr_stock_mft_move = 0x602f42a2;
+dr_stock_mft_move2 = 0x602f3ee9;
+dr_stock_mft_ofs = 0x602f3ee9;
+dr_stock_mft_ofs2 = 0x602f3ee9;
+af_stock_return = 0x609a0e55;

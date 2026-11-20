@@ -2,6 +2,7 @@
 // (scripts/films.py makes src/data/om3films.json from short recipes). Each becomes an ordinary OM-3 look: Hue / Light
 // / Saturation per sector, Highlights / Shadows / Midtones, Blacks / Whites, Contrast, Sharp and the WB shift. No grain,
 // Glow / Clarity or Art Effects: those stay the user's choice.
+import { localizeDescription } from './descriptions';
 import filmsJson from './data/om3films.json';
 import { blankLook, type Look } from './pack';
 import type { RgbCurves } from './curves';
@@ -18,10 +19,10 @@ export interface Film {
 }
 export type FilmGroup = 'fuji' | 'slide' | 'neg' | 'instant' | 'print';
 export const FILM_GROUPS: [FilmGroup, string][] = [
-  ['fuji', 'Fujifilm simulations'], ['slide', 'Slide film'], ['neg', 'Colour negative'], ['instant', 'Instant film'], ['print', 'Cinema print'],
+  ['fuji', '富士胶片模拟'], ['slide', '反转片'], ['neg', '彩色负片'], ['instant', '即时成像'], ['print', '电影印片'],
 ];
 const DATA = filmsJson as { films: Film[]; aliases: Record<string, string>; camera: string[] };
-export const FILMS = DATA.films;
+export const FILMS = DATA.films.map((film) => ({ ...film, desc: localizeDescription(film.desc) }));
 /** The 20 films for the camera, FILM 1-20 in the owner's order (scripts/films.py CAMERA). */
 export const CAMERA_FILMS: Film[] = DATA.camera.map((n) => FILMS.find((f) => f.name === n)!);
 

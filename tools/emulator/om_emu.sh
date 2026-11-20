@@ -35,6 +35,7 @@ emu_use() {
     rm -rf "$EMU/unpacked/$EMU_MODEL"   # unpack again with this commit's unpacker
   fi
   mkdir -p "$EMU/fw"
+  python3 "$REPO/tools/emulator/camera_fidelity.py" "$EMU" --apply || return 1
   [ -f "$EMU/fw/$EMU_STOCK" ] || cp "$stock" "$EMU/fw/$EMU_STOCK"
   (cd "$EMU" && node emu/bin/fetch-fw.mjs --model "$EMU_MODEL" --bin "fw/$EMU_STOCK" >/dev/null 2>&1 \
     || node emu/bin/fetch-fw.mjs --model "$EMU_MODEL" --bin "fw/$EMU_STOCK")

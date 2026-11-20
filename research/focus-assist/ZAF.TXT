@@ -1,0 +1,1 @@
+Use the OM-3 ZAF direction experiment when FOCUS.TXT is present.

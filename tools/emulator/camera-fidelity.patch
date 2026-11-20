@@ -1,0 +1,202 @@
+diff --git a/emu/checks/check_camera_layout.mjs b/emu/checks/check_camera_layout.mjs
+new file mode 100644
+index 0000000..10ca339
+--- /dev/null
++++ b/emu/checks/check_camera_layout.mjs
+@@ -0,0 +1,47 @@
++// Sanitized E147 camera register observations; pixels below are synthetic.
++// No captured photograph, physical timing, AF model or camera-visibility claim.
++import assert from 'node:assert/strict';
++import {readFileSync} from 'node:fs';
++import {createHash} from 'node:crypto';
++import * as D from '../src/lab/display.mjs';
++import {labEnv} from './lib/env.mjs';
++import {reference} from '../refs/display.mjs';
++const fixture=JSON.parse(readFileSync(new URL('./fixtures/om3-camera-layout.json',import.meta.url)));
++const lab=new D.DisplayLab(labEnv());
++const hash=b=>createHash('sha256').update(b).digest('hex');
++const checks=[];
++try{
++ lab.start();lab.set_gui_buffers();lab.open('tft');lab.palettes();lab.update();lab.assume('A15',true);
++ const ch=2,write=(off,v)=>lab.call(0x501f0dfc,{d0:ch,d1:off/4,a0:v>>>0},null,[0x80,4]);
++ const rows=Array.from({length:600},(_,y)=>Uint8Array.from({length:1600},(_,x)=>x%4===1?100:x%4===3?150:16+(x+y)%220));
++ const snapshot=fixture.registers.map(x=>parseInt(x,16));
++ for(const address of fixture.addresses){
++  const base=parseInt(address,16)*16,source=base+100;
++  lab.bus_rows(source,11136,1600,600,rows);
++  fixture.offsets.forEach((off,i)=>write(off,i===1?parseInt(address,16):snapshot[i]));
++  write(0x620,0x100);lab.vsc.set_view(ch,1);
++  const attach=()=>lab.img_attach.set(ch,{regs:lab.img_steps(ch),src:[800,600],base:source,stride:11136,path:'camera-fixture'});
++  attach();const c=lab.compose('tft');
++  assert.deepEqual(c.errors,[]);assert(c.header.drawn&1);
++  const x0=148-c.header.ox,y0=8-c.header.oy;
++  for(let y=0;y<600;y++)for(let x=0;x<800;x++){
++   const row=rows[y],pair=(x>>1)*4;
++   const want=(row[pair+3]<<16)|(row[pair+1]<<8)|row[pair+(x%2)*2];
++   assert.equal(c.words[(y+y0)*c.header.width+x+x0],want,`pixel ${x},${y}`);
++  }
++  const dump=lab.dump('tft');
++  const ref=reference(ch,dump.mirror,dump.palette,dump.palette_written,(a,n)=>lab.bus_read(a,n),['IMG1'],null,['A15']);
++  assert.deepEqual(c.words,Array.from(ref[2]));
++  assert.deepEqual(lab.bus_rows(source,11136,1600,600).map(hash),rows.map(hash));
++  checks.push('camera-aligned-'+address);
++  // Old consistent-low-bits form must remain equivalent.
++  write(0x390,(base+96)/16);attach();const legacy=lab.compose('tft');assert.deepEqual(legacy.errors,[]);assert.deepEqual(c.words,legacy.words);
++  write(0x390,base/16);attach();checks.push('legacy-equivalence-'+address);
++  for(const [off,value,error] of [[0x3d8,51,'SPOS_UNMODELLED'],[0x3d8,64,'SPOS_UNMODELLED'],[0x390,base/16+1,'SPOS_UNMODELLED'],[0x3c0,8,'DMABN_SHORT'],[0x400,3,'FMT_UNMODELLED']]){
++   const old=lab.sim.u32((0x9bb80000+ch*0x8000+off)>>>0);write(off,value);attach();
++   const bad=lab.compose('tft');assert(bad.errors.some(e=>e.name===error),JSON.stringify(bad.errors));assert(!(bad.header.drawn&1));
++   write(off,old);attach();checks.push('refusal-'+error);
++  }
++ }
++ console.log(JSON.stringify({checks:checks.length,passed:checks,evidence:'register layout observed; synthetic pixels; address interpretation is an inference, not optical validation'}));
++}finally{lab.close();}
+\ No newline at end of file
+diff --git a/emu/checks/fixtures/om3-camera-layout.json b/emu/checks/fixtures/om3-camera-layout.json
+new file mode 100644
+index 0000000..fdb3011
+--- /dev/null
++++ b/emu/checks/fixtures/om3-camera-layout.json
+@@ -0,0 +1,51 @@
++{
++  "evidence": "screen-test-2 camera telemetry; no event timestamps or sensor pixels",
++  "registers": [
++    "0000002f",
++    "09e90f80",
++    "000002b8",
++    "00000070",
++    "00000032",
++    "00000000",
++    "00940320",
++    "00080258",
++    "00000010",
++    "00000100",
++    "00000000",
++    "00002000",
++    "00000000"
++  ],
++  "firmware": "1.1",
++  "counts": {
++    "th": 882,
++    "update": 608,
++    "published": 0,
++    "stop": 2
++  },
++  "model": "E147",
++  "offsets": [
++    96,
++    912,
++    936,
++    960,
++    984,
++    1024,
++    1068,
++    1072,
++    1264,
++    1268,
++    1272,
++    1276,
++    1280
++  ],
++  "unknown": [
++    "event order",
++    "frame rate",
++    "DMA/cache coherence",
++    "manual lens focus accuracy"
++  ],
++  "addresses": [
++    "09e90f80",
++    "098d4d80"
++  ]
++}
+diff --git a/emu/refs/display.mjs b/emu/refs/display.mjs
+index eaedcd4..231b4fb 100644
+--- a/emu/refs/display.mjs
++++ b/emu/refs/display.mjs
+@@ -116,7 +116,7 @@ export function reference(c, m, pal, palWritten, fetch, order = PLANES, trace =
+       // A18: the fetch starts SPOS pixels into the 128-byte burst that holds the address
+       const sbytes = spos * (osd ? 1 : 2);
+       if (spos || address % 128) {
+-        if ((address & 0x70) !== (sbytes & 0x70) || sbytes >= 128 || (!osd && (spos & 1))) throw new Skip('SPOS');
++        if (((osd || address % 128 !== 0) && (address & 0x70) !== (sbytes & 0x70)) || sbytes >= 128 || (!osd && (spos & 1))) throw new Skip('SPOS');
+       }
+       const base = Math.floor(address / 128) * 128 + sbytes;
+       if ((ld & 7) || (ld >>> 15) || (bn & 7)) throw new Skip('DMA fields');
+diff --git a/emu/src/dev/vsccompose.mjs b/emu/src/dev/vsccompose.mjs
+index 923daf0..80e5244 100644
+--- a/emu/src/dev/vsccompose.mjs
++++ b/emu/src/dev/vsccompose.mjs
+@@ -198,7 +198,9 @@ class Compose {
+     const addr = (sadr << 4) >>> 0, sbytes = spos * (osd ? 1 : 2);
+     if (pl.fmt === FACE_FMT && (spos || (addr & 0x7F))) { this.cerror(E.SPOS_UNMODELLED, sposOff, spos, addr, p, 0); return E.SPOS_UNMODELLED; }
+     if (spos || (addr & 0x7F)) {
+-      if ((addr & 0x70) !== (sbytes & 0x70) || sbytes >= 128 || (!osd && (spos & 1))) {
++      // E147 camera telemetry: IMG YC422 can use a 128-aligned base plus independent SPOS.
++      const alignedImage = !osd && pl.fmt === 0 && (addr & 0x7F) === 0;
++      if ((!alignedImage && (addr & 0x70) !== (sbytes & 0x70)) || sbytes >= 128 || (!osd && (spos & 1))) {
+         this.cerror(E.SPOS_UNMODELLED, sposOff, spos, addr, p, 0);
+         return E.SPOS_UNMODELLED;
+       }
+@@ -242,6 +244,10 @@ class Compose {
+       this.cerror(E.DMABN_SHORT, bnOff, bn, (bytes + pl.sposBytes) % 4294967296, pl.burst, p);
+       return E.DMABN_SHORT;
+     }
++    if (pl.fieldParity !== undefined) {
++      pl.base += pl.fieldParity * pl.stride;
++      pl.stride *= 2;
++    }
+     const span = lastRow * pl.stride + bytes;
+     if (!this.v.bus.span(pl.base, span)) { this.cerror(E.DMA_RANGE, sadrOff, pl.base, span % 4294967296, p, 0); return E.DMA_RANGE; }
+     return 0;
+@@ -343,7 +349,37 @@ export function compose(v, c) {
+     const sync1 = k.need(R.SYNC1);
+     if (sync1 === null) { status = E.UNWRITTEN; break run; }
+     const sync4 = k.zeroReg(R.SYNC4);
+-    if (!(sync1 & (1 << 24)) || (sync4 & 0x7FFF)) { k.cerror(E.FIELD_MODE, R.SYNC1, sync1, sync4, 0, 0); status = E.FIELD_MODE; break run; }
++    if (!(sync1 & (1 << 24)) || (sync4 & 0x7FFF)) {
++      // E147 test 5, isolated IMG2. One latched descriptor and buffer across
++      // both fields. The row-pitch hypothesis below follows the test 4 photos.
++      const view = v.dbg[chanDbg(c, CH.VIEW)];
++      if (MODEL !== 'E147' || c !== 1 || view !== 2 || sync1 !== 1 || sync4 !== 410 ||
++          k.zeroReg(R.VIDEOAREA1) !== 0x00140400 || k.zeroReg(R.VIDEOAREA2) !== 0x00110180) {
++        k.cerror(E.FIELD_MODE, R.SYNC1, sync1, sync4, 0, 0); status = E.FIELD_MODE; break run;
++      }
++      k.vw = 1024; k.vh = 384; k.ox = 20; k.oy = 17;
++      hdr[HDR.WIDTH] = k.vw; hdr[HDR.HEIGHT] = 2*k.vh;
++      hdr[HDR.OX] = k.ox; hdr[HDR.OY] = 2*k.oy; hdr[HDR.VIEW] = view;
++      k.out.fill(k.zeroReg(R.BG), 0, k.vw*2*k.vh);
++      if (!(k.zeroReg(R.DMAEN) & 0x10)) break run;
++      // IMG_9478/9479 show a compressed ring over a different rectangular
++      // image. Model hardware stepping over alternate rows of a full frame.
++      // The exact odd-field phase still needs a physical raster capture.
++      const origins = [0, k.zeroReg(R.IMG_AREA1 + 12 + 8) - k.oy];
++      for (const parity of [0, 1]) {
++        const pl = { p: P_IMG2, fieldParity: parity };
++        const code = k.planeGeometry(pl);
++        if (code === PLANE_NOT_DRAWN) break run;
++        if (code) { hdr[HDR.SKIPPED] |= 2; break run; }
++        if (!parity) origins[0] = pl.y0;
++        k.imgRows(pl, 0, pl.h, (j, row) => {
++          const y = origins[parity] + j;
++          if (y >= 0 && y < k.vh) k.out.set(row, (2*y + parity)*k.vw + pl.x0);
++        });
++      }
++      hdr[HDR.DRAWN] |= 2;
++      break run;
++    }
+     let va1, va2, bg, dmaen;
+     if ((va1 = k.need(R.VIDEOAREA1)) === null || (va2 = k.need(R.VIDEOAREA2)) === null || (bg = k.need(R.BG)) === null ||
+         (dmaen = k.need(R.DMAEN)) === null) { status = E.UNWRITTEN; break run; }
+diff --git a/emu/src/lab/display.mjs b/emu/src/lab/display.mjs
+index ec0e4c8..bf2d469 100644
+--- a/emu/src/lab/display.mjs
++++ b/emu/src/lab/display.mjs
+@@ -183,7 +183,7 @@ export const ASSUMPTIONS = {
+   "A14": "the composite is the mixer output before YGAIN/KNEE/ROT/RGBCNV/CRM/GAM/YCCNV/SETUP/YCCLIP/YCLPF (placed after the mixer by register order only); EVF programs non-identity KNEE/ROT",
+   "A16": "VSC and OSD-engine DMA addresses are bus addresses in one flat space (om1.bus): bus 0xa0000000 + n = DRAM offset n (the CPU uncached view), the live-view bank ranges of table 0x602c2d61 are memory, any other bus address is DMA_RANGE",
+   "A17": "CPU 0xb8000000..0xbfffffff shows bus segment (byte 3 of 0x98100058) << 27; bytes 0..2 only 14 15 16; reset 0x17161514 (the value 0x50036d95 restores)",
+-  "A18": "a plane fetches from ((DMASADR << 4) & ~127) + SPOS * Bpp (Bpp 2 IMG format 0, 1 OSD) when the pair is consistent (address bits 6..4 == SPOS * Bpp bits 6..4, SPOS * Bpp < 128, SPOS even for IMG format 0); DMABN counts from the burst start (SPOS_UNMODELLED otherwise; record SPOS_A18); the OSD count of 0x501e00d0/0x501e01b9 does not fit this for a width that is a multiple of 128 (DMABN_SHORT)",
++  "A18": "a plane fetches from ((DMASADR << 4) & ~127) + SPOS * Bpp (Bpp 2 IMG format 0, 1 OSD) when the pair is consistent (IMG format 0 may use a 128-aligned address with independent SPOS, observed in E147 camera telemetry; otherwise address bits 6..4 == SPOS * Bpp bits 6..4, SPOS * Bpp < 128, SPOS even for IMG format 0); DMABN counts from the burst start (SPOS_UNMODELLED otherwise; record SPOS_A18); the OSD count of 0x501e00d0/0x501e01b9 does not fit this for a width that is a multiple of 128 (DMABN_SHORT)",
+ };
+ export const STAND_INS_M8 = {
+   "H-TIMER": "the software-timer boot step 0x50058959 (called at 0x5002cd82) runs natively; the hardware-timer init 0x500642dd (0x5002cd7b) does not, guarded by 0xa32ca47c = 0 and the low-RAM u16 at 6 * ch + 2 = 0 (ch 16..31): 0x50064323/0x50064352/0x5006437d return 0x5201/0x5202/0, returns no caller uses (h_timer: function, channel, return)",

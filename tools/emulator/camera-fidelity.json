@@ -1,0 +1,26 @@
+{
+  "base": "0819080133f6ca7edd455dfdfa209bd9eed291cc",
+  "patch_sha256": "e80a017bd35cb8ca9c617b641b6b0ff5fce5d0ca01939623764e366d287d2d07",
+  "files": {
+    "emu/checks/check_camera_layout.mjs": {
+      "before": null,
+      "after": "210837a56b70e6e1dcfaaba7d2a9c64ec2ffaa7a535a3a902dafb52736d7bef2"
+    },
+    "emu/checks/fixtures/om3-camera-layout.json": {
+      "before": null,
+      "after": "e6c98f7fcb94ee5ae1ac5d682307eb021d261e814d038cb7aed7423ef2272398"
+    },
+    "emu/refs/display.mjs": {
+      "before": "fe806609fbf22e11c7febb3c500faf99d981123a918b60314b55108d61745691",
+      "after": "ce2cb613e716dd0693564568e30346efad76727092ed9f4e1879805fb5bd1fec"
+    },
+    "emu/src/dev/vsccompose.mjs": {
+      "before": "d669d4ae3ac2a4fe476a1a79884b7e3df35b58d61c00e588152455c0799f9b9d",
+      "after": "2c597c8734d00104ec0183ccb2dd6cbc498a3dd3c4e55d0690d51076e80b0917"
+    },
+    "emu/src/lab/display.mjs": {
+      "before": "931e1505a12adc247f41b93e5e8f47405cb7ae2d58d8d95d192bae0deb878ef2",
+      "after": "a0cd0e6b88493b6d7d0c779a71e980e620da326ef44e4a17de9d0cdb91a98af9"
+    }
+  }
+}
