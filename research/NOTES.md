@@ -8829,3 +8829,25 @@ screen gets 3200 K A3 M2 at the half-press that takes the set; FILM 15 Shade G3;
 - LookLab: the grain preview's tile uses g4's round filters (`preview.ts` `G4_TAPS`; at preview size the averaged grain
   is about 7 % (Coarse) to 14 % (Medium) stronger than with the box, as the camera's now is); the WB Compensation help
   text says the film sets the camera's own compensation. vitest 76 pass.
+
+## Grain colour g6: full-height colour grain, weaker red-green (2026-11-19; branch feature/grain-colour; emulator only)
+- Owner: "Fix all three sizes" (after the colour preview against v0.40.1 and the cost estimate). On top of v0.40.1
+  (main 69e3438) plus feature/better-grain-g4's notes (merge 710b5bd). Firmware 811d96d.
+- **What changes:** only the colour planes of the grain tile. Brightness = v0.40.1 (g4) byte for byte. Cb / Cr made on
+  every band row (g4: every other row, each chroma row serving two pixel rows), chroma row r from tg_seed(r, 1 / 2),
+  768 samples, vertical taps on full rows: Fine / Medium 1-1 down, 1 across; Coarse 1-3-3-1 down, 1-6-1 across. Cb
+  sigma 16, Cr sigma 9. tg_g4p rows 52 B: + GP_KR / GP_AR (Cr: Fine / Medium 5644 / 6982156, Coarse 290 / 6054976;
+  Cb 10033 / 5862961 and 515 / 4218976) and GP_HC (1 or 6). tg_vt: a 2-tap path (one ring slot, no turn); tg_h6c
+  replaces tg_h3c; Cb / Cr rings 3 + 3 rows (GW_RC 6 x 768), context 80 B: TG_WORK 15,832 B (pools end at 16,448).
+  No new hook, nothing at start-up; ext12 262,000 / 262,144 B, ext13 75,584 B, loader end word unchanged
+  (0x60fbf000). VERSION "v0.40.1-gc (grain colour test)" (the Firmware Version page takes 9 letters: "0.40.1-gc").
+- **Model:** `tile_model.g6_tile` / `g6_full` (g4_tile takes the band maker); the grain-tile test compares with them.
+- **om-emu:** tile = model byte for byte (Fine / Medium / Coarse fast, Medium across an edge). Steps a tile: Fine
+  11.4 M, Medium 20.6 M, Coarse 27.6 M, across an edge 60.5 M (v0.40.1: 9.5 / 18.7 / 24.2 / 49.1 M), as estimated.
+  At v0.40.1's camera rate (Coarse 322 ms for 24.2 M) about 152 / 274 / 367 ms (analysis). `--without` the v0.40.1
+  build (0df560d2…, = the release): caught (all four cases differ).
+- **Suite on the 811d96d build: 119 of 119 pass** (exit 0).
+- Package `test-builds/2026-11-19-grain-colour/` (private): E1479999.BIN 6577b912…4c55, GUIDES.BIN 5e177bc9…a859;
+  go-back v0.40.1 0df560d2…fd41 (patch.py --release v0.40.1) + GUIDES.BIN 5a66b5ca…8fd3; preview pictures.
+- **Camera-only:** the time per tile, the look (colour speckle less red-green, no 2-row steps), Halation with grain,
+  bursts.
