@@ -8863,3 +8863,16 @@ screen gets 3200 K A3 M2 at the half-press that takes the set; FILM 15 Shade G3;
     Sequential + anti-shock, ~6 per second, RAW+JPEG, Coarse 5): all saved. A ~30-shot fast burst was never tried on
     v0.40.1, so a reboot at the camera's buffer limit may be older than this change (guess). Next: the same burst on
     v0.40.1 (the package's go-back), and on this build with Film Grain Off.
+- **Faster tile, same picture (2026-11-19; owner: "make the grain faster so bursts don't reboot"; emulator only).**
+  Commit 21e0916; the tile = the model byte for byte (the grain-tile test, unchanged model). om-emu steps a tile: Fine
+  8.5 M, Medium 16.5 M, Coarse 22.9 M, Medium across an edge 55.8 M (g6 11.4 / 20.6 / 27.6 / 60.5; v0.40.1 9.5 / 18.7
+  / 24.2 / 49.1). Where it came from: the crossfaded strip rows (102 at Coarse, 68 at Medium) are made in the work
+  buffer (n in W2 = V's room, free after the band; p in W) and blended once into the tile (no write-then-read-back
+  of the tile), tg_bl 4 bytes a turn with K = mid 256 + 128 - mid (c + s) folded in (about 58 K -> 38 K a row);
+  tg_cp / tg_rc copy 16 bytes a turn (tg_rc keeps shift 0 only, its one caller); TGH makes two outputs a turn; the
+  clamps take one compare in range (TGCL). ext12 261,984 B, ext13 75,904 B (loader end word unchanged). VERSION
+  "v0.40.1gc2 (grain colour, faster)". **Suite 119 of 119 pass** (pass recorded on 21e0916). Guess for the camera:
+  Coarse about 0.29 s (g6 0.348 s), if time follows the step count.
+- Package `test-builds/2026-11-19-grain-colour-faster/` (private): E1479999.BIN 218b018a…e22f, GUIDES.BIN
+  9f458270…2b67, go-back v0.40.1; **on the owner's card (2026-11-19, the owner asked; checked by sha256)**. Camera
+  question: the same ~30-shot fast burst (drive mode noted), and the log's tile time.
