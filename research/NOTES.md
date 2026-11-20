@@ -8693,3 +8693,12 @@ Assign C4, Set B, Assign C5: C4 showed Set B's films, and Set A again is ignored
   0.08 0.03 0.04 0.06 0.06 0.03 (Medium 5 smooth, as the model). Faint (the rise is about 6 % of the coarse colour
   power) but real. Fix if wanted: colour grain at full height with a smooth vertical filter (estimate ~10 % more
   work a tile; the 2-px colour width is the 4:2:2 format's and stays).
+- **Colour fix preview (2026-11-19, owner: "just do the fix"; model only, not built):** v0.40.1's brightness byte for
+  byte; colour grain made at full height (own random bytes per row, tg_seed(row, 1 / 2) for rows 0..127): Fine /
+  Medium vertical 1-1, horizontal 1 (the same spectrum as before, without the 2-row grid); Coarse vertical 1-3-3-1,
+  horizontal 1-6-1 (was 1-3-1 at half height); Cb sigma 16, Cr 9. Coarse red-green down the rows (|fy| 0.05..0.45)
+  1.00 0.83 0.54 0.32 0.15 0.05 0.01 0.00 0.00 (v0.40.1 1.00 0.57 0.23 0.07 0.03 0.03 0.05 0.06 0.03): **bands gone**.
+  Coarse colour lags rows 0.75 0.30, px 0.66 0.32 (the brightness clumps' 0.75 0.30; v0.40.1 colour 0.77 0.55: the
+  colour specks a little finer, as real film's). Repeats Cr 0.008..0.012. Pictures (grey, photo, Fourier: brightness,
+  blue-yellow, red-green) in the private test-builds folder; owner's verdict pending. Firmware cost (estimate):
+  the colour band twice as many rows; Coarse uses the existing 4-tap vertical pass.
