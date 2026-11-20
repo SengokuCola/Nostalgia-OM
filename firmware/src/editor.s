@@ -9632,37 +9632,46 @@ tg_hc:
  mov d0,d2                        /* K */
  mov d1,a2                        /* add */
 1:
+ TGHP \taps, \clamp, 0, 0
+ TGHP \taps, \clamp, 2, \stride
+ add \stride * 2,a1
+ add 4,a0
+ cmp a3,a0
+ bcs 1b
+ ret [d2,d3,a2,a3],16
+ .endm
+ .macro TGHP taps, clamp, v, o      /* one output: v = its V byte offset from a0, o = its output offset from a1 */
  .if \taps == 1
- movhu (a0),d1
+ movhu (\v,a0),d1
  .elseif \taps == 3
- movhu (a0),d1
+ movhu (\v,a0),d1
  mov d1,d3
  add d1,d1
  add d3,d1
- movhu (-2,a0),d0
+ movhu (\v - 2,a0),d0
  add d0,d1
- movhu (2,a0),d0
+ movhu (\v + 2,a0),d0
  add d0,d1
  .elseif \taps == 6
- movhu (a0),d1
+ movhu (\v,a0),d1
  mov d1,d3
  add d1,d1
  add d3,d1
  add d1,d1
- movhu (-2,a0),d0
+ movhu (\v - 2,a0),d0
  add d0,d1
- movhu (2,a0),d0
+ movhu (\v + 2,a0),d0
  add d0,d1
  .else
- movhu (a0),d1
- movhu (2,a0),d3
+ movhu (\v,a0),d1
+ movhu (\v + 2,a0),d3
  add d3,d1
  mov d1,d3
  add d1,d1
  add d3,d1
- movhu (-2,a0),d0
+ movhu (\v - 2,a0),d0
  add d0,d1
- movhu (4,a0),d0
+ movhu (\v + 4,a0),d0
  add d0,d1
  .endif
  mul d2,d1
@@ -9674,12 +9683,7 @@ tg_hc:
  clr d1
 2:
  .endif
- movbu d1,(a1)
- add \stride,a1
- add 2,a0
- cmp a3,a0
- bcs 1b
- ret [d2,d3,a2,a3],16
+ movbu d1,(\o,a1)
  .endm
  TGH tg_h1y, 1, 2, 0
  TGH tg_h3y, 3, 2, 1
@@ -9691,7 +9695,8 @@ tg_hc:
 /* tg_str: `call tg_str,[d2,d3,a2,a3],40`, a0 = the context (the band in tile rows 0..127): tile rows 128..767 (and
  * 896..1535) from G4_NST strips of G4_H rows (tg_tab, tg_cmp); a strip's first Bh rows crossfaded (tg_bl, weights
  * GP_WH) from the strip before going on (strip 0: the band going on, its rows 0..); then rows 0..Bh - 1 from the last
- * strip going on (the tile's wrap; in order, reading the tile as it is then). A lock (tg_lk .. tg_ul) for each
+ * strip going on (the tile's wrap; in order, reading the tile as it is then). A crossfaded row is made in the work
+ * buffer (the new row n in W2 = W + 3072, the one going on p in W) and blended once into the tile (speed, 2026-11-19). A lock (tg_lk .. tg_ul) for each
  * crossfaded row, up to G4_LK other rows a lock. -> d0 = 0 done, 1 failed. Locals: (4) k, (8) i, (12) r0, (16) p /
  * rows left this lock, (20) the row. a3 = the context, a2 its size's row. */
 tg_str:
@@ -9728,19 +9733,26 @@ tg_str:
  add d1,d0
  call tg_tr,[],0
  mov d0,(20,sp)
- mov d0,a0
+ mov (CX_W,a3),a0                 /* this strip's row i (n) into W2 (W + 3072, V's room: the band is done) */
+ add GW_V,a0
  mov (CX_TA,a3),a1
  mov (8,sp),d0
- mov 1,d1
+ clr d1
  mov a3,a2
  call tg_cmp,[d2,d3,a2,a3],56
  mov (CX_PAR,a3),a2
  mov (4,sp),d0
  cmp 0,d0
  bne 12f
- mov (8,sp),d0                    /* strip 0: the band going on = its row i */
+ mov (8,sp),d0                    /* strip 0: the band going on = its row i, into W */
  call tg_tr,[],0
- mov d0,(16,sp)
+ mov d0,a1
+ mov (CX_W,a3),a0
+ clr d0
+ clr d1
+ mov TG_ROWB,d2
+ clr d3
+ call tg_cp,[d2,d3,a2,a3],44
  bra 13f
 12:
  mov (CX_W,a3),a0                 /* the strip before going on (its row G4_H + i) into W's row */
@@ -9751,8 +9763,6 @@ tg_str:
  mov a3,a2
  call tg_cmp,[d2,d3,a2,a3],56
  mov (CX_PAR,a3),a2
- mov (CX_W,a3),d0
- mov d0,(16,sp)
 13:
  mov (8,sp),d0
  asl2 d0
@@ -9760,9 +9770,8 @@ tg_str:
  add d0,a0
  mov (a0),d1
  mov (20,sp),a0
- mov (16,sp),a1
- clr d0
- call tg_bl,[d2,d3,a2,a3],32
+ mov (CX_W,a3),a1
+ call tg_bl,[d2,d3,a2,a3],24
  mov a3,a0
  call tg_ul,[d2,d3,a2,a3],20
  mov (8,sp),d0
@@ -9832,6 +9841,14 @@ tg_str:
  mov (8,sp),d0
  call tg_tr,[],0
  mov d0,(20,sp)
+ mov d0,a1                        /* the band's row i (n) into W2 */
+ mov (CX_W,a3),a0
+ add GW_V,a0
+ clr d0
+ clr d1
+ mov TG_ROWB,d2
+ clr d3
+ call tg_cp,[d2,d3,a2,a3],44
  mov (8,sp),d0
  asl2 d0
  mov (GP_WH,a2),a0
@@ -9839,8 +9856,7 @@ tg_str:
  mov (a0),d1
  mov (20,sp),a0
  mov (CX_W,a3),a1
- clr d0
- call tg_bl,[d2,d3,a2,a3],32
+ call tg_bl,[d2,d3,a2,a3],24
  mov a3,a0
  call tg_ul,[d2,d3,a2,a3],20
  mov (8,sp),d0
@@ -9853,6 +9869,68 @@ tg_str:
 90:
  mov 1,d0
  ret [d2,d3,a2,a3],40
+
+/* tg_bl: `call tg_bl,[d2,d3,a2,a3],24`, a0 = a tile row (cached view), a1 = W (p, the row going on; n, the new row,
+ * at a1 + 3072), d1 = weights c | s << 16: out = clamp(mid + ((c (p - mid) + s (n - mid) + 128) >> 8)), mid 48 for Y
+ * (even bytes), 128 for Cb / Cr (odd), computed as clamp((c p + s n + K) >> 8), K = mid 256 + 128 - mid (c + s);
+ * written at a0 and a0 + TG_HALF. 4 bytes a turn, about 38 K instructions (was 58 K). Locals: (4) p's end. */
+ .macro TGCL r                     /* clamp to 0..255: one compare when it is in range (speed, 2026-11-19) */
+ cmp 255,\r
+ bls 9f
+ cmp 0,\r
+ blt 8f
+ mov 255,\r
+ bra 9f
+8:
+ clr \r
+9:
+ .endm
+ .macro TGBB q, k
+ movbu (\q,a1),d0
+ mul d3,d0
+ movbu (TG_ROWB + \q,a1),d1
+ mul d2,d1
+ add d1,d0
+ add \k,d0
+ asr 8,d0
+ TGCL d0
+ movbu d0,(\q,a0)
+ movbu d0,(TG_HALF + \q,a0)
+ .endm
+tg_bl:
+ mov d1,d3
+ exthu d3                         /* c */
+ mov d1,d2
+ lsr 16,d2                        /* s */
+ mov d3,d1
+ add d2,d1                        /* c + s */
+ mov d1,d0
+ asl 4,d0
+ asl 5,d1
+ add d1,d0                        /* 48 (c + s) */
+ mov 48 * 256 + 128,d1
+ sub d0,d1
+ mov d1,a3                        /* K for Y */
+ mov d3,d1
+ add d2,d1
+ asl 7,d1                         /* 128 (c + s) */
+ mov 128 * 256 + 128,d0
+ sub d1,d0
+ mov d0,a2                        /* K for Cb / Cr */
+ mov a1,d0
+ add TG_ROWB,d0
+ mov d0,(4,sp)
+1:
+ TGBB 0, a3
+ TGBB 1, a2
+ TGBB 2, a3
+ TGBB 3, a2
+ add 4,a1
+ add 4,a0
+ mov (4,sp),d0
+ cmp d0,a1
+ bcs 1b
+ ret [d2,d3,a2,a3],24
 
 /* tg_tr: `call tg_tr,[],0` with a3 = the context: d0 = a tile row -> d0 = its address in the cached view. Uses d1,
  * MDR. */
@@ -10073,17 +10151,41 @@ tg_cp:
  beq 4f
  add TG_HALF,a2
 4:
- mov d2,d1
- lsr 2,d1
+ mov d2,d1                        /* 16 bytes a turn, then the last 0..3 words */
+ lsr 4,d1
+ beq 51f
 5:
+ mov (a1),d0
+ mov d0,(a0)
+ mov d0,(a2)
+ mov (4,a1),d0
+ mov d0,(4,a0)
+ mov d0,(4,a2)
+ mov (8,a1),d0
+ mov d0,(8,a0)
+ mov d0,(8,a2)
+ mov (12,a1),d0
+ mov d0,(12,a0)
+ mov d0,(12,a2)
+ add 16,a1
+ add 16,a0
+ add 16,a2
+ add -1,d1
+ bne 5b
+51:
+ mov d2,d1
+ and 12,d1
+ beq 53f
+52:
  mov (a1),d0
  inc4 a1
  mov d0,(a0)
  mov d0,(a2)
  inc4 a0
  inc4 a2
- add -1,d1
- bne 5b
+ add -4,d1
+ bne 52b
+53:
  mov (20,sp),d0
  add d2,d0
  cmp TG_ROWB,d0
@@ -10124,14 +10226,7 @@ tg_cp:
  add d2,d0
  add \mid * 256 + 128,d0
  asr 8,d0
- cmp 0,d0
- bge 7f
- clr d0
-7:
- cmp 255,d0
- ble 8f
- mov 255,d0
-8:
+ TGCL d0
  movbu d0,(\q,a0)
  movbu d0,(\q,a3)
  .endm
@@ -10335,116 +10430,29 @@ tg_cl:
  call UNLOCK,[d2],8
  ret [d2,d3,a2,a3],20
 
-/* tg_rc: `call tg_rc,[d2,d3,a2,a3],16`, a0 = a tile row (cached view), a1 = the source row, d0 = a shift (bytes, a
- * multiple of 4, 0..3068): row[j] = source[(j + shift) mod 3072], written at a0 and a0 + TG_HALF (768 rows down).
- * About 5.4 K instructions. */
+/* tg_rc: `call tg_rc,[d2,d3,a2,a3],16`, a0 = a tile row (cached view), a1 = the source row: the row written at a0
+ * and a0 + TG_HALF (768 rows down), 16 bytes a turn. About 2.9 K instructions (d0, the old shift, is not used: its one
+ * caller gave 0). */
 tg_rc:
- mov TG_ROWB,d2
- sub d0,d2
- lsr 2,d2                         /* words before the source's end (1..768) */
- mov a1,a2                        /* the source row's start */
- add d0,a1
- lsr 2,d0
- mov d0,d3                        /* words after it (0..767) */
+ mov TG_ROWB / 16,d2
 1:
  mov (a1),d0
- inc4 a1
  mov d0,(a0)
  mov d0,(TG_HALF,a0)
- inc4 a0
+ mov (4,a1),d0
+ mov d0,(4,a0)
+ mov d0,(TG_HALF + 4,a0)
+ mov (8,a1),d0
+ mov d0,(8,a0)
+ mov d0,(TG_HALF + 8,a0)
+ mov (12,a1),d0
+ mov d0,(12,a0)
+ mov d0,(TG_HALF + 12,a0)
+ add 16,a1
+ add 16,a0
  add -1,d2
  bne 1b
- cmp 0,d3
- beq 3f
- mov a2,a1
-2:
- mov (a1),d0
- inc4 a1
- mov d0,(a0)
- mov d0,(TG_HALF,a0)
- inc4 a0
- add -1,d3
- bne 2b
-3:
  ret [d2,d3,a2,a3],16
-
-/* tg_bl: `call tg_bl,[d2,d3,a2,a3],32`, a0 = a tile row (cached view) holding the new strip's row n, a1 = the row the
- * strip before goes on with (p, before its shift), d0 = p's shift (bytes, a multiple of 4), d1 = weights c | s << 16:
- * out = clamp(mid + ((c (p - mid) + s (n - mid) + 128) >> 8)), mid 48 for Y (even bytes), 128 for Cb / Cr (odd);
- * written at a0 and a0 + TG_HALF. About 58 K instructions. Locals: (4) p's row start, (8) the shift, (12) the piece. */
-tg_bl:
- mov a1,(4,sp)
- mov d0,(8,sp)
- mov d1,d3
- exthu d3                         /* c */
- mov d1,d2
- lsr 16,d2                        /* s */
- add d0,a1                        /* piece 0: p from the shift to its row's end */
- mov TG_ROWB,d1
- sub d0,d1
- mov a0,a2
- add d1,a2
- clr d0
- mov d0,(12,sp)
-5:
- cmp a2,a0
- bcc 8f
-6:
- movbu (a1),d0                    /* Y */
- add -48,d0
- mul d3,d0
- movbu (a0),d1
- add -48,d1
- mul d2,d1
- add d1,d0
- add TG_YRND,d0
- asr 8,d0
- cmp 0,d0
- bge 1f
- clr d0
-1:
- cmp 255,d0
- ble 2f
- mov 255,d0
-2:
- movbu d0,(a0)
- movbu d0,(TG_HALF,a0)
- movbu (1,a1),d0                  /* Cb or Cr */
- add -128,d0
- mul d3,d0
- movbu (1,a0),d1
- add -128,d1
- mul d2,d1
- add d1,d0
- add TG_CRND,d0
- asr 8,d0
- cmp 0,d0
- bge 3f
- clr d0
-3:
- cmp 255,d0
- ble 4f
- mov 255,d0
-4:
- movbu d0,(1,a0)
- movbu d0,(TG_HALF + 1,a0)
- add 2,a0
- add 2,a1
- cmp a2,a0
- bcs 6b
-8:
- mov (12,sp),d0
- cmp 0,d0
- bne 9f
- mov 1,d0
- mov d0,(12,sp)
- mov (4,sp),a1                    /* piece 1: p from its row's start, for the shift's bytes */
- mov (8,sp),d0
- mov a0,a2
- add d0,a2
- bra 5b
-9:
- ret [d2,d3,a2,a3],32
 
  .balign 4
 tg_sb:                            /* this tile's seed */
