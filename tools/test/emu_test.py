@@ -104,9 +104,10 @@ SEC_NOT6, SEC_WITH6, SEC_OMEMU = 0x1f, 0x3f, 0x7f     # SEC_OMEMU: the word as o
 MX_SITE, MX_ROW = 0x6051485a, 0x605144ef               # hook_mx; the camera's row scaling it calls
 TONE_SITE = 0x605197d7                                 # hook_tone; the stock goes on at TONE_NEXT
 LV_SITE, LV_SKIP, LV_X = 0x6046b8bb, 0x6046b94f, 0x6046b8ee   # hook_lv (a COLOR request); the stock: no flags
-# grain g4 (round clumps, fewer repeats, 2026-11-19; g3 2026-11-17): tg_fill called directly (FLUSH stubbed) must give
-# every byte of research/grain/tile_model.py: g4_tile (band + blocks) when the whole tile is in one 128 MB window
-# segment (Fine, Medium, Coarse), g4_full (all 768 rows the band's way) when it is across an edge.
+# grain colour g6 (g4's round clumps with full-height colour grain and weaker red-green, 2026-11-19; g4 and g3 before):
+# tg_fill called directly (FLUSH stubbed) must give every byte of research/grain/tile_model.py: g6_tile (band + blocks)
+# when the whole tile is in one 128 MB window segment (Fine, Medium, Coarse), g6_full (all 768 rows the band's way)
+# when it is across an edge.
 GRAINTILE = 'grain-tile-matches-the-model'
 GRAINTILE_CASES = [('fine-fast', 1, 0xb0100000), ('medium-fast', 2, 0xb0100000), ('coarse-fast', 3, 0xb0100000),
                    ('medium-across-an-edge', 2, 0xaff00000)]
@@ -1806,7 +1807,7 @@ def run_graintile(emu, build, out, card0):
             errors.append(f"{name}: made {'the full way' if fast else 'the fast way'}, not "
                           f"{'the fast way' if fast else 'the full way'} (tg_nf {nf})")
         nf0 = nf
-        want = (tm.g4_tile if fast else tm.g4_full)(w, sb)
+        want = (tm.g6_tile if fast else tm.g6_full)(w, sb)
         if not np.array_equal(tile, want):
             rows = sorted(set(np.nonzero(tile != want)[0].tolist()))
             errors.append(f'{name}: {int((tile != want).sum())} bytes differ from the model, rows {rows[:12]}')

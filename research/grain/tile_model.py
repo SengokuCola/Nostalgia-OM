@@ -14,6 +14,7 @@ both directions. Row y + 768 = row y.
 
 `sb` is the tile's seed (`tg_sb`, read back from the camera code). Results are uint8 arrays (1536, 3072).
 """
+import math
 import numpy as np
 
 M32 = 0xffffffff
@@ -210,15 +211,16 @@ def g4_row(t, st, i, g):
     return row
 
 
-def g4_tile(w, sb):
+def g4_tile(w, sb, band=None):
     """The fast way: band rows 0..127 (period 128); rows 128..767 = 16 strips of 40 rows, each 12 blocks of 128 px
     from a random x0; a strip's first Bh rows crossfaded from the strip before going on (strip 0: the band going on), at
-    the end rows 0..Bh - 1 from the last strip going on (in order, reading the tile as it is then)."""
+    the end rows 0..Bh - 1 from the last strip going on (in order, reading the tile as it is then). band: g4_band
+    (v0.40.1) or g6_band."""
     w = min(max(w, 1), 3)
     _, _, bh, g = G4_SIZE[w]
     wh = g4_wt(bh)
     t = np.zeros((768, 3072), np.int64)
-    t[:G4_BAND] = g4_band(w, sb, G4_BAND)
+    t[:G4_BAND] = (band or g4_band)(w, sb, G4_BAND)
     prev = None
     for k in range(G4_NST):
         st = g4_strip(k, sb)
@@ -240,4 +242,53 @@ def g4_tile(w, sb):
 def g4_full(w, sb):
     """Across a window edge: all 768 rows the band's way (period 768)."""
     t = g4_band(min(max(w, 1), 3), sb, 768).astype(np.uint8)
+    return np.vstack([t, t])
+
+
+# ---- g6, grain colour (2026-11-19, after the owner's real-film comparison): v0.40.1's grain (g4) with the colour grain
+# made on every row (full height: g4's chroma rows served two pixel rows, whose 2-row steps showed as bands in Coarse's
+# colour spectrum, camera photos too) and the red-green colour weaker (Cr sigma 9, Cb 16: real colour film's is about
+# 0.56 of the blue-yellow). Y, the strips, blocks, flips and crossfades as g4. Chroma row r (0..P - 1): random bytes
+# tg_seed(r, 1 / 2), 768 samples; vertical taps on full rows, horizontal on the samples (2 px each). research/NOTES.md
+# "Colour fix preview".
+G6_C = {1: ((1, 1), (1,)), 2: ((1, 1), (1,)), 3: ((1, 3, 3, 1), (1, 6, 1))}   # (vertical, horizontal) taps
+G6_SIG = (16, 9)                                                                # Cb, Cr sigma
+
+
+def g6_k(hv, hh, sigma, mid=128):
+    """tg_g4p's KC / AC (Cb) and KR / AR (Cr): K = round(sigma / (73.9 sqrt(sum k^2)) 65536) over the 2-D kernel,
+    add = (mid << 16) + 32768 - ((255 (sum k) K) >> 1)."""
+    k2 = sum(a * a for a in hv) * sum(a * a for a in hh)
+    k = int(sigma / (73.9 * math.sqrt(k2)) * 65536 + 0.5)
+    return k, (mid << 16) + 32768 - ((255 * sum(hv) * sum(hh) * k) >> 1)
+
+
+def g6_cplane(p, hv, hh, ch, sb, sigma):
+    rb = [g4_bytes(seed(r, ch, sb), 768) for r in range(p)]
+    k, add = g6_k(hv, hh, sigma)
+    off = 0 if len(hh) == 1 else 1
+    out = np.empty((p, 768), np.int64)
+    for y in range(p):
+        v = sum(a * rb[(y + j) % p] for j, a in enumerate(hv))
+        s_ = sum(a * np.roll(v, off - j) for j, a in enumerate(hh))        # v[x + j - off]
+        out[y] = np.maximum((k * s_ + add) >> 16, 0)
+    assert out.max() <= 255
+    return out
+
+
+def g6_band(w, sb, p):
+    b = g4_band(w, sb, p)
+    hv, hh = G6_C[w]
+    b[:, 1::4] = g6_cplane(p, hv, hh, 1, sb, G6_SIG[0])
+    b[:, 3::4] = g6_cplane(p, hv, hh, 2, sb, G6_SIG[1])
+    return b
+
+
+def g6_tile(w, sb):
+    return g4_tile(w, sb, band=g6_band)
+
+
+def g6_full(w, sb):
+    """Across a window edge: all 768 rows the band's way (period 768)."""
+    t = g6_band(min(max(w, 1), 3), sb, 768).astype(np.uint8)
     return np.vstack([t, t])

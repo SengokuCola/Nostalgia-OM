@@ -9036,33 +9036,36 @@ tr_ld2:                           /* 0x604ce6c9's frame: the builder's (4,sp) / 
  .set GW_R, 0                     /* the work buffer: the row being made (3072 B) */
  .set GW_V, 3072                  /* V: 4 B (v[-1]), 1536 halfwords, 4 B (v[N], v[N + 1]) */
  .set GW_RY, GW_V + 3080          /* the Y ring: 3 rows of random words (1536 B each) */
- .set GW_RC, GW_RY + 3 * 1536     /* the Cb / Cr rings: 2 + 2 rows (768 B each) */
- .set GW_TA, GW_RC + 4 * 768      /* two strip tables (tg_tab, 12 x 16 B) */
+ .set GW_RC, GW_RY + 3 * 1536     /* the Cb / Cr rings: 3 + 3 rows (768 B each) */
+ .set GW_TA, GW_RC + 6 * 768      /* two strip tables (tg_tab, 12 x 16 B) */
  .set GW_X, GW_TA + 2 * 192       /* the context: */
  .set CX_BUS, 0                   /* the tile's bus address */
  .set CX_PAR, 4                   /* its size's row of tg_g4p */
  .set CX_P, 8                     /* the band's rows: 128 (fast) or 768 */
  .set CX_FAST, 12
  .set CX_SY, 16                   /* the Y ring's slots, oldest first (3) */
- .set CX_SB, 28                   /* Cb's (2) */
- .set CX_SR, 36                   /* Cr's (2) */
- .set CX_W, 44                    /* the work buffer (its cached alias) */
- .set CX_TA, 48                   /* this strip's table */
- .set CX_TB, 52                   /* the strip before's */
- .set CX_VW, 56                   /* the tile's cached view while locked (tg_lk) */
- .set CX_TOK, 60                  /* its lock token */
- .set TG_WORK, GW_X + 64          /* 14280 B (the malloc pools end at 16448) */
+ .set CX_SB, 28                   /* Cb's (3) */
+ .set CX_SR, 40                   /* Cr's (3) */
+ .set CX_W, 52                    /* the work buffer (its cached alias) */
+ .set CX_TA, 56                   /* this strip's table */
+ .set CX_TB, 60                   /* the strip before's */
+ .set CX_VW, 64                   /* the tile's cached view while locked (tg_lk) */
+ .set CX_TOK, 68                  /* its lock token */
+ .set TG_WORK, GW_X + 80          /* 15832 B (the malloc pools end at 16448) */
  .set GP_KY, 0                    /* tg_g4p, a row a size: Y's K and add, (K s + add) >> 16 */
  .set GP_AY, 4
- .set GP_KC, 8                    /* Cb / Cr's */
+ .set GP_KC, 8                    /* Cb's */
  .set GP_AC, 12
  .set GP_TY, 16                   /* Y's taps (1, 3, 4) */
- .set GP_TC, 20                   /* Cb / Cr's (1, 3) */
+ .set GP_TC, 20                   /* Cb / Cr's vertical taps on full rows (2: 1-1, 4: 1-3-3-1) */
  .set GP_BH, 24                   /* rows crossfaded at a strip's start */
  .set GP_G, 28                    /* 2-px groups crossfaded at a block's start */
  .set GP_WH, 32                   /* the rows' weights (c | s << 16) */
  .set GP_WJ, 36                   /* the groups' bytes' weights */
- .set G4_PAR, 40
+ .set GP_KR, 40                   /* Cr's K and add (Cr weaker than Cb: blue-yellow colour grain) */
+ .set GP_AR, 44
+ .set GP_HC, 48                   /* Cb / Cr's horizontal taps (1: 1, 6: 1-6-1) */
+ .set G4_PAR, 52
 tg_fill:
  mov d0,(4,sp)
  clr d0
@@ -9138,9 +9141,13 @@ tg_fill:
  add 768,d0
  mov d0,(CX_SB + 4,a3)
  add 768,d0
+ mov d0,(CX_SB + 8,a3)
+ add 768,d0
  mov d0,(CX_SR,a3)
  add 768,d0
  mov d0,(CX_SR + 4,a3)
+ add 768,d0
+ mov d0,(CX_SR + 8,a3)
  add 768,d0
  mov d0,(CX_TA,a3)
  add 192,d0
@@ -9194,8 +9201,9 @@ tg_fill:
 /* tg_bnd: `call tg_bnd,[d2,d3,a2,a3],36`, a0 = the context: rows 0..P - 1 (P = CX_P; row P would be row 0) of the
  * filtered noise. Random bytes per plane row r: tg_seed(r, plane) as xorshift32 words, word g = pixels 4g, 4g + 1,
  * 4g + 2, 4g + 3 from its bytes 0, 2, 1, 3. Y: V = the vertical sum over rows y .. y + T - 1 (tg_vt; the ring keeps
- * T - 1 rows), then the horizontal one (tg_hy) into W's row; Cb / Cr likewise on even rows (chroma row y / 2, period
- * P / 2; odd rows keep them). The row to tile rows y and y + 768: fast, one lock (tg_rc); else tg_put twice.
+ * T - 1 rows), then the horizontal one (tg_hy) into W's row; Cb / Cr likewise on every row (grain colour, 2026-11-19:
+ * full height, so no 2-row steps; 768 samples a row, own taps, Cr its own K), period P. The row to tile rows y and
+ * y + 768: fast, one lock (tg_rc); else tg_put twice.
  * -> d0 = 0 done, 1 failed. Locals: (4) y, (8) T, (12) plane, (16) token / bus. a3 = the context, a2 its size's row. */
 tg_bnd:
  mov a0,a3
@@ -9251,20 +9259,15 @@ tg_bnd:
  mov (CX_W,a3),a1
  mov (8,sp),d3
  call tg_hy,[d2,d3,a2,a3],16
- mov (4,sp),d0                    /* even y: Cb (1), Cr (2) from the new chroma row (y / 2 + T - 1) mod P / 2 */
- btst 1,d0
- bne 20f
- mov 1,d0
+ mov 1,d0                         /* every row: Cb (1), Cr (2) from the new chroma row (y + T - 1) mod P */
  mov d0,(12,sp)
 12:
  mov (GP_TC,a2),d0
  mov d0,(8,sp)
  add -1,d0
  mov (4,sp),d1
- lsr 1,d1
  add d1,d0
  mov (CX_P,a3),d1
- lsr 1,d1
  cmp d1,d0
  bcs 13f
  sub d1,d0
@@ -9289,13 +9292,15 @@ tg_bnd:
  mov (CX_W,a3),a0
  add GW_V + 4,a0
  mov (CX_W,a3),a1
- add 1,a1                         /* Cb: bytes 1, 5, ..; Cr: 3, 7, .. */
+ add 1,a1                         /* Cb: bytes 1, 5, ..; Cr: 3, 7, .. (its own K and add) */
  mov (12,sp),d3
  cmp 1,d3
  beq 15f
  add 2,a1
+ mov (GP_KR,a2),d0
+ mov (GP_AR,a2),d1
 15:
- mov (8,sp),d3
+ mov (GP_HC,a2),d3
  call tg_hc,[d2,d3,a2,a3],16
  mov (12,sp),d0
  inc d0
@@ -9402,7 +9407,7 @@ tg_gw:
  ret [d2],8
 
 /* tg_vt: `call tg_vt,[d2,d3,a2,a3],32`, a0 = a ring's slot pointers (oldest first), a1 = V, d0 = the new row's seed,
- * d1 = pixels (1536 / 768), d2 = taps T: 1 (1), 3 (1, 3, 1), 4 (1, 3, 3, 1). V = the vertical sum of the T - 1 rows
+ * d1 = pixels (1536 / 768), d2 = taps T: 1 (1), 2 (1, 1), 3 (1, 3, 1), 4 (1, 3, 3, 1). V = the vertical sum of the T - 1 rows
  * in the ring and the new row (made here, xorshift32, and put in the oldest slot; the slots turn round), two pixels
  * a word: (word & TG_M8) and (word >> 8 & TG_M8) are pixels 4g, 4g + 1 and 4g + 2, 4g + 3 of word g. Locals: (4) the
  * stream, (8) V's end, (12) the slot pointers. */
@@ -9417,6 +9422,8 @@ tg_vt:
  cmp 3,d2
  beq 30f
  bcc 40f
+ cmp 2,d2
+ beq 50f
  mov d0,a0                        /* T = 1: V = the new row */
  mov (4,sp),d2
 1:
@@ -9562,19 +9569,55 @@ tg_vt:
  mov d1,(4,a0)
  mov d0,(8,a0)
  ret [d2,d3,a2,a3],32
+50:                               /* T = 2: the oldest (the one slot) x 1, the new row x 1, into that slot */
+ mov d0,a2                        /* V's end */
+ mov (a0),a0
+51:
+ mov (a0),d2
+ mov d2,d0
+ and TG_M8,d0
+ mov d2,d1
+ lsr 8,d1
+ and TG_M8,d1
+ mov (4,sp),d2
+ mov d2,d3
+ asl 13,d3
+ xor d3,d2
+ mov d2,d3
+ lsr 17,d3
+ xor d3,d2
+ mov d2,d3
+ asl 5,d3
+ xor d3,d2
+ mov d2,(4,sp)
+ mov d2,(a0)
+ mov d2,d3
+ and TG_M8,d3
+ add d3,d0
+ lsr 8,d2
+ and TG_M8,d2
+ add d2,d1
+ mov d0,(a3)
+ mov d1,(4,a3)
+ inc4 a0
+ add 8,a3
+ cmp a2,a3
+ bcs 51b
+ ret [d2,d3,a2,a3],32
 
 /* tg_hy / tg_hc: `call tg_hy,[d2,d3,a2,a3],16` (Y, every 2nd byte) / tg_hc (Cb or Cr, every 4th), d0 = K, d1 = add,
- * d2 = pixels N, d3 = taps T (as tg_vt), a0 = V (N halfwords; a halfword before and two after are used for the wrap),
- * a1 = the first output byte: out[x] = (K s + add) >> 16 (Y at 3 and 4 taps: at least 0; never above 255),
- * s = v[x] (T 1), v[x - 1] + 3 v[x] + v[x + 1] (3), v[x - 1] + 3 v[x] + 3 v[x + 1] + v[x + 2] (4), round the row. */
+ * d2 = pixels N, d3 = taps T (Y as tg_vt; Cb / Cr 1 or 6), a0 = V (N halfwords; a halfword before and two after are
+ * used for the wrap), a1 = the first output byte: out[x] = (K s + add) >> 16 (Y at 3 and 4 taps: at least 0; never
+ * above 255), s = v[x] (T 1), v[x - 1] + 3 v[x] + v[x + 1] (3), v[x - 1] + 3 v[x] + 3 v[x + 1] + v[x + 2] (4),
+ * v[x - 1] + 6 v[x] + v[x + 1] (6), round the row. */
 tg_hy:
  cmp 3,d3
  beq tg_h3y
  bcc tg_h4y
  bra tg_h1y
 tg_hc:
- cmp 3,d3
- beq tg_h3c
+ cmp 6,d3
+ beq tg_h6c
  bra tg_h1c
  .macro TGH name, taps, stride, clamp
 \name:
@@ -9596,6 +9639,16 @@ tg_hc:
  mov d1,d3
  add d1,d1
  add d3,d1
+ movhu (-2,a0),d0
+ add d0,d1
+ movhu (2,a0),d0
+ add d0,d1
+ .elseif \taps == 6
+ movhu (a0),d1
+ mov d1,d3
+ add d1,d1
+ add d3,d1
+ add d1,d1
  movhu (-2,a0),d0
  add d0,d1
  movhu (2,a0),d0
@@ -9632,7 +9685,7 @@ tg_hc:
  TGH tg_h3y, 3, 2, 1
  TGH tg_h4y, 4, 2, 1
  TGH tg_h1c, 1, 4, 0
- TGH tg_h3c, 3, 4, 0
+ TGH tg_h6c, 6, 4, 0
 
 .section .ext13,"ax"               /* g4: the strips (ext12 is full; the GX4-proven reserve) */
 /* tg_str: `call tg_str,[d2,d3,a2,a3],40`, a0 = the context (the band in tile rows 0..127): tile rows 128..767 (and
@@ -10136,11 +10189,15 @@ tg_jn:
 
  .balign 4
 tg_g4p:                           /* a row a size (G4_PAR B): GP_KY, GP_AY, GP_KC, GP_AC, GP_TY, GP_TC, GP_BH, GP_G,
-                                     GP_WH, GP_WJ; K = round(16 / (73.9 sum h^2) 65536), add = (mid << 16) + 32768 -
-                                     ((255 (sum h)^2 K) >> 1) (tile_model.g4_k) */
- .long 14189, 1369399, 14189, 6612279, 1, 1, 0, 0, 0, 0                  /* Fine: Y 1, Cb / Cr 1 */
- .long 1290, -933379, 14189, 6612279, 3, 1, 4, 2, tg_wh2, tg_wj2         /* Medium: Y 1-3-1, Cb / Cr 1 */
- .long 709, -2606944, 1290, 4309501, 4, 3, 6, 3, tg_wh3, tg_wj3          /* Coarse: Y 1-3-3-1, Cb / Cr 1-3-1 */
+                                     GP_WH, GP_WJ, GP_KR, GP_AR, GP_HC; K = round(sigma / (73.9 sqrt(sum k^2)) 65536)
+                                     over the 2-D kernel, add = (mid << 16) + 32768 - ((255 (sum k) K) >> 1)
+                                     (tile_model.g4_k, g6_c); Y sigma 16, Cb 16, Cr 9 */
+ .long 14189, 1369399, 10033, 5862961, 1, 2, 0, 0, 0, 0                  /* Fine: Y 1; Cb / Cr 1-1 down, 1 across */
+ .long 5644, 6982156, 1
+ .long 1290, -933379, 10033, 5862961, 3, 2, 4, 2, tg_wh2, tg_wj2         /* Medium: Y 1-3-1; Cb / Cr as Fine */
+ .long 5644, 6982156, 1
+ .long 709, -2606944, 515, 4218976, 4, 4, 6, 3, tg_wh3, tg_wj3           /* Coarse: Y 1-3-3-1; Cb / Cr 1-3-3-1 down, */
+ .long 290, 6054976, 6                                                   /* 1-6-1 across */
 tg_wh2:                           /* c | s << 16 = round(256 cos / sin ((i + 1) 90 / (B + 1) degrees)) (tile_model.g4_wt) */
  .hword 243, 79, 207, 150, 150, 207, 79, 243
 tg_wh3:
@@ -10408,7 +10465,7 @@ tg_w:                             /* the last tile's size */
  .byte 0
  .balign 4
 tg_l1:
- .asciz "\r\nGrain tiles (better grain g4): made "
+ .asciz "\r\nGrain tiles (grain colour g6): made "
 tg_l2:
  .asciz ", failed "
 tg_l3:
