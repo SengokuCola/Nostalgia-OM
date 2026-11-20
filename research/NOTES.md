@@ -8714,6 +8714,70 @@ screen gets 3200 K A3 M2 at the half-press that takes the set; FILM 15 Shade G3;
 - **Camera-only:** the time per tile (v0.40 ~270 ms; guess: Fine quicker, Coarse about the same or a little slower),
   the look on photos (no squares, stripes or repeats), Halation with grain, bursts, start-up with the 4 KB longer boot
   copy.
+- **g4 against real film (2026-11-19; analysis from the exact filters, not camera photos).** Sources the owner passed
+  on: a real-film measurement note (35 mm scans at 4000 dpi on a Coolscan V ED, public domain on Wikimedia Commons,
+  user Wiley.andrew.r; lags and power in camera pixels for a 35 mm frame filling 5184 px; power = the 2-D spectrum
+  along the sharp scan axis at 1/6, 1/3, ~1/2 cycle / px over the lowest frequencies), Newson, Faraj, Galerne, Delon,
+  "Realistic Film Grain Rendering", IPOL 7 (2017) (the open version of their CGF 2017 Boolean-model paper), and
+  D. Patrut, "Simple Physically-Based Film Grain Simulation: An Experiment" (2025).
+  - Clumps (lag 1 / 2 / 3; power 1/6 / 1/3 / 1/2): Ultramax 400 0.48 0.15 0.05; 0.61 0.24 0.12. Tri-X 400 0.42 0.13
+    0.04; 0.63 0.26 0.16. Ektar 100 0.59 0.24 0.11; 0.40 0.13 0.05. **g4 Medium 0.55 0.09 0; 0.66 0.16 0.04: the
+    right size, a little too smooth at the finest detail. g4 Coarse 0.75 0.30 0.05; 0.44 0.02 0**: softer than any
+    film there. Adding ~20 % (of the variance) single-pixel grain to the clumps: Medium 0.44 0.07 0; 0.67 0.20 0.09,
+    Coarse 0.60 0.24 0.04; 0.46 0.04 0.02 (closer to ISO 400 and to Ektar), still round. Fine (white) has no 35 mm
+    match at this scale (the note).
+  - Colour: real colour grain is strong and mostly blue-yellow (Cb / Y 1.04..1.25, Cr / Y 0.58..0.70: Cr about 0.56
+    of Cb), layers close to independent, as fine as the brightness grain. g4 has Cb = Cr and chroma at half height.
+  - Tone: real grain peaks at mid-grey and fades in shadows and highlights (the note's Ektar scene; the Boolean
+    model's coverage variance u (1 - u)), with bright-leaning specks at mid-grey (skew +0.4..+0.8). **Out of reach
+    for the tile:** the texture blend adds it at the same strength in every tone (camera-tested 2026-11-16). Both
+    references make the grain from the photo itself (Newson: discs at a density set by the tone, Gaussian 0.8 px,
+    2.4 s for a 512 x 512 grey on a parallel CPU; Patrut: a blue-noise texture stepped by the pixel value at 2x2..8x8
+    sub-pixels), which needs a pass over the photo (the CPU grain route took ~3 s, 2026-11-05).
+  - Strength (the note, model numbers): Film Grain 2 / 3 / 5 at Medium = 10.6 / 15.9 / 23.8 (8-bit), real Ektar 100
+    4.5 and Ultramax 400 7.6 (6.5..7.5 in a finished scan): level 1 is about ISO 100 film, 2 about ISO 400.
+  - Possible g5 (not built; the owner's call): ~20 % single-pixel grain in Medium and Coarse (a centre-tap boost in
+    the band pass), Cr weaker than Cb, chroma at full height. All three only change the band rows (the copies follow).
+    The centre-tap boost (same random bytes, 2-D kernel 1-3-1 x 1-3-1 with the centre 9 -> 12..14) gives Medium
+    lag 0.46..0.41, power 0.69..0.71 / 0.22..0.26 / 0.09..0.12, still round (axis / diagonal 0.99); Coarse (one
+    centre tap 9 -> 17..21) lag 0.65..0.58, power 0.47..0.49 / 0.04..0.06 / 0.01..0.03.
+- **g5 preview (2026-11-19; model only, owner: "Make a preview now"):** g4 with the centre tap +4 (Medium, 9 -> 13)
+  / +12 (Coarse) and Cr sigma 9 (Cb 16). K = round(sigma / (73.9 sqrt(sum k^2)) 65536) over the 2-D kernel
+  (Medium 981, Coarse 515), add from (sum k) = 29 / 76. Exact model (seed 0x12345678, whole tile): Medium lag 0.43
+  0.05 0, power 0.61 0.22 0.12 (Ultramax 400 0.48 0.15 0.05; 0.61 0.24 0.12); Coarse 0.58 0.20 0.02; 0.43 0.05 0.03;
+  Y 48 / 16, Cb 16, Cr 9; repeats tile / 640 Medium 0.008 / 0.015, Coarse 0.010 / 0.016 (g4 0.009 / 0.015, 0.011 /
+  0.018); spectra round with an even floor at the edges, no lines. With no boost and Cr 16 the model equals g4 byte
+  for byte. Full-height chroma left out: at Medium / Coarse the colour grain is already about the size of the
+  brightness grain (lag 1 about 0.5 / 0.77 against Y 0.55 / 0.75). Pictures in the private test-builds folder.
+- **Owner on the g5 preview (2026-11-19): "g5 looks worse. it looks more pixelated again"**; one grain only, compared
+  with v0.40.1 (= g4, released). So the single-pixel part (centre-tap boost) is out, whatever the real-film numbers
+  say. Next preview: v0.40.1's clumps unchanged (Y and Cb byte for byte) with Cr sigma 9 instead of 16 (less
+  red-green colour speckle); pictures in the private test-builds folder; owner's verdict pending.
+- **Fourier of the colour-only preview (2026-11-19, owner asked; model + v0.40.1 camera photos):** brightness spectra
+  identical to v0.40.1 (Y byte for byte); red-green colour the same shape at about a third of the power (Cr sigma 9).
+  Both show, in Coarse's colour only, **faint horizontal bands** (dark at |fy| ~1/4, a small rise at 0.35..0.45
+  cycle / px): the colour grain is made at half height and each colour row serves two pixel rows (g1..g4, so
+  v0.40.1 too). Camera-confirmed: the OM-3 JPEG is 4:2:2 (chroma full height), and the v0.40.1 chart photos
+  (PB194017 / 020 against grain Off PB194011, 40 flat 256 px blocks, red-green high-pass power down the rows over
+  |fy| 0.05..0.45) give Coarse 5 1.00 0.64 0.27 0.09 0.04 0.04 0.06 0.05 0.03 against the model's 1.00 0.60 0.25
+  0.08 0.03 0.04 0.06 0.06 0.03 (Medium 5 smooth, as the model). Faint (the rise is about 6 % of the coarse colour
+  power) but real. Fix if wanted: colour grain at full height with a smooth vertical filter (estimate ~10 % more
+  work a tile; the 2-px colour width is the 4:2:2 format's and stays).
+- **Colour fix preview (2026-11-19, owner: "just do the fix"; model only, not built):** v0.40.1's brightness byte for
+  byte; colour grain made at full height (own random bytes per row, tg_seed(row, 1 / 2) for rows 0..127): Fine /
+  Medium vertical 1-1, horizontal 1 (the same spectrum as before, without the 2-row grid); Coarse vertical 1-3-3-1,
+  horizontal 1-6-1 (was 1-3-1 at half height); Cb sigma 16, Cr 9. Coarse red-green down the rows (|fy| 0.05..0.45)
+  1.00 0.83 0.54 0.32 0.15 0.05 0.01 0.00 0.00 (v0.40.1 1.00 0.57 0.23 0.07 0.03 0.03 0.05 0.06 0.03): **bands gone**.
+  Coarse colour lags rows 0.75 0.30, px 0.66 0.32 (the brightness clumps' 0.75 0.30; v0.40.1 colour 0.77 0.55: the
+  colour specks a little finer, as real film's). Repeats Cr 0.008..0.012. Pictures (grey, photo, Fourier: brightness,
+  blue-yellow, red-green) in the private test-builds folder; owner's verdict pending. Firmware cost (estimate):
+  the colour band twice as many rows; Coarse uses the existing 4-tap vertical pass.
+- **Cost of the colour fix (estimate from the loops, 2026-11-19; not built):** colour band rows 64 -> 128 a channel;
+  tg_vt about 4.5 / 7.75 (a new 2-tap loop) / 10.5 / 12.75 instructions a pixel at 1 / 2 / 3 / 4 taps, tg_h1c 9,
+  tg_h3c 16 (1-6-1 about 17). Extra a tile: Fine and Medium +2.0 M, Coarse +3.2 M (om-emu v0.40.1: 9.5 / 18.7 / 24.2
+  M). At the camera's v0.40.1 rate (Coarse 322 ms for 24.2 M): Fine ~126 -> ~152 ms, Medium ~248 -> ~274 ms, Coarse
+  322 -> ~365 ms (+26 / +26 / +43 ms). Work buffer +1,536 B (Coarse's 3-row colour rings): 15,816 B. Fine and Medium
+  had no bands: keeping their colour at half height costs nothing there (only Coarse +43 ms).
 
 ## Combined test: fix #88 + grain g4 (2026-11-19; branch try/fix88-grain4; emulator, on the owner's card)
 - Owner: "if possible lets test 88 with the better grain build". `fix/88-film-wb` (1182a7b) and
