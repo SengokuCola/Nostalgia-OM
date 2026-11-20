@@ -8851,3 +8851,15 @@ screen gets 3200 K A3 M2 at the half-press that takes the set; FILM 15 Shade G3;
   go-back v0.40.1 0df560d2…fd41 (patch.py --release v0.40.1) + GUIDES.BIN 5a66b5ca…8fd3; preview pictures.
 - **Camera-only:** the time per tile, the look (colour speckle less red-green, no 2-row steps), Halation with grain,
   bursts.
+- **Camera result (owner's OM-3, 2026-11-19; camera-tested): "the grain looks good"; but "on fast burst it rebooted
+  after about 30 photos. The grain is slower to save."** Files in the private package folder (`camera-results/`:
+  PB194040..050 JPG, CADLOG.TXT; never in the repo). On the card: chart test PB194040..049 (040..044 EXIF
+  "Sequential; Anti-shock", 045..049 single) and PB194050 (single), RAW+JPEG (image quality [14]); **none of the
+  burst's ~30 photos was saved** (nothing after PB194050). Log: build "v0.40.1-gc", written at event 54 with 11 photos
+  (so before the burst, or the burst's write never finished), **"Grain tiles (grain colour g6): made 10, failed 0, last
+  size 3, last time (ms) 348, fast 10"** (v0.40.1 322: +26 ms, +8 %; the estimate was +45), Halation photo 1052 ms in
+  all (v0.40.1 974; pass C 703 against 623). The reboot itself is not in any log.
+  - Not known: whether v0.40.1 reboots on the same burst. Its only camera burst was 18 shots (PB194022..039, drive [11]
+    Sequential + anti-shock, ~6 per second, RAW+JPEG, Coarse 5): all saved. A ~30-shot fast burst was never tried on
+    v0.40.1, so a reboot at the camera's buffer limit may be older than this change (guess). Next: the same burst on
+    v0.40.1 (the package's go-back), and on this build with Film Grain Off.
