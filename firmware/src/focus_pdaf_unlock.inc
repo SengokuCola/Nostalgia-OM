@@ -16,7 +16,21 @@
  *    Returns 0 cleanly instead of asserting in 0x60068a54 when no electronic
  *    lens is mounted and LLK1 is absent (0xa33df455==0) or -32768 sentinel.
  *
- * All fast-path gates live in .ext4 (same loader section as all 3 hook sites).
+ * 4. .hook_zaf_cap  @ 0x6094e4df (DMA post-capture callback, 6 B: movbu (0x62b3d9b4),d0)
+ *    On dumb manual lenses, pre-capture 0x6098e67e (lens position sync) returns
+ *    nonzero and clears 0x62b3d9b4=0, causing 0x6094e4df to set capture_state=3
+ *    and skip 0x6094eb5b (leaving ring_flags stuck at [1,1,1,1]). Returning 1
+ *    lets 0x6094eb5b -> 0x609958c9 mark slot flag 1->2 and update latest_slot.
+ *
+ * 5. .hook_zaf_disp @ 0x6095013d (0x6094fbf4 mount_type==0 branch, 6 B: movbu (0x62b3d938),d0)
+ *    Enters the stock lens-free dispatch at 0x60950147 -> 0x60950174 ->
+ *    0x60992846(6) so TruePic X HW PDAF wakes up without changing 0x62b3d938.
+ *
+ * 6. .hook_zaf_lpos @ 0x609901b6 (0x6098c749 lens-pos-valid leaf, 6 B: movbu (0xa33df46c),d0)
+ *    Prevents 0x609a592d from looping forever waiting for 0xa33df46c==1 before
+ *    running 0x6099ff62 -> 0x60992b3a (HW PDAF) -> 0x6096294b (SW defocus).
+ *
+ * All fast-path gates live in .ext4 (same loader section as all 6 hook sites).
  * Unarmed boot and electronic lenses follow exact stock paths.
  */
 .section .hook_zaf_lv,"ax"
@@ -29,6 +43,18 @@
 .section .hook_zaf_llk1,"ax"
  jmp zaf_llk1_entry
  nop
+ nop
+
+.section .hook_zaf_cap,"ax"
+ jmp zaf_cap_entry
+ nop
+
+.section .hook_zaf_disp,"ax"
+ jmp zaf_disp_entry
+ nop
+
+.section .hook_zaf_lpos,"ax"
+ jmp zaf_lpos_entry
  nop
 
 .section .ext4,"ax"
@@ -68,14 +94,56 @@ zaf_llk1_entry:
  movbu (0xa33df455),d1
  jmp zaf_llk1_resume
 
+zaf_cap_entry:
+ mov (FS_ON),d0
+ cmp 1,d0
+ bne 1f
+ mov (SEC_READY),d0
+ and 32,d0
+ beq 1f
+ jmp zaf_cap_armed
+1:
+ movbu (0x62b3d9b4),d0
+ jmp zaf_cap_resume
+
+zaf_disp_entry:
+ mov (FS_ON),d0
+ cmp 1,d0
+ bne 1f
+ mov (SEC_READY),d0
+ and 32,d0
+ beq 1f
+ jmp zaf_disp_armed
+1:
+ movbu (0x62b3d938),d0
+ jmp zaf_disp_resume
+
+zaf_lpos_entry:
+ mov (FS_ON),d0
+ cmp 1,d0
+ bne 1f
+ mov (SEC_READY),d0
+ and 32,d0
+ beq 1f
+ jmp zaf_lpos_armed
+1:
+ movbu (0xa33df46c),d0
+ jmp zaf_lpos_resume
+
 .section .ext13,"ax"
 .balign 4
 zaf_lv_cnt: .long 0
 zaf_eng_cnt: .long 0
 zaf_llk1_cnt: .long 0
+zaf_cap_cnt: .long 0
+zaf_disp_cnt: .long 0
+zaf_lpos_cnt: .long 0
 .set ZAF_LV_CNT,zaf_lv_cnt+0x40000000
 .set ZAF_ENG_CNT,zaf_eng_cnt+0x40000000
 .set ZAF_LLK1_CNT,zaf_llk1_cnt+0x40000000
+.set ZAF_CAP_CNT,zaf_cap_cnt+0x40000000
+.set ZAF_DISP_CNT,zaf_disp_cnt+0x40000000
+.set ZAF_LPOS_CNT,zaf_lpos_cnt+0x40000000
 
 zaf_lv_armed:
  call zaf_stock_lens_ptr,[],4
@@ -149,3 +217,51 @@ zaf_llk1_armed:
 1:
  movbu (0xa33df455),d1
  jmp zaf_llk1_resume
+
+zaf_cap_armed:
+ mov (PH_MODE),d0
+ cmp 0,d0
+ beq 1f
+ movbu (0xa32d3d32),d0
+ cmp 0,d0
+ bne 1f
+ mov (ZAF_CAP_CNT),d0
+ inc d0
+ mov d0,(ZAF_CAP_CNT)
+ mov 1,d0
+ jmp zaf_cap_resume
+1:
+ movbu (0x62b3d9b4),d0
+ jmp zaf_cap_resume
+
+zaf_disp_armed:
+ mov (PH_MODE),d0
+ cmp 0,d0
+ beq 1f
+ movbu (0xa32d3d32),d0
+ cmp 0,d0
+ bne 1f
+ mov (ZAF_DISP_CNT),d0
+ inc d0
+ mov d0,(ZAF_DISP_CNT)
+ mov 1,d0
+ jmp zaf_disp_resume
+1:
+ movbu (0x62b3d938),d0
+ jmp zaf_disp_resume
+
+zaf_lpos_armed:
+ mov (PH_MODE),d0
+ cmp 0,d0
+ beq 1f
+ movbu (0xa32d3d32),d0
+ cmp 0,d0
+ bne 1f
+ mov (ZAF_LPOS_CNT),d0
+ inc d0
+ mov d0,(ZAF_LPOS_CNT)
+ mov 1,d0
+ jmp zaf_lpos_resume
+1:
+ movbu (0xa33df46c),d0
+ jmp zaf_lpos_resume

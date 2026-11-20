@@ -316,6 +316,14 @@
    "addr": "0x605048c1",
    "len": 6
   },
+  "hook_zaf_cap": {
+   "addr": "0x6094e4df",
+   "len": 6
+  },
+  "hook_zaf_disp": {
+   "addr": "0x6095013d",
+   "len": 6
+  },
   "hook_zaf_eng": {
    "addr": "0x60902150",
    "len": 6
@@ -323,6 +331,10 @@
   "hook_zaf_llk1": {
    "addr": "0x6098fcc4",
    "len": 7
+  },
+  "hook_zaf_lpos": {
+   "addr": "0x609901b6",
+   "len": 6
   },
   "hook_zaf_lv": {
    "addr": "0x609ed0d4",

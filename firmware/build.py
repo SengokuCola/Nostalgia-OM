@@ -36,6 +36,9 @@ HOOKS = {'.hook_sb_done': (0x6054c30f, bytes.fromhex('f1ecf064803e')),
          '.hook_zaf_lv': (0x609ed0d4, bytes.fromhex('dd5d6190ff0004')),
          '.hook_zaf_eng': (0x60902150, bytes.fromhex('fc8e0ca33ca3')),
          '.hook_zaf_llk1': (0x6098fcc4, bytes.fromhex('87fca955f43da3')),
+         '.hook_zaf_cap': (0x6094e4df, bytes.fromhex('fca8b4d9b362')),
+         '.hook_zaf_disp': (0x6095013d, bytes.fromhex('fca838d9b362')),
+         '.hook_zaf_lpos': (0x609901b6, bytes.fromhex('fca86cf43da3')),
          '.hook_dr_abs': (0x60901b15, bytes.fromhex('ddfd50a0ffb014')),
          '.hook_dr_sync': (0x60901b91, bytes.fromhex('dd2b5ba0fff020')),
          '.hook_dr_async': (0x60901bc9, bytes.fromhex('ddea5fa0ff3010')),
@@ -168,7 +171,7 @@ def poly_sites(m, o):
 RECORD_KEYS = {0x615adcc4: 0x1540, 0x615adcfc: 0x1541, 0x615add34: 0x1542, 0x615add6c: 0x1543}
 SHUTTER_CONTEXT = (0x604151fc, '5810fae0fffffac80001c80e5810fae0fffffac80101c9095c0c')
 EXT1 = (0x6031e910, 0x6031f000)          # section-1 tail (FF from 0x6031e910, end 0x6031f000)
-EXT4 = (0x60a8f100, 0x60a8f7f0)
+EXT4 = (0x60a8f090, 0x60a8f7f0)
 EXT10 = (0x61aa4300, 0x61aa47f0)
 EXT8 = (0x617e45f0, 0x617e47f0)            # section-8 tail (FF from 0x617e45e0, end 0x617e4800)
 EXT11 = (0x60f49800, 0x60f59800)           # v0.23: section 6 extended by 64 KiB (loader end word 0x60045e9c raised; camera-proven GX2)

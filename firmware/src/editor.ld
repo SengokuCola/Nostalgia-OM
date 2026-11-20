@@ -4,6 +4,9 @@ SECTIONS {
   .hook_zaf_lv 0x609ed0d4 : { *(.hook_zaf_lv) }
   .hook_zaf_eng 0x60902150 : { *(.hook_zaf_eng) }
   .hook_zaf_llk1 0x6098fcc4 : { *(.hook_zaf_llk1) }
+  .hook_zaf_cap 0x6094e4df : { *(.hook_zaf_cap) }
+  .hook_zaf_disp 0x6095013d : { *(.hook_zaf_disp) }
+  .hook_zaf_lpos 0x609901b6 : { *(.hook_zaf_lpos) }
   .hook_dr_abs 0x60901b15 : { *(.hook_dr_abs) }
   .hook_dr_sync 0x60901b91 : { *(.hook_dr_sync) }
   .hook_dr_async 0x60901bc9 : { *(.hook_dr_async) }
@@ -29,7 +32,7 @@ SECTIONS {
   .hook_crr     0x611133cd : { *(.hook_crr) }   /* crop round 10: SimplePlayCommon's quality lookup */
   .hook_shutter 0x60415216 : { *(.hook_shutter) }
   .ext1         0x6031e910 : { *(.ext1) }
-  .ext4         0x60a8f100 : { *(.ext4) }
+  .ext4         0x60a8f090 : { *(.ext4) }
   .hook_set     0x60b8798b : { *(.hook_set) }
   .hook_pmod    0x6129ba07 : { *(.hook_pmod) }
   .hook_rsp     0x611c3cb5 : { *(.hook_rsp) }
@@ -331,3 +334,6 @@ sw_stock_fi = 0x60153ee1;
 zaf_stock_lens_ptr = 0x602f3231;
 zaf_eng_resume = 0x60902156;
 zaf_llk1_resume = 0x6098fccb;
+zaf_cap_resume = 0x6094e4e5;
+zaf_disp_resume = 0x60950143;
+zaf_lpos_resume = 0x609901bc;

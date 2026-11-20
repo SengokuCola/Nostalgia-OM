@@ -62,6 +62,15 @@ try {
       const zLlk = lab.call(0x6098fcc4-IMAGE_BASE+0x50000000,{d0:0,d1:472},null,[0xe0,44],10000,
         new Set([sy.zaf_llk1_armed,sy.zaf_llk1_resume]));
       assert.equal(zLlk.pc,armed ? sy.zaf_llk1_armed : sy.zaf_llk1_resume);
+      const zCap = lab.call(0x6094e4df-IMAGE_BASE+0x50000000,{d0:0},null,[0xf0,36],10000,
+        new Set([sy.zaf_cap_armed,sy.zaf_cap_resume]));
+      assert.equal(zCap.pc,armed ? sy.zaf_cap_armed : sy.zaf_cap_resume);
+      const zDisp = lab.call(0x6095013d-IMAGE_BASE+0x50000000,{d0:0},null,[0xf0,60],10000,
+        new Set([sy.zaf_disp_armed,sy.zaf_disp_resume]));
+      assert.equal(zDisp.pc,armed ? sy.zaf_disp_armed : sy.zaf_disp_resume);
+      const zLpos = lab.call(0x609901b6-IMAGE_BASE+0x50000000,{d0:0},null,[0,0],10000,
+        new Set([sy.zaf_lpos_armed,sy.zaf_lpos_resume]));
+      assert.equal(zLpos.pc,armed ? sy.zaf_lpos_armed : sy.zaf_lpos_resume);
     }
   }
   // Execute the assembled first-event routine with a mounted marker and a
