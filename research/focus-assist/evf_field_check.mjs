@@ -15,7 +15,7 @@ const tick=()=>call('fs_tick',{d0:2});
 const write=(off,value)=>lab.call(0x501f0dfc,{d0:1,d1:off/4,a0:value},null,[0x80,4]);
 const get=name=>lab.vsc.bank(1).get(name);
 try {
-  lab.start(); lab.sim.word(0xa32de590,0x3ff); lab.set_gui_buffers(); lab.open('evf'); lab.palettes(); lab.update();
+  lab.start(); lab.sim.word(0xa32de58c,0x3ff); lab.set_gui_buffers(); lab.open('evf'); lab.palettes(); lab.update();
   lab.assume('A15',true); lab.vsc.set_view(1,2);
   // Replay the E147 scan registers; the GUI and source are synthetic.
   for(const [off,value] of [[0x720,1],[0x730,410],[0x420,0x00140400],[0x424,0x00110180],

@@ -60,7 +60,7 @@ dr_gate:
  mov (FS_ON),d2
  cmp 1,d2
  bne dr_out
- mov (SECBITS),d2
+ mov (SEC_READY),d2
  and 32,d2
  beq dr_out
  jmp dr_active
@@ -233,7 +233,7 @@ aw_entry:
  mov (FS_ON),d1
  cmp 1,d1
  bne aw_stock
- mov (SECBITS),d1
+ mov (SEC_READY),d1
  and 32,d1
  beq aw_stock
  jmp aw_opt_entry

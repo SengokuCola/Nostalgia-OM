@@ -30,7 +30,8 @@ try {
     {name:'fs_commit_level', hook:0x60211067, stock:0x6021106c, regs:{a3:desc,d0:0xfffffe00,d2:0xffffffff}},
   ];
   for (const bits of [0,0x1f,0x20,0x3ff]) {
-    lab.sim.word(0xa32de590,bits);
+    lab.sim.word(0xa32de590,bits ^ 0x3ff);
+    lab.sim.word(0xa32de58c,bits);
     for (const arm of [0,1]) {
       lab.sim.word(sy.FS_ON, arm);
       for (const entry of paths) {

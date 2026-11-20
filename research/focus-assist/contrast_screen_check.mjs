@@ -83,7 +83,7 @@ try {
       assert.equal(half(source),value&65535);
     }
     for(const [sections,on,mode] of [[0,1,1],[0x20,0,1],[0x20,1,0]]) {
-      lab.sim.word(sy.SECBITS,sections);
+      lab.sim.word(0xa32de58c,sections);
       lab.sim.word(sy.FS_ON,on);
       lab.sim.word(sy.PH_MODE,mode);
       publish(calls[0],-19);
@@ -153,7 +153,7 @@ try {
       assert.equal(r.d0,23);
     };
     for (const [sections,on,mode] of [[0,1,1],[0x20,0,1],[0x20,1,0]]) {
-      lab.sim.word(sy.SECBITS,sections);
+      lab.sim.word(0xa32de58c,sections);
       lab.sim.word(sy.FS_ON,on);
       lab.sim.word(sy.PH_MODE,mode);
       submit(0,-13);

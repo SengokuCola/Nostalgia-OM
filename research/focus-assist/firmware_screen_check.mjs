@@ -15,7 +15,7 @@ const out=[];
 for(const device of ['tft','evf']){
  const lab=new D.DisplayLab(labEnv({rom:expandImage(fs.readFileSync(BUILD+'/main.bin'))}));
  try{
-  lab.start(); lab.sim.word(0xa32de590,0x3ff);lab.set_gui_buffers();lab.open(device);lab.palettes();lab.update();
+  lab.start(); lab.sim.word(0xa32de58c,0x3ff);lab.set_gui_buffers();lab.open(device);lab.palettes();lab.update();
   lab.through_permit(device,1);lab.assume('A15',true);
   const ch=D.DEVICE[device].channel,mask=D.DEVICE[device].mask;
   const put=(k,v)=>lab.sim.word(sy[k],v),get=k=>lab.sim.u32(sy[k]);

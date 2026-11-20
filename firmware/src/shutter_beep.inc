@@ -6,7 +6,7 @@
  nop
 .section .ext1,"ax"
 sb_done_entry:
- mov (SECBITS),d0
+ mov (SEC_READY),d0
  and 32,d0
  beq 1f
  jmp sb_record_done

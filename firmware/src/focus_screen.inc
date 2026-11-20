@@ -27,7 +27,7 @@
  mov (FS_ON),\tmp
  cmp 1,\tmp
  bne 1f
- mov (SECBITS),\tmp
+ mov (SEC_READY),\tmp
  and 32,\tmp
  beq 1f
  jmp \dst
