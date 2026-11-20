@@ -8683,3 +8683,13 @@ Assign C4, Set B, Assign C5: C4 showed Set B's films, and Set A again is ignored
   with v0.40.1 (= g4, released). So the single-pixel part (centre-tap boost) is out, whatever the real-film numbers
   say. Next preview: v0.40.1's clumps unchanged (Y and Cb byte for byte) with Cr sigma 9 instead of 16 (less
   red-green colour speckle); pictures in the private test-builds folder; owner's verdict pending.
+- **Fourier of the colour-only preview (2026-11-19, owner asked; model + v0.40.1 camera photos):** brightness spectra
+  identical to v0.40.1 (Y byte for byte); red-green colour the same shape at about a third of the power (Cr sigma 9).
+  Both show, in Coarse's colour only, **faint horizontal bands** (dark at |fy| ~1/4, a small rise at 0.35..0.45
+  cycle / px): the colour grain is made at half height and each colour row serves two pixel rows (g1..g4, so
+  v0.40.1 too). Camera-confirmed: the OM-3 JPEG is 4:2:2 (chroma full height), and the v0.40.1 chart photos
+  (PB194017 / 020 against grain Off PB194011, 40 flat 256 px blocks, red-green high-pass power down the rows over
+  |fy| 0.05..0.45) give Coarse 5 1.00 0.64 0.27 0.09 0.04 0.04 0.06 0.05 0.03 against the model's 1.00 0.60 0.25
+  0.08 0.03 0.04 0.06 0.06 0.03 (Medium 5 smooth, as the model). Faint (the rise is about 6 % of the coarse colour
+  power) but real. Fix if wanted: colour grain at full height with a smooth vertical filter (estimate ~10 % more
+  work a tile; the 2-px colour width is the 4:2:2 format's and stays).
