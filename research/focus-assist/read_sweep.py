@@ -21,8 +21,11 @@ def decode_pages(paths):
             damaged.append(path.name)
             continue
         magic, version, session, first, count, stride = HEADER.unpack_from(data)
-        if (magic, version, stride) != (b'OMSW', 1, STRIDE):
-            raise ValueError(f'{path}: unknown sweep format')
+        if magic != b'OMSW':
+            damaged.append(path.name)
+            continue
+        if (version, stride) != (1, STRIDE):
+            raise ValueError(f'{path}: unsupported sweep version {version} or row size {stride}')
         if not session or not first or not 1 <= count <= 64 or len(data) != HEADER.size + count * stride:
             damaged.append(path.name)
             continue

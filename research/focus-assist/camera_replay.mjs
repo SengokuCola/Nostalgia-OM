@@ -9,7 +9,12 @@ const fixture=JSON.parse(fs.readFileSync(EMU+'/checks/fixtures/om3-camera-layout
 const sy=JSON.parse(fs.readFileSync(SYMS));
 const lab=new D.DisplayLab(labEnv({rom:expandImage(fs.readFileSync(BUILD+'/main.bin'))}));
 try{
- lab.start(); lab.sim.word(0xa32de58c,0x3ff);lab.set_gui_buffers();lab.open('tft');lab.palettes();lab.update();lab.through_permit('tft',1);lab.assume('A15',true);
+ lab.start();
+  // Standalone DISPLAY fixture after loader and service initialization.
+  lab.props.set(270, 0);
+  lab.sim.word(0xa32de590, 0x3ff);
+  lab.sim.word(0xa32de58c, 0x3ff);
+  lab.set_gui_buffers();lab.open('tft');lab.palettes();lab.update();lab.through_permit('tft',1);lab.assume('A15',true);
  const put=(k,v)=>lab.sim.word(sy[k],v),get=k=>lab.sim.u32(sy[k]);
  const call=(k,args={},frame=[0xf0,48])=>lab.call(sy[k]-IMAGE_BASE+0x50000000,args,null,frame,2000000);
  const write=(off,v)=>lab.call(0x501f0dfc,{d0:2,d1:off/4,a0:v>>>0},null,[0x80,4]);

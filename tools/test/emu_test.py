@@ -1936,7 +1936,7 @@ def run_screen(emu, build, out, card0):
                 card_tool(emu, 'get', d / 'sweep-card.omsd', 'OM3MOD/' + page.name, page)
                 pages.append(page)
             sys.path.insert(0, str(REPO / 'research/focus-assist'))
-            from read_sweep import decode_pages
+            from read_sweep import HEADER as SWEEP_HEADER, decode_pages
             trace = decode_pages(pages)
             session, restarted = trace['sessions']
             if (restarted['session'] != sweep['lastFile'] or restarted['missing_ranges']
@@ -1944,6 +1944,15 @@ def run_screen(emu, build, out, card0):
                 errors.append('second session lost its tail or overwrote previous pages')
             if session['missing_ranges'] or trace['damaged_pages']:
                 errors.append('torn page or missing sweep history')
+            # A short or torn page must not hide the rest of a long sweep.
+            partial = d / 'short-page.bin'
+            complete = pages[1].read_bytes()
+            _, _, _, start, count, _ = SWEEP_HEADER.unpack_from(complete)
+            partial.write_bytes(complete[:-1])
+            recovered = decode_pages([pages[0], partial, *pages[2:]])
+            if (recovered['damaged_pages'] != [partial.name]
+                    or recovered['sessions'][0]['missing_ranges'] != [[start, start + count - 1]]):
+                errors.append('decoder failed to localize a torn page')
             rows_by_id = {e['seq']: e for e in session['rows']}
             for i in range(sweep['total']):
                 row = rows_by_id.get(sweep['first'] + i)

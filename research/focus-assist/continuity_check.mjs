@@ -11,7 +11,12 @@ const {IMAGE_BASE}=await import(emu+'/src/fw/model.mjs');
 const sym=JSON.parse(readFileSync(symbols));
 const lab=new D.DisplayLab(labEnv({rom:expandImage(readFileSync(build+'/main.bin'))}));
 try {
-  lab.start(); lab.sim.word(0xa32de58c,0x3ff); lab.set_gui_buffers(); lab.open('tft'); lab.palettes(); lab.update();
+  lab.start();
+  // Standalone DISPLAY fixture after loader and service initialization.
+  lab.props.set(270, 0);
+  lab.sim.word(0xa32de590, 0x3ff);
+  lab.sim.word(0xa32de58c, 0x3ff);
+   lab.set_gui_buffers(); lab.open('tft'); lab.palettes(); lab.update();
   lab.through_permit('tft',1); lab.assume('A15',true);
   const address=lab.load_lv_frame(D.test_card(),0x0a,1,D.LV_SCALED_CROP);
   const req=D.ThRequest.scaled(1,address,D.LV_SCALED_CROP,[1600,1080],[900,600],[0,0]);
