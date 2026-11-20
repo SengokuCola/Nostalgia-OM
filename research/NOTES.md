@@ -8679,3 +8679,7 @@ Assign C4, Set B, Assign C5: C4 showed Set B's films, and Set A again is ignored
   0.018); spectra round with an even floor at the edges, no lines. With no boost and Cr 16 the model equals g4 byte
   for byte. Full-height chroma left out: at Medium / Coarse the colour grain is already about the size of the
   brightness grain (lag 1 about 0.5 / 0.77 against Y 0.55 / 0.75). Pictures in the private test-builds folder.
+- **Owner on the g5 preview (2026-11-19): "g5 looks worse. it looks more pixelated again"**; one grain only, compared
+  with v0.40.1 (= g4, released). So the single-pixel part (centre-tap boost) is out, whatever the real-film numbers
+  say. Next preview: v0.40.1's clumps unchanged (Y and Cb byte for byte) with Cr sigma 9 instead of 16 (less
+  red-green colour speckle); pictures in the private test-builds folder; owner's verdict pending.
