@@ -8,6 +8,7 @@ What changed in each version of Caduceus for OM-3, newest first. To install or u
 
 | Version | Released | What's new |
 |---|---|---|
+| [v0.40.2](#v0402) | 2026-11-19 | Smoother colour grain with less red-green speckle; grain made faster, so long bursts with Film Grain keep up |
 | [v0.40.1](#v0401) | 2026-11-19 | Round film grain with fewer repeats; a film's WB Compensation shows in the super control panel (#88) |
 | [v0.40](#v040) | 2026-11-19 | Crop modes XPan, 21:9 and 5:4; a black or white Border per film at every ratio; our own film grain (1–5, Grain Size); looks in live view as you adjust them; your own choice of screen info; faster looks and Halation; quick single shots (#85); new film sets in custom modes (#86); focus stacking with more lenses; LookLab knows all of it |
 | [v0.40-beta3](#v040-beta3-test-version) | 2026-11-19 (test version) | Quick single shots with the debug log (#85) or Halation on; a new film set replaces the films cleanly in custom modes too (#86) |
@@ -47,6 +48,19 @@ What changed in each version of Caduceus for OM-3, newest first. To install or u
 
 Versions are named v0.N from v0.18 on. Earlier builds were called "test N" while they were tried on the camera; the
 same number is used here (test 17 = v0.17).
+
+## v0.40.2
+2026-11-19. v0.40.1 plus smoother colour grain, made faster; camera-tested (the build before its release name).
+- **Smoother colour grain:** the grain's colour speckle is now made on every row instead of every other row, so it has
+  no 2-row steps (they showed as faint bands in Coarse's colour, also in camera photos), and at Coarse the colour
+  specks are the size of the brightness clumps, a little finer than before.
+- **Less red-green:** the red-green colour speckle is about half as strong as the blue-yellow, as in real colour film
+  (measured on public-domain 35 mm scans). The brightness grain, its strength and the sizes are unchanged.
+- **Faster grain:** the camera makes the grain picture for each photo with about 17 to 25 % less work than the first
+  test of this grain, and 5 to 12 % less than v0.40.1 (emulator count). A long fast burst with Film Grain had rebooted
+  the camera with that first test; with this build it worked (camera-tested).
+- **LookLab:** the grain preview has the new colour grain.
+  Details: [release notes](releases/v0.40.2/NOTES.md).
 
 ## v0.40.1
 2026-11-19. v0.40 plus two changes, camera-tested together (the build before its release name).

@@ -8876,3 +8876,9 @@ screen gets 3200 K A3 M2 at the half-press that takes the set; FILM 15 Shade G3;
 - Package `test-builds/2026-11-19-grain-colour-faster/` (private): E1479999.BIN 218b018a…e22f, GUIDES.BIN
   9f458270…2b67, go-back v0.40.1; **on the owner's card (2026-11-19, the owner asked; checked by sha256)**. Camera
   question: the same ~30-shot fast burst (drive mode noted), and the log's tile time.
+- **Owner (2026-11-19), after the burst test on the faster build: "Ok. That works really well. Let's push that as
+  40.2".** The card was not in the reader, so its log and photos were not read for this note (time per tile on the
+  camera not recorded). Released as **v0.40.2**: the faster build's sources (21e0916) with `firmware/VERSION`
+  "v0.40.2"; E1479999.BIN da59432c…4d7b (`patch.py --release v0.40.2` byte for byte); the shorter name moves the code
+  after `lg_ver` in ext13 by 24 bytes, nothing else. LookLab's grain preview: colour planes at full height with the g6
+  taps, Cr sigma 9 (vitest 76 pass).
