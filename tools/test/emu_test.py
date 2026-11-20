@@ -1939,9 +1939,28 @@ def run_screen(emu, build, out, card0):
             from read_sweep import HEADER as SWEEP_HEADER, decode_pages
             trace = decode_pages(pages)
             session, restarted = trace['sessions']
+            manual_count = sweep.get('manualCount', 1)
             if (restarted['session'] != sweep['lastFile'] or restarted['missing_ranges']
-                    or [row['seq'] for row in restarted['rows']] != [1]):
+                    or [row['seq'] for row in restarted['rows']] != list(range(1, manual_count + 1))):
                 errors.append('second session lost its tail or overwrote previous pages')
+            elif manual_count >= 21:
+                mrows = restarted['rows']
+                if any(r['lens_position'] is not None or r['lens_valid'] for r in mrows):
+                    errors.append('manual-lens sweep reported bogus lens position')
+                if any(r['focus_indicator']['valid'] or r['focus_indicator']['direction'] != 0
+                       or r['focus_indicator']['magnitude'] != 0 or r['focus_indicator']['update_seq'] != 0
+                       or not r['focus_indicator']['getter_invoked'] for r in mrows):
+                    errors.append('manual-lens sweep did not suppress stock Focus Indicator')
+                if not all(r['edge_sharpness']['valid'] and r['split_draw']['outcome'] == 'published'
+                           and r['split_draw']['overlay_active'] for r in mrows):
+                    errors.append('manual-lens live-view sweep missing sharpness or published split draw')
+                elif (mrows[0]['edge_sharpness']['raw_band'] != 4
+                      or mrows[8]['edge_sharpness']['raw_band'] != 0
+                      or mrows[8]['split_draw']['applied_shift'] != 0
+                      or mrows[14]['split_draw']['applied_shift'] != 4):
+                    errors.append('manual-lens sharpness or split displacement did not track focus sweep')
+                elif len({r['split_draw']['applied_shift'] for r in mrows[17:]}) != 1:
+                    errors.append('drawn split displacement jittered during ring-stop hold')
             if session['missing_ranges'] or trace['damaged_pages']:
                 errors.append('torn page or missing sweep history')
             # A short or torn page must not hide the rest of a long sweep.
@@ -1961,6 +1980,21 @@ def run_screen(emu, build, out, card0):
                         pos, pos - 500, 100000 + i):
                     errors.append(f'sweep lost a paired lens/zone sample at {i}')
                     break
+                fi = row.get('focus_indicator')
+                if fi is not None:
+                    want_dir = 1 if i <= 500 else 0
+                    if (not fi['valid'] or fi['direction'] != want_dir or not 1 <= fi['magnitude'] <= 100
+                            or (i > 501 and fi['updated'])):
+                        errors.append(f'focus indicator mismatch at sweep sample {i}: {fi}')
+                        break
+                pr = row.get('pdaf_raw')
+                pa = row.get('pdaf_aux_center')
+                if pr is not None and pa is not None:
+                    if (not pr['stream_enabled'] or pr['latest_slot'] != 1 or pr['meta0'] != 0x12345678
+                            or pr['center_a_hash'] is None or pr['center_b_hash'] is None
+                            or pa['buf_99ec'] != pos - 500 or pa['buf_99f0'] != 0x1000 + i):
+                        errors.append(f'raw PDAF probe mismatch at sweep sample {i}')
+                        break
         if 'dr_gate' in sym:
             drive = d / 'LENSDRV.BIN'
             card_tool(emu, 'get', d / 'drive-trace.omsd', 'OM3MOD/LENSDRV.BIN', drive)

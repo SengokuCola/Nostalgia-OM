@@ -328,6 +328,28 @@ zr_rows: .space 1024
 .set ZR_HEAD,zr_head+0x40000000
 .set ZR_ROWS,zr_rows+0x40000000
 zr_sample:
+ mov (0x98900284),d1
+ mov 0x7fffffff,d3
+ sub d1,d3
+ and 0x7fffffff,d3
+ mov (ZR_HEAD),d2
+ cmp 0,d2
+ beq zr_sample_fi
+ mov d2,d0
+ and 31,d0
+ asl 5,d0
+ mov ZR_ROWS,a3
+ add d0,a3
+ mov (4,a3),d1
+ mov d3,d0
+ sub d1,d0
+ and 0x7fffffff,d0
+ cmp 200000,d0
+ bcc zr_sample_fi
+ ret [d2,d3,a2,a3],32
+zr_sample_fi:
+ call sw_sample_fi,[d2,d3,a2,a3],28
+ mov d0,(8,sp)
  clr d0
  call LOCK,[d2],8
  mov d0,(4,sp)
@@ -433,6 +455,7 @@ zr_torn:
  mov 254,d0
  movbu d0,(12,a3)
 zr_commit:
+ mov (8,sp),d0
  call sw_capture,[d2,d3,a2,a3],24
 zr_done:
  mov d2,(ZR_HEAD)

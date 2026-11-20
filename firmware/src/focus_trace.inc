@@ -2,6 +2,7 @@
  * snapshot buffer or card. Rows contain no pixels or camera-owned pointers. */
 fs_trace_record:                       /* outcome, channel in d0,d1 */
  mov d0,d3
+ mov d1,a2
  mov (FS_TRACE_HEAD),d2
  inc d2
  mov d2,d0
@@ -74,6 +75,51 @@ fs_trace_score:
  mov d0,(28,a0)
 fs_trace_end:
  mov d2,(FS_TRACE_HEAD)
+ mov FS_SWEEP_VIEW,a1
+ mov a2,d2
+ and 3,d2
+ mov (12,a0),d0
+ mov -128,d1
+ btst 256,d0
+ beq 1f
+ or 8,d2
+ mov (fs_strength+0x40000000),d1
+1:
+ and 255,d1
+ movbu (FS_MEASURED),d0
+ cmp 1,d0
+ bne 2f
+ or 4,d2
+ mov fs_focus_stats+0x40000000,a3
+ mov (a3),d0
+ mov d0,(a1)
+ mov (4,a3),d0
+ mov d0,(4,a1)
+ mov (12,a3),d0
+ mov d0,(8,a1)
+ mov (8,a3),d0
+ and 255,d0
+ bra 3f
+2:
+ mov -1,d0
+ mov d0,(a1)
+ mov d0,(4,a1)
+ mov (fs_focus_stats+12+0x40000000),d0
+ mov d0,(8,a1)
+ mov 255,d0
+3:
+ asl 8,d1
+ or d1,d0
+ mov d3,d1
+ and 255,d1
+ asl 16,d1
+ or d1,d0
+ asl 24,d2
+ or d2,d0
+ mov d0,(12,a1)
+ mov (FS_VIEW_SEQ),d0
+ inc d0
+ mov d0,(FS_VIEW_SEQ)
  ret [d2,d3,a2,a3],20
 
 fs_trace_save:
@@ -129,4 +175,9 @@ fs_trace_file: .ascii "OMFT"
 fs_trace_path: .asciz "C:\\OM3MOD\\FOCUSTRC.BIN"
 .set FS_TRACE_HEAD,fs_trace_head+0x40000000
 .set FS_TRACE_ROWS,fs_trace_rows+0x40000000
+.balign 4
+fs_view_seq: .long 0
+fs_sweep_view: .space 16,0
+.set FS_VIEW_SEQ,fs_view_seq+0x40000000
+.set FS_SWEEP_VIEW,fs_sweep_view+0x40000000
 .section .ext13,"ax"

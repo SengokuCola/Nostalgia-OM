@@ -324,3 +324,4 @@ dr_stock_mft_move2 = 0x602f3ee9;
 dr_stock_mft_ofs = 0x602f3ee9;
 dr_stock_mft_ofs2 = 0x602f3ee9;
 af_stock_return = 0x609a0e55;
+sw_stock_fi = 0x60153ee1;

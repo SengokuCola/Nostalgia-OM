@@ -333,6 +333,7 @@ fs_channel:
 fs_claimed:
  clr d0
  mov d0,(PH_SEEN)
+ movbu d0,(FS_MEASURED)
  mov 1,d0                         /* default trace outcome: rejected/held EVF frame */
  mov d0,(28,sp)
  mov (4,sp),d0
@@ -340,11 +341,6 @@ fs_claimed:
  call fs_diag_active,[d2,d3,a2,a3],20
  mov (20,sp),d0
  call UNLOCK,[d2],8
- mov (PH_MODE),d0
- cmp 1,d0
- bne fs_no_zone_sample
- call zr_sample,[d2,d3,a2,a3],32
-fs_no_zone_sample:
  FS_INC 40
  mov (4,sp),d0
  call fs_diag_capture,[d2,d3,a2,a3],20
@@ -466,7 +462,7 @@ fs_hold_done:
  jmp fs_publish_skip
 fs_buffer_ok:
  mov (PH_MODE),d0
- cmp 1,d0
+ cmp 2,d0
  bne fs_use_contrast
  call fs_phase_read,[d2,d3,a2,a3],24
  cmp 99,d0
@@ -476,6 +472,8 @@ fs_buffer_ok:
  jmp fs_failed
 fs_use_contrast:
  call fs_measure,[d2,d3,a2,a3],48
+ mov 1,d1
+ movbu d1,(FS_MEASURED)
  mov (4,sp),d1
  call fs_filter_band,[d2,d3,a2,a3],20
 fs_apply_shift:
@@ -598,6 +596,13 @@ fs_publish_skip:
  call fs_trace_record,[d2,d3,a2,a3],20
  clr d0
  mov d0,(FS_BUSY)
+ mov (20,sp),d0
+ call UNLOCK,[d2],8
+ mov (PH_MODE),d0
+ cmp 0,d0
+ beq fs_tick_out
+ call zr_sample,[d2,d3,a2,a3],32
+ ret [d2,d3,a2,a3],48
 fs_unlock_out:
  mov (20,sp),d0
  call UNLOCK,[d2],8
@@ -681,8 +686,10 @@ fs_ev_miss: .space 12,0
 fs_held: .long 0
 fs_device: .long 0
 fs_ev_latched: .long 0
+fs_measured: .long 0
 fs_th_samples: .space 88,0
 .set FS_TH_SAMPLES,fs_th_samples+0x40000000
+.set FS_MEASURED,fs_measured+0x40000000
 fs_owner: .space 120,0
 fs_req: .space 52,0
 .balign 128

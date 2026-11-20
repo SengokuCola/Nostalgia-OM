@@ -156,12 +156,25 @@ for(const device of ['tft','evf']){
    assert(hash(lab.sim.read(sy.FS_ACTIVE,312))===retained,'EVF capture lost after switching away');
   }
   if (sy.fs_phase_read) {
+   // PH_MODE=1 (ZAF.TXT on card) enables sweep/AF diagnostics while drawing
+   // contrast-based split displacement even with no lens or ZAFInfo.
+   put('PH_MODE',1);
+   lab.sim.write(0xa32d3d32,Uint8Array.of(0));
+   lab.sim.write(0xa33d1dd4,Buffer.alloc(32));
+   frame(640,480,640,480,2);
+   const beforeDiag=get('FS_FRAMES');
+   tick();
+   assert(get('FS_FRAMES')===beforeDiag+1 && get('FS_OWNER')===1,'ZAF.TXT suppressed contrast screen on '+device);
+   call('fs_stop',{d0:mask},[0xf0,64]);
+   lab.update();
+
+   // PH_MODE=2 exercises the signed ZAFInfo phase-only path.
    let now=10000;
    const record=Buffer.alloc(32);
    record[1]=1;
    record.writeUInt16LE(7,10);
    lab.hook(0x60023c05-IMAGE_BASE+0x50000000,(h,r)=>h.finish(r,{d0:now}),'controlled ZAF clock');
-   put('PH_MODE',1);
+   put('PH_MODE',2);
    frame(640,480,640,480,1);
    for(const def of [20,0,-20]){
     const before=get('FS_FRAMES');

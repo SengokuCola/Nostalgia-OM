@@ -112,21 +112,48 @@ if (sy.dr_gate) {
  fs.writeFileSync(OUT+'/drive-trace.omsd',cardImage(card));
 }
 
-// Long MF sweep with known positions, active on both sides of the centre,
-// followed by a hold. Use the firmware sampler, paged writer and card I/O.
+// Long MF sweep with known positions, native Focus Indicator, raw PDAF ring
+// and auxiliary center arrays, followed by a manual-lens live-view sweep + hold.
 if (sy.sw_flush) {
  const first=get('SW_HEAD')+1;
  const lens=0x63ef3000, total=550;
  const slot=0xa33eb074, src=0x6a094900;
  const half=(addr,v)=>{const b=Buffer.alloc(2);b.writeInt16LE(v);lab.sim.write(addr,b);};
  lab.sim.word(0xa33e99e8,0xaa094900);lab.sim.word(0xa33e99ac,0xa7c53c00);
+ lab.sim.word(0xa33e99ec,0xaa0c0000);lab.sim.word(0xa33e99f0,0xaa0e0000);
+ lab.sim.word(0xa33e99f4,0xaa0e2000);lab.sim.word(0xa33e99fc,0xaa0e4000);
  lab.sim.word(0xa33f2c38,0);lab.sim.write(slot+10536,Uint8Array.of(0));
  lab.sim.write(slot+10556,Uint8Array.of(1));lab.sim.write(0xa32d3d32,Uint8Array.of(1));
  lab.sim.word(0xa32c9c24,lens);
+ // Populate valid electronic lens calibration limits for native 0x60153ee1.
+ lab.sim.write(0xa32c9c28,Uint8Array.of(2,0));
+ lab.sim.write(0x62997490,Uint8Array.of(0));
+ for(const [off,v] of [[22,0],[24,100],[34,900],[36,1000]])half(lens+off,v);
+ // Populate Layer 0 raw PDAF ring slot 1 with distinct A/B bank content.
+ lab.sim.write(0x62b3d938,Uint8Array.of(1));
+ lab.sim.write(0x62b3d93a,Uint8Array.of(1));
+ lab.sim.write(0x62b3d97c,Uint8Array.of(1));
+ lab.sim.word(0x62b3d9c8,2);
+ lab.sim.write(0xa33e9c80,Uint8Array.of(0,0, 2,0, 0,0, 0,0));
+ lab.sim.write(0xa33e9c8a,Uint8Array.of(1,0, 1,0, 0xff,0xff, 0xff,0xff));
+ lab.sim.word(0xa33e9be0+16,0xa6600000);
+ lab.sim.word(0xa33e9c20+16,0xa6900000);
+ lab.sim.word(0xa33e9c94+332,0x12345678);
+ lab.sim.word(0xa33d1e40,1);
+ lab.sim.word(0xa33eabd8,0);
  const invoke=name=>lab.call(sy[name]-0x60021020+0x50000000,{},null,[0xf0,32],2000000);
  for(let i=0;i<total;i++){
   const pos=250+Math.min(i,500);
   half(lens+40,pos);half(src+1052,pos-500);half(slot+1052,pos-500);
+  lab.sim.write(0x62997470,Uint8Array.of(i<=500?1:0));
+  half(0x6299748e,pos);
+  lab.sim.word(0x62997474,i<=500?50000+i:50500);
+  half(0x6a0c0000+1052,pos-500);
+  lab.sim.word(0x6a0e0000+2104,0x1000+i);
+  lab.sim.word(0x6a0e2000+2104,0x2000+i);
+  lab.sim.word(0x6a0e4000+4208,0x3000+i);
+  lab.sim.word(0x66600000+933888,0x11110000+i);
+  lab.sim.word(0x66900000+933888,0x22220000+i);
   lab.sim.word(slot+10552,100000+i);
   const prev=sy.ZR_ROWS+get('ZR_HEAD')%32*32;
   lab.sim.word(prev+4,(lab.sim.u32(prev+4)-200001)&0x7fffffff);
@@ -138,14 +165,54 @@ if (sy.sw_flush) {
  key('s1');idle();
  assert(get('sw_saved')>=first+total-1,'last sweep page was not flushed');
  const lastFile=get('sw_number');
- // Restart just the logging state on the same card. Exercise a short tail
- // with no shutter event and verify that old pages retain their names.
+ // Restart logging state for a manual-lens live-view sweep + noisy ring-stop hold
+ // drained via quiet tail (no extra shutter event), verifying sharpness & stability.
  for(const state of ['ZR_HEAD','SW_HEAD','SW_RELEASE','sw_saved','sw_seen','sw_quiet','sw_number','sw_session'])
   lab.sim.word(sy[state],0);
  lab.sim.write(sy.sw_digits,Buffer.from('000000.BIN\0'));
- invoke('zr_sample');
+ // Manual lens: no electronic record, stale raw_dir=2 must be suppressed by stock 0x60153ee1.
+ lab.sim.write(0xa32d3d32,Uint8Array.of(0));
+ lab.sim.write(0xa32c9c28,Uint8Array.of(0,0));
+ lab.sim.write(0x62997470,Uint8Array.of(0));
+ half(0x6299748e,-32768);
+ lab.sim.word(0x62997474,0);
+ lab.sim.write(0x62b3d938,Uint8Array.of(0));
+ lab.sim.write(0xa33e9c8c,Uint8Array.of(0xff,0xff));
+ // Re-attach TFT live-view edge frames, release the earlier menu fixture's
+ // occupied IMG2 layer (simulating a fresh boot / stock release), and drive fs_tick.
+ lab.sim.write(0xa32d9d0d,Uint8Array.of(2));lab.sim.write(0x62ce5864,Uint8Array.of(1,8));
+ lab.sim.word(sy.PH_MODE,1);
+ const edgeSeq=[16,16,16, 4,4,4, 1,1,1, 4,4,4, 16,16,16, 4,4,4, 4,4,4];
+ const tickTft=()=>lab.call(sy.fs_tick-0x60021020+0x50000000,{d0:1},null,[0xf0,48],2000000);
+ let lvAddr=null;
+ for(let k=0;k<edgeSeq.length;k++){
+  const w=edgeSeq[k], jitter=k>=15?(k%2?0.12:-0.12):0;
+  const rows=Array.from({length:480},(_,y)=>{
+   const row=new Uint8Array(640*2);
+   for(let x=0;x<640;x+=2){
+    const l0=32+Math.round(180*Math.max(0,Math.min(1,(x-319)/(w+jitter))));
+    const l1=32+Math.round(180*Math.max(0,Math.min(1,(x+1-319)/(w+jitter))));
+    row.set([l0,128,l1,128],x*2);
+   }
+   return row;
+  });
+  lvAddr=lab.load_lv_frame([640,480,rows],0x0a,1,[0,0]);
+  if(k===0){
+   lab.through_permit('tft',1);
+   lab.live_view('tft',D.ThRequest.scaled(1,lvAddr,[0,0],[640,480],[640,480],[0,0]));
+   lab.update();
+   lab.call(0x501ee1a0,{d0:2,d1:0},null,[0xc0,8]);
+   lab.call(0x501f0dfc,{d0:2,d1:0x60/4,a0:(bank.get('DMAEN')&~0x10)>>>0},null,[0x80,4]);
+   lab.call(0x501ee1a0,{d0:2,d1:1},null,[0xc0,8]);
+  }
+  if(k>0){
+   const prev=sy.ZR_ROWS+get('ZR_HEAD')%32*32;
+   lab.sim.word(prev+4,(lab.sim.u32(prev+4)-200001)&0x7fffffff);
+  }
+  tickTft();
+ }
  for(let poll=0;poll<22;poll++)invoke('sw_flush');
- assert(get('sw_saved')===1&&get('sw_session')===lastFile+1,'new session lost its quiet tail or reused an old page');
+ assert(get('sw_saved')===edgeSeq.length&&get('sw_session')===lastFile+1,'manual-lens session lost its quiet tail or reused an old page');
  fs.writeFileSync(OUT+'/sweep-card.omsd',cardImage(card));
- fs.writeFileSync(OUT+'/sweep-range.json',JSON.stringify({first,total,lastFile:get('sw_number')}));
+ fs.writeFileSync(OUT+'/sweep-range.json',JSON.stringify({first,total,manualCount:edgeSeq.length,lastFile:get('sw_number')}));
 }
