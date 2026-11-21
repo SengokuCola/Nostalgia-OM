@@ -32,7 +32,7 @@
 .set PD_SCORE,PD_STATE+12
 .set PD_CNT,PD_STATE+16
 .set PD_SPLIT_S,PD_STATE+20
-.set PD_RF_S,PD_STATE+24
+.set FS_GREEN_TICKS,PD_STATE+24      /* countdown frames for green ring flash */
 .set PD_LOW_CNT,PD_STATE+28
 .set PD_MED0,PD_STATE+32
 .set PD_MED1,PD_STATE+36
@@ -40,7 +40,8 @@
 .set PD_SEEDED,PD_STATE+44
 .set PD_EA,PD_STATE+48
 .set PD_SAT_TH,PD_STATE+52
-.set FS_VISUAL_MODE,PD_STATE+56      /* 0=split, 1=rangefinder yellow patch, 2=off */
+.set PD_LOCK_ARMED,PD_STATE+56       /* 1 = armed to fire beep + green flash on focus lock */
+.set PD_LOCK_COOLDOWN,PD_STATE+60    /* frame countdown (~45 = 1.5s) before next lock chime */
 
 /* Compute one raw optical phase measurement from ptr_a0 into PD_STATE.
  * Returns d0 = 1 if valid measurement (score >= PD_MIN_SCORE), 0 otherwise.
@@ -587,55 +588,70 @@ pdl_med3:
  asr 2,d0
 
 pdl_quant:
- mov d0,(4,sp)                       /* save filtered lag_px */
  mov (PD_SPLIT_S),d1
  mov pd_thresh_split,a0
  mov 6,d2
  call fs_pdaf_quant,[d2,d3,a2,a3],32
  mov d0,(PD_SPLIT_S)
 
- mov (4,sp),d0
- mov (PD_RF_S),d1
- mov pd_thresh_rf,a0
- mov 10,d2
- call fs_pdaf_quant,[d2,d3,a2,a3],32
- mov d0,(PD_RF_S)
+ /* Test 22: MF focus-lock green blink + double-beep state machine.
+  * Decrement visual flash & cooldown timers every frame. */
+ mov (FS_GREEN_TICKS),d0
+ cmp 0,d0
+ ble 1f
+ add -1,d0
+ mov d0,(FS_GREEN_TICKS)
+1:
+ mov (PD_LOCK_COOLDOWN),d0
+ cmp 0,d0
+ ble 2f
+ add -1,d0
+ mov d0,(PD_LOCK_COOLDOWN)
+2:
+ mov (PD_VALID),d0
+ cmp 1,d0
+ bne pdl_ret
+ mov (PD_SPLIT_S),d0
+ cmp 0,d0
+ beq pdl_in_focus
+
+ /* Out of focus: re-arm if |PD_SPLIT_S| >= 2, or cooldown expired while defocused. */
+ cmp 2,d0
+ bge pdl_rearm
+ cmp -2,d0
+ ble pdl_rearm
+ mov (PD_LOCK_COOLDOWN),d0
+ cmp 0,d0
+ bne pdl_ret
+pdl_rearm:
+ mov 1,d0
+ mov d0,(PD_LOCK_ARMED)
+ bra pdl_ret
+
+pdl_in_focus:
+ mov (PD_LOCK_ARMED),d0
+ cmp 0,d0
+ beq pdl_ret
+ mov (PD_LOCK_COOLDOWN),d0
+ cmp 0,d0
+ bne pdl_ret
+ clr d0
+ mov d0,(PD_LOCK_ARMED)
+ mov 45,d0
+ mov d0,(PD_LOCK_COOLDOWN)
+ mov 4,d0
+ mov d0,(FS_GREEN_TICKS)
+ mov (MF_BEEP_REQ),d0
+ add 1,d0
+ mov d0,(MF_BEEP_REQ)
 
 pdl_ret:
  mov (PD_VALID),d0
  ret [d2,d3,a2,a3],28
 
-/* Live Delete-key visual mode cycle (called via 5-byte tail jump from dl_lv).
- * On dumb manual lenses with FOCUS.TXT + ZAF.TXT active, cycles:
- *   0 (Split-Image + Microprism) -> 1 (Leica Rangefinder Yellow Patch) -> 2 (Off) -> 0.
- * Electronic lenses & non-FOCUS sessions jump straight to stock #37 dl_fn. */
-fs_dl_toggle:
- mov (FS_ON),d0
- cmp 1,d0
- bne 3f
- mov (PH_MODE),d0
- cmp 0,d0
- beq 3f
- movbu (0xa32d3d32),d0
- cmp 0,d0
- bne 3f
- mov (FS_VISUAL_MODE),d0
- inc d0
- cmp 3,d0
- bcs 2f
- clr d0
-2:
- mov d0,(FS_VISUAL_MODE)
- clr d0
- rets
-3:
- jmp dl_fn
-
 .balign 4
 pd_thresh_split:
  .long 4,9,15,22,30,40
-pd_thresh_rf:
- .long 4,8,12,16,20,24,29,34,39,44
 .balign 4
 pd_ab: .space 384,0
 pd_bb: .space 384,0

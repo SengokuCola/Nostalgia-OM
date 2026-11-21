@@ -64,6 +64,8 @@ sb_arm:
  cmp 0,a0
  beq sb_arm_out
  call fclose,[d2,a2,a3],16
+ mov 1,d0
+ mov d0,(sb_enabled+0x40000000)
  mov 56,d0
  mov d0,(4,sp)
  mov 8192,d0
@@ -79,21 +81,18 @@ sb_arm:
  blt sb_arm_out
  exth d0
  call sdl_task_start,[d2,d3,a2],16
- cmp 0,d0
- bne sb_arm_out
- mov 1,d0
- mov d0,(sb_enabled+0x40000000)
 sb_arm_out:
  ret [d2,d3,a2,a3],32
 sb_worker:
  add -20,sp
  clr d3
+ mov 0,a3
 sb_wait:
  mov 20,d0
  call sdl_dly_tsk,[d2,a2,a3],16
  mov (sb_produced+0x40000000),d0
  cmp d3,d0
- beq sb_wait
+ beq sb_check_mf_beep
  call sb_play,[d2,d3,a2,a3],20
  mov d0,(SB_RESULT)
  cmp 0,d0
@@ -104,7 +103,37 @@ sb_wait:
 sb_consumed:
  inc d3
  mov d3,(SB_CONSUMED)
+sb_check_mf_beep:
+ mov (MF_BEEP_REQ),d0
+ cmp a3,d0
+ beq sb_wait
+ mov d0,a3
+ call mf_play_beep,[d2,d3,a2,a3],20
  bra sb_wait
+mf_play_beep:
+ /* Route 3 = camera Beep channel; returns 0 when Beep OFF or Silent Mode ON. */
+ mov 3,d0
+ call sb_sound_route,[d2,d3,a2],36
+ cmp 0,d0
+ beq mf_beep_out
+ mov 2,d2
+ cmp 2,d0
+ beq 1f
+ mov 3,d2
+ cmp 16,d0
+ beq 1f
+ mov 1,d2
+1:
+ mov d2,d1
+ mov 4,d0
+ call sb_shutter_sound,[d2,d3,a2,a3],60
+ mov 80,d0
+ call sdl_dly_tsk,[d2,a2,a3],16
+ mov d2,d1
+ mov 4,d0
+ call sb_shutter_sound,[d2,d3,a2,a3],60
+mf_beep_out:
+ ret [d2,d3,a2,a3],20
 sb_play:
  /* Match the route selected by the stock single-shutter caller at 60cf1374.
   * The native sound controller handles its own volume and mute settings.
@@ -135,6 +164,8 @@ sb_name: .asciz "CAD_BEEP"
 sb_checked: .long 0
 sb_enabled: .long 0
 sb_produced: .long 0
+mf_beep_req: .long 0
+.set MF_BEEP_REQ,mf_beep_req+0x40000000
 sb_diag: .space 20
 .set SB_JOBS,sb_diag+0x40000000
 .set SB_DRIVE,SB_JOBS+4

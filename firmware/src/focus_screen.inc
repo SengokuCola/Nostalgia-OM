@@ -236,14 +236,11 @@ fs_arm: /* first card-ready half press; no DEBUG.TXT dependency */
  beq 10f
  cmp 89,d1                         /* 'Y' */
  beq 10f
- cmp 121,d1                        /* 'y' */
- beq 10f
- cmp 50,d1                         /* '2' */
- bne 11f
-10:
  mov 1,d0
-11:
- mov d0,(FS_VISUAL_MODE)
+ mov d0,(PD_LOCK_ARMED)
+ clr d0
+ mov d0,(FS_GREEN_TICKS)
+ mov d0,(PD_LOCK_COOLDOWN)
  mov fs_phase_path,a0
  mov lg_mr,a1
  call fopen,[],4
@@ -517,22 +514,25 @@ fs_check_manual_pdaf:
  movbu (0xa32d3d32),d0
  cmp 0,d0
  bne fs_use_contrast
+ /* Respect camera Focus Indicator menu setting (sid 1067: 1=On, 0=Off)
+  * once the settings DB / validator hash is initialized (0x62a84970 != 0). */
+ mov (0x62a84970),d0
+ cmp 0,d0
+ beq 1f
+ mov 1067,d0
+ call sget,[],4
+ cmp 0,d0
+ bne 1f
+ mov 7,d0
+ mov d0,(28,sp)
+ jmp fs_failed
+1:
  /* Dumb manual lens + ZAF.TXT: run contrast stats for comparison + real Layer 0 PDAF! */
  call fs_measure,[d2,d3,a2,a3],48
  mov 1,d1
  movbu d1,(FS_MEASURED)
  call fs_pdaf_live,[d2,d3,a2,a3],28
- mov (FS_VISUAL_MODE),d1
- cmp 2,d1
- bne fs_visual_active
- /* Mode 2: user toggled overlay off via Delete key -> release IMG2 cleanly. */
- mov 7,d0
- mov d0,(28,sp)
- jmp fs_failed
-fs_visual_active:
- cmp 1,d1
- beq fs_render_rf
- /* Mode 0: Split-Image + Microprism driven by signed optical PDAF (-6..+6). */
+ /* Split-Image + Microprism driven by signed optical PDAF (-6..+6). */
  cmp 0,d0
  beq fs_pdaf_contrast_fb
  mov (PD_SPLIT_S),d0
@@ -542,30 +542,6 @@ fs_pdaf_contrast_fb:
  mov (4,sp),d1
  call fs_filter_band,[d2,d3,a2,a3],20
  bra fs_apply_shift
-fs_render_rf:
- /* Mode 1: Leica Rangefinder Yellow Patch driven by signed optical PDAF (-10..+10). */
- mov (16,sp),d1
- asl 15,d1
- add FS_DST,d1
- mov d1,(24,sp)
- mov d1,a1
- mov FS_SRC,a0
- mov (PD_RF_S),d0
- mov (PD_VALID),d2
- clr d1
- cmp 0,d2
- beq fs_rf_call
- mov 1,d1
- cmp 0,d0
- bne fs_rf_call
- mov 2,d1                            /* in-focus locked: crisp white frame */
-fs_rf_call:
- call screen_rangefinder,[d2,d3,a2,a3],48
- cmp 0,d0
- beq fs_mapped
- mov 6,d0
- mov d0,(28,sp)
- jmp fs_failed
 fs_use_contrast:
  call fs_measure,[d2,d3,a2,a3],48
  mov 1,d1

@@ -521,11 +521,11 @@ sw_sample_raw_ab:
  mov d0,(4,a0)
  mov (PD_SPLIT_S),d0
  and 0xff,d0
- mov (PD_RF_S),d1
+ mov (FS_GREEN_TICKS),d1
  and 0xff,d1
  asl 8,d1
  or d1,d0
- mov (FS_VISUAL_MODE),d1
+ mov (MF_BEEP_REQ),d1
  and 0xff,d1
  asl 16,d1
  or d1,d0

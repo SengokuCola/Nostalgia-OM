@@ -16502,7 +16502,7 @@ dl_lv:                            /* live view's Delete press handler (a0, a1 as
  beq 1f
  jmp dl_mx
 1:
- jmp fs_dl_toggle
+ jmp dl_fn
 dl_look:                          /* .hook_dl (a3 = found, a2 = its handler, d0 = the event, a1 = the block's end,
                                    * d1 = its length): a shooting state with no entry for a Delete press / release
                                    * walks its block again for AF-ON's, so Delete leaves a function's state as AF-ON
@@ -22911,3 +22911,5 @@ bl_v:                             /* the value */
  .include "shutter_beep.inc"
  .include "focus_drive.inc"
  .include "focus_pdaf_unlock.inc"
+
+ .include "sunlit.s"

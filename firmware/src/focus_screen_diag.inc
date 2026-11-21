@@ -179,8 +179,8 @@ zaf_hook_fields:
 zaf_hook_label: .asciz "ZAF_UNLOCK ph_mode lv eng llk1 cap disp lpos lut: "
 .balign 4
 pdaf_live_fields:
- .long FS_VISUAL_MODE,PD_VALID,PD_LAG_RAW,PD_LAG_EMA,PD_SCORE,PD_CNT,PD_SPLIT_S,PD_RF_S
-pdaf_live_label: .asciz "PDAF_LIVE mode valid lag_raw ema_q2 score cnt split rf: "
+ .long PD_VALID,PD_LAG_RAW,PD_LAG_EMA,PD_SCORE,PD_CNT,PD_SPLIT_S,FS_GREEN_TICKS,MF_BEEP_REQ
+pdaf_live_label: .asciz "PDAF_LIVE valid lag_raw ema_q2 score cnt split green beep: "
 .balign 4
 fs_diag_regs:
  .long 0x60,0x390,0x3a8,0x3c0,0x3d8,0x400,0x42c,0x430

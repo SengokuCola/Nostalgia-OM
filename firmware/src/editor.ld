@@ -320,6 +320,7 @@ fs_native_level = 0x6021106c;
 sb_reply_join = 0x6054c315;
 sb_sound_route = 0x6041aeae;
 sb_shutter_sound = 0x60449dbb;
+sget = 0x60419315;
 dr_stock_abs = 0x60306c12;
 dr_stock_sync = 0x603076bc;
 dr_stock_async = 0x60307bb3;
