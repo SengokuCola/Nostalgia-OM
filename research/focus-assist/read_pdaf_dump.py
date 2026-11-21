@@ -82,8 +82,8 @@ def decode_file(path: Path):
         if len(data) != 24928:
             raise ValueError(f'{path}: expected 24928 B for OMPD v2, got {len(data)}')
         tpl = struct.unpack_from('<128I', data, 0x0480)
-        print(f'  Template[3]: +512={tpl[0]:#x} +532={tpl[5]:#x} +772={tpl[65]:#x} +776={tpl[66]:#x} '
-              f'+780={tpl[67]:#x} +896={tpl[96]:#x} +900={tpl[97]:#x} +904={tpl[98]:#x} +908={tpl[99]:#x}')
+        print(f'  Template[3]: +512={tpl[0]:#x} +532={tpl[5]:#x} +712={tpl[50]:#x} +780={tpl[67]:#x} '
+              f'+832={tpl[80]:#x} +840..852={[hex(tpl[i]) for i in (82,83,84,85)]} +908={tpl[99]:#x}')
         s_a40 = data[0x0680:0x1480]
         s_b40 = data[0x1480:0x2280]
         s_a41 = data[0x2280:0x2680]
@@ -115,13 +115,13 @@ def decode_file(path: Path):
                 bl, bs, ws = res
                 print(f'  xcorr(A40 vs B40, {fmt_name}): best_lag={bl:+3d} min_sad={bs} max_sad={ws} ratio={ws/(bs+1):.2f}')
 
-        p99a8_0 = struct.unpack_from('<128I', data, 0x3a80)
-        p99a8_b0 = struct.unpack_from('<1053I', data, 0x3c80)
-        p99a8_b0_s16 = struct.unpack_from('<2106h', data, 0x3c80)
-        print(f'  99a8 Pitch0 uniq={len(set(p99a8_0))} head={[hex(x) for x in p99a8_0[:8]]}')
-        print(f'  99a8 Bank0 (1053 u32) uniq={len(set(p99a8_b0))} ctr526={p99a8_b0[526]:#010x} '
-              f'ctr-2..+2={[hex(x) for x in p99a8_b0[524:529]]}')
-        print(f'  99a8 Bank0 s16 lo/hi at ctr526: ({p99a8_b0_s16[526*2]}, {p99a8_b0_s16[526*2+1]})')
+        p9a08_0 = struct.unpack_from('<128I', data, 0x3a80)
+        p9a08_b0 = struct.unpack_from('<1053I', data, 0x3c80)
+        p9a08_b0_s16 = struct.unpack_from('<2106h', data, 0x3c80)
+        print(f'  9a08 Pitch0 uniq={len(set(p9a08_0))} head={[hex(x) for x in p9a08_0[:8]]}')
+        print(f'  9a08 Bank0 (1053 u32) uniq={len(set(p9a08_b0))} ctr526={p9a08_b0[526]:#010x} '
+              f'ctr-2..+2={[hex(x) for x in p9a08_b0[524:529]]}')
+        print(f'  9a08 Bank0 s16 lo/hi at ctr526: ({p9a08_b0_s16[526*2]}, {p9a08_b0_s16[526*2+1]})')
 
         b99b0_c = struct.unpack_from('<9I', data, 0x4d00 + 512 - 16)
         print('  99b0[ctr-4..ctr+4]: ' + ' '.join(f'{x:08x}' for x in b99b0_c))

@@ -16,6 +16,8 @@ const lab = new DisplayLab(labEnv({rom:expandImage(readFileSync(build+'/main.bin
 try {
   lab.start();
   const desc = lab.alloc(new Uint8Array(224), 16);
+  const tpl = lab.alloc(new Uint8Array(1024), 16);
+  lab.sim.word(tpl + 832, 1);
   const stack = Buffer.alloc(4);
   stack.writeUInt32LE(desc, 0);
   // Even a stale opt-in word must not let a section-one handler enter
@@ -71,6 +73,9 @@ try {
       const zLpos = lab.call(0x609901b6-IMAGE_BASE+0x50000000,{d0:0},null,[0,0],10000,
         new Set([sy.zaf_lpos_armed,sy.zaf_lpos_resume]));
       assert.equal(zLpos.pc,armed ? sy.zaf_lpos_armed : sy.zaf_lpos_resume);
+      const zLut = lab.call(0x609525e3-IMAGE_BASE+0x50000000,{a0:tpl},null,[0xf0,104],10000,
+        new Set([sy.zaf_lut_armed,sy.zaf_lut_resume]));
+      assert.equal(zLut.pc,armed ? sy.zaf_lut_armed : sy.zaf_lut_resume);
     }
   }
   // Execute the assembled first-event routine with a mounted marker and a

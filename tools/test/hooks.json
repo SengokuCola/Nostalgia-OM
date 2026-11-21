@@ -336,6 +336,10 @@
    "addr": "0x609901b6",
    "len": 6
   },
+  "hook_zaf_lut": {
+   "addr": "0x609525e3",
+   "len": 7
+  },
   "hook_zaf_lv": {
    "addr": "0x609ed0d4",
    "len": 7

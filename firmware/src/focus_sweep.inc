@@ -983,11 +983,11 @@ pd_skip_slot:
  call pd_copy_words,[],0
  or 512,d2
 pd_skip_a0:
- /* Bits 10..11: ptr_99a8 TruePic X HW raw phase/corr output (512 B @ +0, ALL 1053 pts 4224 B @ +33792) */
- mov (0x88,a2),a0
+ /* Bits 10..11: ptr_9a08 TruePic X HW raw phase/corr output (512 B @ +0, ALL 1053 pts 4224 B @ +33792) */
+ mov (0xa8,a2),a0
  call sw_valid_zaf_ptr,[],0
  cmp 0,d0
- beq pd_skip_99a8
+ beq pd_skip_9a08
  call sw_to_uncached,[],0
  mov a0,a3
  mov a3,a0
@@ -1003,7 +1003,7 @@ pd_skip_a0:
  mov 1056,d0
  call pd_copy_words,[],0
  or 2048,d2
-pd_skip_99a8:
+pd_skip_9a08:
  /* Bit 12: ptr_99b0 TruePic X HW status (1024 B @ +35384 around center pt 526) */
  mov (0x90,a2),a0
  call sw_valid_zaf_ptr,[],0

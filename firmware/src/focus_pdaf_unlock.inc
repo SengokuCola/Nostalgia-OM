@@ -30,7 +30,15 @@
  *    Prevents 0x609a592d from looping forever waiting for 0xa33df46c==1 before
  *    running 0x6099ff62 -> 0x60992b3a (HW PDAF) -> 0x6096294b (SW defocus).
  *
- * All fast-path gates live in .ext4 (same loader section as all 6 hook sites).
+ * 7. .hook_zaf_lut  @ 0x609525e3 (0x6095192d Ch0 shading-LUT gate, 7 B: mov (832,a0),d0; btst 1,d0)
+ *    On dumb manual lenses, the lens exit-pupil gain LUT at 0x62b3d9f0 / shift
+ *    table at 0x62b3d9f4 are all zero, so enabling Ch0 shading multiplies every
+ *    sensor Quad-Pixel sample by 0 before DMA-writing ptr_a0. Clearing bit 0 of
+ *    (832,a0) and taking beq 0x60952647 disables the zero LUT cleanly (matching
+ *    stock templates T[7]/T[9]/T[15]) and restores bit 0 if an electronic lens
+ *    is later hot-swapped on.
+ *
+ * All fast-path gates live in .ext4 (same loader section as all 7 hook sites).
  * Unarmed boot and electronic lenses follow exact stock paths.
  */
 .section .hook_zaf_lv,"ax"
@@ -55,6 +63,11 @@
 
 .section .hook_zaf_lpos,"ax"
  jmp zaf_lpos_entry
+ nop
+
+.section .hook_zaf_lut,"ax"
+ jmp zaf_lut_entry
+ nop
  nop
 
 .section .ext4,"ax"
@@ -130,6 +143,19 @@ zaf_lpos_entry:
  movbu (0xa33df46c),d0
  jmp zaf_lpos_resume
 
+zaf_lut_entry:
+ mov (FS_ON),d0
+ cmp 1,d0
+ bne 1f
+ mov (SEC_READY),d0
+ and 32,d0
+ beq 1f
+ jmp zaf_lut_armed
+1:
+ mov (832,a0),d0
+ btst 1,d0
+ jmp zaf_lut_resume
+
 .section .ext13,"ax"
 .balign 4
 zaf_lv_cnt: .long 0
@@ -138,12 +164,16 @@ zaf_llk1_cnt: .long 0
 zaf_cap_cnt: .long 0
 zaf_disp_cnt: .long 0
 zaf_lpos_cnt: .long 0
+zaf_lut_cnt: .long 0
+zaf_lut_saved: .long 0
 .set ZAF_LV_CNT,zaf_lv_cnt+0x40000000
 .set ZAF_ENG_CNT,zaf_eng_cnt+0x40000000
 .set ZAF_LLK1_CNT,zaf_llk1_cnt+0x40000000
 .set ZAF_CAP_CNT,zaf_cap_cnt+0x40000000
 .set ZAF_DISP_CNT,zaf_disp_cnt+0x40000000
 .set ZAF_LPOS_CNT,zaf_lpos_cnt+0x40000000
+.set ZAF_LUT_CNT,zaf_lut_cnt+0x40000000
+.set ZAF_LUT_SAVED,zaf_lut_saved+0x40000000
 
 zaf_lv_armed:
  call zaf_stock_lens_ptr,[],4
@@ -265,3 +295,43 @@ zaf_lpos_armed:
 1:
  movbu (0xa33df46c),d0
  jmp zaf_lpos_resume
+
+zaf_lut_armed:
+ mov (PH_MODE),d0
+ cmp 0,d0
+ beq 2f
+ movbu (0xa32d3d32),d0
+ cmp 0,d0
+ bne 2f
+ /* Dumb manual lens: clear Ch0 shading-LUT enable bit 0 so ISP skips the
+  * all-zero exit-pupil gain LUT and writes unattenuated Quad-Pixel samples. */
+ mov (832,a0),d0
+ btst 1,d0
+ beq 1f
+ mov a0,(ZAF_LUT_SAVED)
+ and -2,d0
+ mov d0,(832,a0)
+1:
+ mov (ZAF_LUT_CNT),d0
+ inc d0
+ mov d0,(ZAF_LUT_CNT)
+ clr d0
+ btst 1,d0
+ jmp zaf_lut_resume
+2:
+ /* Stock path (electronic lens or PH_MODE==0): restore bit 0 on hot-swap. */
+ mov (ZAF_LUT_SAVED),d0
+ cmp 0,d0
+ beq 3f
+ mov d0,a1
+ cmp a0,a1
+ bne 3f
+ mov (832,a0),d0
+ or 1,d0
+ mov d0,(832,a0)
+ clr d0
+ mov d0,(ZAF_LUT_SAVED)
+3:
+ mov (832,a0),d0
+ btst 1,d0
+ jmp zaf_lut_resume
