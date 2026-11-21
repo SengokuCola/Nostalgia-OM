@@ -18,7 +18,7 @@
 .set PD_OVERLAP,112                  /* 160 - 2 * 24 */
 .set PD_MIN_CNT,20                   /* minimum valid non-saturated bins */
 .set PD_MIN_ENERGY,256               /* reject flat/blank texture */
-.set PD_MIN_SCORE,350                /* r^2 >= 350/1024 (r >= 0.585) */
+.set PD_MIN_SCORE,250                /* r^2 >= 250/1024 (r >= 0.494, better for wide-open f/0.95) */
 .set PD_HOLD_LIMIT,8                 /* frames to hold before low-conf */
 
 .set PD_AB,pd_ab+0x40000000
@@ -658,7 +658,7 @@ pdl_ret:
 
 .balign 4
 pd_thresh_split:
- .long 1,3,6,10,15,22
+ .long 2,5,9,14,20,28
 .balign 4
 pd_ab: .space 384,0
 pd_bb: .space 384,0

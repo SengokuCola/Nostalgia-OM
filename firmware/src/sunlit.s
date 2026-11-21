@@ -323,7 +323,10 @@ sunlit_run:
 5:
  mov (56,sp),d0
  mov (60,sp),d1
+ cmp 0,d1
+ bge 50f
  call sun_blend_pair,[],16
+50:
  mov d0,(a2)
  add 4,a2
  add -1,d2
@@ -352,7 +355,10 @@ sunlit_run:
  or d0,d2
  mov d2,d0
  mov (60,sp),d1
+ cmp 0,d1
+ bge 52f
  call sun_blend_pair,[],16
+52:
  mov d0,(a2)
  add 4,a2
 53:
@@ -362,7 +368,10 @@ sunlit_run:
 54:
  mov (68,sp),d0
  mov (60,sp),d1
+ cmp 0,d1
+ bge 56f
  call sun_blend_pair,[],16
+56:
  mov d0,(a2)
  add 4,a2
  add -1,d2
