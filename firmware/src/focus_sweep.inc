@@ -295,7 +295,7 @@ sw_capture:
  mov 255,d0
 89:
  movbu d0,(95,a2)
- /* Hash 8 central words of the latest completed raw A/B PDAF frame slot. */
+ /* Hash 8 central words of A-half (+466560) and B-half (+1399680) of ptr_a0. */
  clr d0
  mov d0,(96,a2)
  mov d0,(100,a2)
@@ -308,13 +308,15 @@ sw_capture:
  mov 0xa33e9be0,a0
  add d0,a0
  mov (a0),a1
+ mov 466560,d1
  call sw_hash_pdaf,[d2,d3,a2,a3],20
  mov d0,(96,a2)
  mov d3,d0
  asl 4,d0
- mov 0xa33e9c20,a0
+ mov 0xa33e9be0,a0
  add d0,a0
  mov (a0),a1
+ mov 1399680,d1
  call sw_hash_pdaf,[d2,d3,a2,a3],20
  mov d0,(100,a2)
  mov 0xa33e9c94,a0
@@ -470,8 +472,17 @@ sw_valid_pdaf_ptr:
  clr d0
  ret [],0
 
+/* Leaf: convert valid DRAM ptr in a0 from cached 0x6x/7x to uncached 0xax/bx. */
+sw_to_uncached:
+ cmp 0x80000000,a0
+ bcc 1f
+ add 0x40000000,a0
+1:
+ ret [],0
+
 /* Outside LOCK: sample raw center A/B words and compute 1D u16 SAD cross-corr
- * (lags -8..+8 over 32 samples) on the latest completed Layer 0 raw A/B slot. */
+ * (lags -8..+8 over 32 samples) on A-half (+466560) vs B-half (+1399680) of
+ * ptr_a0 (0xa33e9be0[latest_slot]) via uncached DRAM alias. */
 sw_sample_raw_ab:
  mov SW_RAW_AB,a0
  clr d0
@@ -485,20 +496,15 @@ sw_sample_raw_ab:
  asl 4,d0
  mov 0xa33e9be0,a1
  add d0,a1
- mov (a1),a2
- mov 0xa33e9c20,a1
- add d0,a1
- mov (a1),a3
- mov a2,a0
+ mov (a1),a0
  call sw_valid_pdaf_ptr,[],0
  cmp 0,d0
  beq 9f
- mov a3,a0
- call sw_valid_pdaf_ptr,[],0
- cmp 0,d0
- beq 9f
- add 933888,a2
- add 933888,a3
+ call sw_to_uncached,[],0
+ mov a0,a2
+ mov a0,a3
+ add 466560,a2
+ add 1399680,a3
  mov SW_RAW_AB,a0
  mov (a2),d0
  mov d0,(a0)
@@ -568,31 +574,24 @@ sw_sample_raw_ab:
 9:
  ret [d2,d3,a2,a3],44
 
-/* Hash 8 words near the center (+0xe4000 = 933888 B, mid of 1,866,240 B plane)
- * of a raw PDAF buffer pointer in a1, if aligned and inside DRAM bounds. */
+/* Hash 8 words at byte offset d1 of a raw PDAF buffer pointer in a1 (uncached),
+ * if aligned and inside DRAM bounds. */
 sw_hash_pdaf:
- mov a1,d0
- and 3,d0
- bne 9f
- cmp 0x62000000,a1
- bcs 9f
- cmp 0x71e00000,a1
- bcs 1f
- cmp 0xa2000000,a1
- bcs 9f
- cmp 0xb1e00000,a1
- bcc 9f
-1:
- add 933888,a1
+ mov a1,a0
+ call sw_valid_pdaf_ptr,[],0
+ cmp 0,d0
+ beq 9f
+ call sw_to_uncached,[],0
+ add d1,a0
  mov 8,d2
  mov 0x811c9dc5,d0
 2:
- mov (a1),d1
+ mov (a0),d1
  xor d1,d0
  mov d0,d3
  asl 5,d0
  add d3,d0
- inc4 a1
+ inc4 a0
  add -1,d2
  bne 2b
  ret [d2,d3,a2,a3],20
@@ -775,3 +774,416 @@ sw_count: .long 0
 sw_payload: .space SW_PAGE*SW_STRIDE
 sw_path: .ascii "C:\\OM3MOD\\ZS"
 sw_digits: .asciz "000000.BIN"
+
+/* Test 16: On-demand raw PDAF & TruePic X HW snapshot dumper (OMPD v1, 19456 B).
+ * Runs ONLY in CADLOG's low-priority background task after shutter release
+ * (never from DISPLAY, never under LOCK), capped at 16 files per boot, and only
+ * when FS_ON==1 && PH_MODE!=0 && (ZAF_CAP_CNT!=0 || stream_en!=0). */
+.set PD_SIZE,19456
+.set PD_MAX_FILES,16
+
+/* Leaf: copy d0 32-bit words from a0 to a1. Clobbers a0, a1, d0, d1. */
+pd_copy_words:
+1:
+ mov (a0),d1
+ mov d1,(a1)
+ inc4 a0
+ inc4 a1
+ add -1,d0
+ bne 1b
+ ret [],0
+
+/* Pure memory snapshot builder into pd_buf (no SD I/O). Returns d0 = PD_SIZE. */
+pd_build_snap:
+ mov pd_buf,a2
+ mov a2,a0
+ mov PD_SIZE/4,d0
+ clr d1
+1:
+ mov d1,(a0)
+ inc4 a0
+ add -1,d0
+ bne 1b
+ mov 0x44504d4f,d0                 /* "OMPD" */
+ mov d0,(0,a2)
+ mov 1,d0
+ mov d0,(4,a2)                     /* version = 1 */
+ mov (pd_count),d0
+ inc d0
+ mov d0,(8,a2)                     /* snap_seq (1-based) */
+ mov (lg_n),d0
+ mov d0,(12,a2)                    /* shutter_event */
+ mov (USCLK),d0
+ mov d0,(16,a2)                    /* usclk */
+ movhu (0xa33e9c8c),d3             /* latest_slot */
+ movhu d3,(20,a2)
+ movhu (0xa33e9c90),d0             /* locked_slot */
+ movhu d0,(22,a2)
+ mov (0xa33e9c80),d0               /* ring_flags[0..1] */
+ mov d0,(24,a2)
+ mov (0xa33e9c84),d0               /* ring_flags[2..3] */
+ mov d0,(28,a2)
+ movhu (0xa33d1e34),d0             /* pdaf_gain (s16) */
+ movhu d0,(32,a2)
+ movbu (0xa32d3d32),d0             /* lens_mounted */
+ movbu d0,(34,a2)
+ movbu (0x62b3d938),d0             /* stream_en */
+ movbu d0,(35,a2)
+ mov (FS_SWEEP_VIEW),d0            /* edge_fine */
+ mov d0,(36,a2)
+ mov (FS_SWEEP_VIEW+4),d0          /* edge_coarse */
+ mov d0,(40,a2)
+ mov (SW_RAW_AB),d0                /* raw_a0 */
+ mov d0,(44,a2)
+ mov (SW_RAW_AB+4),d0              /* raw_b0 */
+ mov d0,(48,a2)
+ mov (SW_RAW_AB+8),d0              /* raw_xcorr */
+ mov d0,(52,a2)
+ mov (ZAF_CAP_CNT),d0
+ mov d0,(56,a2)
+ mov (ZAF_DISP_CNT),d0
+ mov d0,(60,a2)
+ mov (ZAF_LPOS_CNT),d0
+ mov d0,(64,a2)
+ mov (ZAF_LLK1_CNT),d0
+ mov d0,(68,a2)
+ /* Copy shadow ptrs 0xa33e9c60 (+0x68) and 0xa33e9c70 (+0x78). */
+ mov 0xa33e9c60,a0
+ mov a2,a1
+ add 0x68,a1
+ mov 8,d0
+ call pd_copy_words,[],0
+ /* Copy 10 ZAF/HW buffer pointers (+0x88..+0xaf). */
+ mov (0xa33e99a8),d0
+ mov d0,(0x88,a2)
+ mov (0xa33e99ac),d0
+ mov d0,(0x8c,a2)
+ mov (0xa33e99b0),d0
+ mov d0,(0x90,a2)
+ mov (0xa33e99e8),d0
+ mov d0,(0x94,a2)
+ mov (0xa33e99ec),d0
+ mov d0,(0x98,a2)
+ mov (0xa33e99f0),d0
+ mov d0,(0x9c,a2)
+ mov (0xa33e99f4),d0
+ mov d0,(0xa0,a2)
+ mov (0xa33e99fc),d0
+ mov d0,(0xa4,a2)
+ mov (0xa33e9a08),d0
+ mov d0,(0xa8,a2)
+ mov (0xa33e99c8),d0
+ mov d0,(0xac,a2)
+ mov PD_SIZE,d0
+ mov d0,(0xb4,a2)
+ clr d2                            /* section_valid_mask */
+ /* If latest_slot < 4, copy ptr_a[0..3], ptr_b[0..3], and 332-B slot_struct. */
+ cmp 4,d3
+ bcc pd_skip_slot
+ mov d3,d0
+ asl 4,d0
+ mov 0xa33e9be0,a0
+ add d0,a0
+ mov a2,a1
+ add 0x48,a1
+ mov 4,d0
+ call pd_copy_words,[],0
+ mov d3,d0
+ asl 4,d0
+ mov 0xa33e9c20,a0
+ add d0,a0
+ mov a2,a1
+ add 0x58,a1
+ mov 4,d0
+ call pd_copy_words,[],0
+ /* Bit 0: slot_struct (332 B = 83 words) @ +0x0100 */
+ mov 0xa33e9c94,a0
+ mov d3,d1
+ cmp 0,d1
+ beq 2f
+1:
+ add 332,a0
+ add -1,d1
+ bne 1b
+2:
+ mov a2,a1
+ add 0x100,a1
+ mov 83,d0
+ call pd_copy_words,[],0
+ or 1,d2
+pd_skip_slot:
+ /* Bit 1: ZAF control RAM 0xa33d1e00..0xa33d1eff (256 B) @ +0x0280 */
+ mov 0xa33d1e00,a0
+ mov a2,a1
+ add 0x280,a1
+ mov 64,d0
+ call pd_copy_words,[],0
+ or 2,d2
+ /* Bit 2: Sensor PDAF DMA control RAM 0xa2b3d920..0xa2b3da1f (256 B) @ +0x0380 */
+ mov 0xa2b3d920,a0
+ mov a2,a1
+ add 0x380,a1
+ mov 64,d0
+ call pd_copy_words,[],0
+ or 4,d2
+ /* Bits 3..7: ptr_a0 slices (2 KB each: +0, +466560, +478080, +1399680, +1411200) */
+ mov (0x48,a2),a0
+ call sw_valid_pdaf_ptr,[],0
+ cmp 0,d0
+ beq pd_skip_a0
+ call sw_to_uncached,[],0
+ mov a0,a3
+ mov a3,a0
+ mov a2,a1
+ add 0x480,a1
+ mov 512,d0
+ call pd_copy_words,[],0
+ or 8,d2
+ mov a3,a0
+ add 466560,a0
+ mov a2,a1
+ add 0xc80,a1
+ mov 512,d0
+ call pd_copy_words,[],0
+ or 16,d2
+ mov a3,a0
+ add 478080,a0
+ mov a2,a1
+ add 0x1480,a1
+ mov 512,d0
+ call pd_copy_words,[],0
+ or 32,d2
+ mov a3,a0
+ add 1399680,a0
+ mov a2,a1
+ add 0x1c80,a1
+ mov 512,d0
+ call pd_copy_words,[],0
+ or 64,d2
+ mov a3,a0
+ add 1411200,a0
+ mov a2,a1
+ add 0x2480,a1
+ mov 512,d0
+ call pd_copy_words,[],0
+ or 128,d2
+pd_skip_a0:
+ /* Bits 8..9: ptr_a1 slices (1 KB each: +128064, +384192) */
+ mov (0x4c,a2),a0
+ call sw_valid_pdaf_ptr,[],0
+ cmp 0,d0
+ beq pd_skip_a1
+ call sw_to_uncached,[],0
+ mov a0,a3
+ mov a3,a0
+ add 128064,a0
+ mov a2,a1
+ add 0x2c80,a1
+ mov 256,d0
+ call pd_copy_words,[],0
+ or 256,d2
+ mov a3,a0
+ add 384192,a0
+ mov a2,a1
+ add 0x3080,a1
+ mov 256,d0
+ call pd_copy_words,[],0
+ or 512,d2
+pd_skip_a1:
+ /* Bits 10..11: ptr_99b0 (1 KB @ +0, 1 KB @ +35384 around center pt 526) */
+ mov (0x90,a2),a0
+ call sw_valid_zaf_ptr,[],0
+ cmp 0,d0
+ beq pd_skip_99b0
+ call sw_to_uncached,[],0
+ mov a0,a3
+ mov a3,a0
+ mov a2,a1
+ add 0x3480,a1
+ mov 256,d0
+ call pd_copy_words,[],0
+ or 1024,d2
+ mov a3,a0
+ add 35384,a0
+ mov a2,a1
+ add 0x3880,a1
+ mov 256,d0
+ call pd_copy_words,[],0
+ or 2048,d2
+pd_skip_99b0:
+ /* Bits 12 & 14: ptr_99ac (all 1053 pts Bank 0 @ +0x3c80; Banks 1..4 pts 496..559 @ +0x48e0) */
+ mov (0x8c,a2),a0
+ call sw_valid_zaf_ptr,[],0
+ cmp 0,d0
+ beq pd_skip_99ac
+ call sw_to_uncached,[],0
+ mov a0,a3
+ mov a3,a0
+ mov a2,a1
+ add 0x3c80,a1
+ mov 264,d0
+ call pd_copy_words,[],0
+ or 4096,d2
+ mov a3,a0
+ add 2304+496,a0
+ mov a2,a1
+ add 0x48e0,a1
+ mov 16,d0
+ call pd_copy_words,[],0
+ mov a3,a0
+ add 4608+496,a0
+ mov a2,a1
+ add 0x4920,a1
+ mov 16,d0
+ call pd_copy_words,[],0
+ mov a3,a0
+ add 6912+496,a0
+ mov a2,a1
+ add 0x4960,a1
+ mov 16,d0
+ call pd_copy_words,[],0
+ mov a3,a0
+ add 9216+496,a0
+ mov a2,a1
+ add 0x49a0,a1
+ mov 16,d0
+ call pd_copy_words,[],0
+ or 16384,d2
+pd_skip_99ac:
+ /* Bits 13 & 15: ptr_99e8 (all 1053 pts Bank 0 @ +0x40a0; Banks 1..4 pts 496..559 @ +0x49e0) */
+ mov (0x94,a2),a0
+ call sw_valid_zaf_ptr,[],0
+ cmp 0,d0
+ beq pd_skip_99e8
+ call sw_to_uncached,[],0
+ mov a0,a3
+ mov a3,a0
+ mov a2,a1
+ add 0x40a0,a1
+ mov 528,d0
+ call pd_copy_words,[],0
+ or 8192,d2
+ mov a3,a0
+ add 4352+992,a0
+ mov a2,a1
+ add 0x49e0,a1
+ mov 32,d0
+ call pd_copy_words,[],0
+ mov a3,a0
+ add 8704+992,a0
+ mov a2,a1
+ add 0x4a60,a1
+ mov 32,d0
+ call pd_copy_words,[],0
+ mov a3,a0
+ add 13056+992,a0
+ mov a2,a1
+ add 0x4ae0,a1
+ mov 32,d0
+ call pd_copy_words,[],0
+ mov a3,a0
+ add 17408+992,a0
+ mov a2,a1
+ add 0x4b60,a1
+ mov 32,d0
+ call pd_copy_words,[],0
+ or 32768,d2
+pd_skip_99e8:
+ /* Bit 16: ptr_c60[0] first 32 B @ +0x4be0 */
+ mov (0x68,a2),a0
+ call sw_valid_pdaf_ptr,[],0
+ cmp 0,d0
+ beq pd_skip_c60
+ call sw_to_uncached,[],0
+ mov a2,a1
+ add 0x4be0,a1
+ mov 8,d0
+ call pd_copy_words,[],0
+ or 65536,d2
+pd_skip_c60:
+ mov d2,(0xb0,a2)
+ mov PD_SIZE,d0
+ ret [d2,d3,a2,a3],32
+
+/* Called from lg_wk after dr_save (card mounted, shutter up, DEBUG.TXT active). */
+pd_save:
+ mov (FS_ON),d0
+ cmp 1,d0
+ bne pd_out
+ mov (PH_MODE),d0
+ cmp 0,d0
+ beq pd_out
+ mov (ZAF_CAP_CNT),d0
+ cmp 0,d0
+ bne 1f
+ movbu (0x62b3d938),d0
+ cmp 0,d0
+ beq pd_out
+1:
+ mov (pd_count),d0
+ cmp PD_MAX_FILES,d0
+ bcc pd_out
+ call pd_build_snap,[d2,d3,a2,a3],32
+ mov 16,d0
+ mov d0,(4,sp)
+pd_next_name:
+ mov (pd_number),d0
+ cmp 999999,d0
+ bcc pd_out
+ inc d0
+ mov d0,(pd_number)
+ mov pd_digits+5,a0
+2:
+ movbu (a0),d1
+ inc d1
+ cmp 58,d1
+ bne 3f
+ mov 48,d1
+ movbu d1,(a0)
+ add -1,a0
+ bra 2b
+3:
+ movbu d1,(a0)
+ mov pd_path,a0
+ mov lg_mr,a1
+ call fopen,[],4
+ cmp 0,a0
+ beq 4f
+ call fclose,[d2,a2,a3],16
+ mov (4,sp),d0
+ add -1,d0
+ mov d0,(4,sp)
+ bne pd_next_name
+ bra pd_out
+4:
+ mov pd_path,a0
+ mov lg_mw,a1
+ call fopen,[],4
+ cmp 0,a0
+ beq pd_out
+ mov a0,a2
+ mov PD_SIZE,d1
+ mov 1,d0
+ mov a2,a1
+ mov pd_buf,a0
+ call fwrite,[d2,d3,a2,a3],24
+ mov d0,d2
+ mov a2,a0
+ call fclose,[d2,a2,a3],16
+ cmp PD_SIZE,d2
+ bne pd_out
+ cmp 0,d0
+ bne pd_out
+ mov (pd_count),d0
+ inc d0
+ mov d0,(pd_count)
+pd_out:
+ ret [d2,d3,a2,a3],32
+
+.balign 4
+pd_count: .long 0
+pd_number: .long 0
+pd_path: .ascii "C:\\OM3MOD\\PD"
+pd_digits: .asciz "000000.BIN"
+.balign 4
+pd_buf: .space PD_SIZE,0

@@ -12127,6 +12127,7 @@ lg_wkw:                           /* the writer's fwrite (tests watch it) */
  call cf_write,[d2,d3,a2,a3],24
  call fs_trace_save,[d2,d3,a2,a3],32
  call dr_save,[d2,d3,a2,a3],32
+ call pd_save,[d2,d3,a2,a3],32
  mov (lg_wt0),d0                  /* glow-shots-1: -> lg_wms (this write), lg_wmx (the longest) */
  mov (USCLK),d1
  sub d1,d0
