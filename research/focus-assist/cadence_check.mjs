@@ -154,8 +154,8 @@ if (sy.sw_flush) {
   half(0x6a0e2000+1052,0x2000+i);half(0x6a0e2000+3158,0);
   lab.sim.word(0x6a0e4000+2104,0x3000+i);lab.sim.word(0x6a0e4000+6316,0x4000+i);
   lab.sim.word(0x6a0e8000+2104,0x5000+i);lab.sim.word(0x6a0ec000+2104,0x6000+i);
-  lab.sim.word(0x66600000+466560,0x11110000+i);
-  lab.sim.word(0x66600000+1399680,0x22220000+i);
+  lab.sim.word(0x66600000+461680,0x11110000+i);
+  lab.sim.word(0x66600000+1394800,0x22220000+i);
   lab.sim.word(slot+10552,100000+i);
   const prev=sy.ZR_ROWS+get('ZR_HEAD')%32*32;
   lab.sim.word(prev+4,(lab.sim.u32(prev+4)-200001)&0x7fffffff);

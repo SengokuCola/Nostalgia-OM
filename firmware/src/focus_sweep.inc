@@ -295,7 +295,7 @@ sw_capture:
  mov 255,d0
 89:
  movbu d0,(95,a2)
- /* Hash 8 central words of A-half (+466560) and B-half (+1399680) of ptr_a0. */
+ /* Hash 8 central words of active A-half (+461680) and B-half (+1394800) of ptr_a0. */
  clr d0
  mov d0,(96,a2)
  mov d0,(100,a2)
@@ -308,7 +308,7 @@ sw_capture:
  mov 0xa33e9be0,a0
  add d0,a0
  mov (a0),a1
- mov 466560,d1
+ mov 461680,d1
  call sw_hash_pdaf,[d2,d3,a2,a3],20
  mov d0,(96,a2)
  mov d3,d0
@@ -316,7 +316,7 @@ sw_capture:
  mov 0xa33e9be0,a0
  add d0,a0
  mov (a0),a1
- mov 1399680,d1
+ mov 1394800,d1
  call sw_hash_pdaf,[d2,d3,a2,a3],20
  mov d0,(100,a2)
  mov 0xa33e9c94,a0
@@ -481,8 +481,8 @@ sw_to_uncached:
  ret [],0
 
 /* Outside LOCK: sample raw center A/B words and compute 1D u16 SAD cross-corr
- * (lags -8..+8 over 32 samples) on A-half (+466560) vs B-half (+1399680) of
- * ptr_a0 (0xa33e9be0[latest_slot]) via uncached DRAM alias. */
+ * (lags -8..+8 over 32 samples) on active A-half (+461680) vs B-half (+1394800)
+ * of ptr_a0 (0xa33e9be0[latest_slot]) via uncached DRAM alias. */
 sw_sample_raw_ab:
  mov SW_RAW_AB,a0
  clr d0
@@ -503,8 +503,8 @@ sw_sample_raw_ab:
  call sw_to_uncached,[],0
  mov a0,a2
  mov a0,a3
- add 466560,a2
- add 1399680,a3
+ add 461680,a2
+ add 1394800,a3
  mov SW_RAW_AB,a0
  mov (a2),d0
  mov d0,(a0)
@@ -779,7 +779,7 @@ sw_digits: .asciz "000000.BIN"
  * Runs ONLY in CADLOG's low-priority background task after shutter release
  * (never from DISPLAY, never under LOCK), capped at 16 files per boot, and only
  * when FS_ON==1 && PH_MODE!=0 && (ZAF_CAP_CNT!=0 || stream_en!=0). */
-.set PD_SIZE,19456
+.set PD_SIZE,24928
 .set PD_MAX_FILES,16
 
 /* Leaf: copy d0 32-bit words from a0 to a1. Clobbers a0, a1, d0, d1. */
@@ -806,8 +806,8 @@ pd_build_snap:
  bne 1b
  mov 0x44504d4f,d0                 /* "OMPD" */
  mov d0,(0,a2)
- mov 1,d0
- mov d0,(4,a2)                     /* version = 1 */
+ mov 2,d0
+ mov d0,(4,a2)                     /* version = 2 */
  mov (pd_count),d0
  inc d0
  mov d0,(8,a2)                     /* snap_seq (1-based) */
@@ -926,7 +926,14 @@ pd_skip_slot:
  mov 64,d0
  call pd_copy_words,[],0
  or 4,d2
- /* Bits 3..7: ptr_a0 slices (2 KB each: +0, +466560, +478080, +1399680, +1411200) */
+ /* Bit 3: Live DMA Template [3] 0xa03af0f4 + 512..1023 (512 B) @ +0x0480 */
+ mov 0xa03af2f4,a0
+ mov a2,a1
+ add 0x480,a1
+ mov 128,d0
+ call pd_copy_words,[],0
+ or 8,d2
+ /* Bits 4..9: ptr_a0 active rows (row 40 full 3584 B A/B, row 41 1024 B A/B, row 3 2048 B A/B) */
  mov (0x48,a2),a0
  call sw_valid_pdaf_ptr,[],0
  cmp 0,d0
@@ -934,41 +941,107 @@ pd_skip_slot:
  call sw_to_uncached,[],0
  mov a0,a3
  mov a3,a0
+ add 460800,a0                     /* A-half row 40 col 0 (entire 1760 px active row) */
  mov a2,a1
- add 0x480,a1
- mov 512,d0
- call pd_copy_words,[],0
- or 8,d2
- mov a3,a0
- add 466560,a0
- mov a2,a1
- add 0xc80,a1
- mov 512,d0
+ add 0x680,a1
+ mov 896,d0
  call pd_copy_words,[],0
  or 16,d2
  mov a3,a0
- add 478080,a0
+ add 1393920,a0                    /* B-half row 40 col 0 (933120 + 460800) */
  mov a2,a1
  add 0x1480,a1
- mov 512,d0
+ mov 896,d0
  call pd_copy_words,[],0
  or 32,d2
  mov a3,a0
- add 1399680,a0
+ add 472320,a0                     /* A-half row 41 col 0 (41*11520) */
  mov a2,a1
- add 0x1c80,a1
- mov 512,d0
+ add 0x2280,a1
+ mov 256,d0
  call pd_copy_words,[],0
  or 64,d2
  mov a3,a0
- add 1411200,a0
+ add 1405440,a0                    /* B-half row 41 col 0 (933120 + 472320) */
  mov a2,a1
- add 0x2480,a1
- mov 512,d0
+ add 0x2680,a1
+ mov 256,d0
  call pd_copy_words,[],0
  or 128,d2
+ mov a3,a0
+ add 34560,a0                      /* A-half row 3 col 0 (3*11520) */
+ mov a2,a1
+ add 0x2a80,a1
+ mov 512,d0
+ call pd_copy_words,[],0
+ or 256,d2
+ mov a3,a0
+ add 967680,a0                     /* B-half row 3 col 0 (933120 + 34560) */
+ mov a2,a1
+ add 0x3280,a1
+ mov 512,d0
+ call pd_copy_words,[],0
+ or 512,d2
 pd_skip_a0:
- /* Bits 8..9: ptr_a1 slices (1 KB each: +128064, +384192) */
+ /* Bits 10..11: ptr_99a8 TruePic X HW raw phase/corr output (512 B @ +0, ALL 1053 pts 4224 B @ +33792) */
+ mov (0x88,a2),a0
+ call sw_valid_zaf_ptr,[],0
+ cmp 0,d0
+ beq pd_skip_99a8
+ call sw_to_uncached,[],0
+ mov a0,a3
+ mov a3,a0
+ mov a2,a1
+ add 0x3a80,a1
+ mov 128,d0
+ call pd_copy_words,[],0
+ or 1024,d2
+ mov a3,a0
+ add 33792,a0
+ mov a2,a1
+ add 0x3c80,a1
+ mov 1056,d0
+ call pd_copy_words,[],0
+ or 2048,d2
+pd_skip_99a8:
+ /* Bit 12: ptr_99b0 TruePic X HW status (1024 B @ +35384 around center pt 526) */
+ mov (0x90,a2),a0
+ call sw_valid_zaf_ptr,[],0
+ cmp 0,d0
+ beq pd_skip_99b0
+ call sw_to_uncached,[],0
+ add 35384,a0
+ mov a2,a1
+ add 0x4d00,a1
+ mov 256,d0
+ call pd_copy_words,[],0
+ or 4096,d2
+pd_skip_99b0:
+ /* Bit 13: ptr_99ac ALL 1053 pts Bank 0 flags (1056 B @ +0x5100) */
+ mov (0x8c,a2),a0
+ call sw_valid_zaf_ptr,[],0
+ cmp 0,d0
+ beq pd_skip_99ac
+ call sw_to_uncached,[],0
+ mov a2,a1
+ add 0x5100,a1
+ mov 264,d0
+ call pd_copy_words,[],0
+ or 8192,d2
+pd_skip_99ac:
+ /* Bit 14: ptr_99e8 ALL 1053 pts Bank 0 defocus s16 (2112 B @ +0x5520) */
+ mov (0x94,a2),a0
+ call sw_valid_zaf_ptr,[],0
+ cmp 0,d0
+ beq pd_skip_99e8
+ call sw_to_uncached,[],0
+ mov a2,a1
+ add 0x5520,a1
+ mov 528,d0
+ call pd_copy_words,[],0
+ or 16384,d2
+pd_skip_99e8:
+ /* Bits 15..16: ptr_a1 row 43 col 0 A/B (512 B each: +126592, +382720) */
  mov (0x4c,a2),a0
  call sw_valid_pdaf_ptr,[],0
  cmp 0,d0
@@ -976,131 +1049,20 @@ pd_skip_a0:
  call sw_to_uncached,[],0
  mov a0,a3
  mov a3,a0
- add 128064,a0
+ add 126592,a0
  mov a2,a1
- add 0x2c80,a1
- mov 256,d0
- call pd_copy_words,[],0
- or 256,d2
- mov a3,a0
- add 384192,a0
- mov a2,a1
- add 0x3080,a1
- mov 256,d0
- call pd_copy_words,[],0
- or 512,d2
-pd_skip_a1:
- /* Bits 10..11: ptr_99b0 (1 KB @ +0, 1 KB @ +35384 around center pt 526) */
- mov (0x90,a2),a0
- call sw_valid_zaf_ptr,[],0
- cmp 0,d0
- beq pd_skip_99b0
- call sw_to_uncached,[],0
- mov a0,a3
- mov a3,a0
- mov a2,a1
- add 0x3480,a1
- mov 256,d0
- call pd_copy_words,[],0
- or 1024,d2
- mov a3,a0
- add 35384,a0
- mov a2,a1
- add 0x3880,a1
- mov 256,d0
- call pd_copy_words,[],0
- or 2048,d2
-pd_skip_99b0:
- /* Bits 12 & 14: ptr_99ac (all 1053 pts Bank 0 @ +0x3c80; Banks 1..4 pts 496..559 @ +0x48e0) */
- mov (0x8c,a2),a0
- call sw_valid_zaf_ptr,[],0
- cmp 0,d0
- beq pd_skip_99ac
- call sw_to_uncached,[],0
- mov a0,a3
- mov a3,a0
- mov a2,a1
- add 0x3c80,a1
- mov 264,d0
- call pd_copy_words,[],0
- or 4096,d2
- mov a3,a0
- add 2304+496,a0
- mov a2,a1
- add 0x48e0,a1
- mov 16,d0
- call pd_copy_words,[],0
- mov a3,a0
- add 4608+496,a0
- mov a2,a1
- add 0x4920,a1
- mov 16,d0
- call pd_copy_words,[],0
- mov a3,a0
- add 6912+496,a0
- mov a2,a1
- add 0x4960,a1
- mov 16,d0
- call pd_copy_words,[],0
- mov a3,a0
- add 9216+496,a0
- mov a2,a1
- add 0x49a0,a1
- mov 16,d0
- call pd_copy_words,[],0
- or 16384,d2
-pd_skip_99ac:
- /* Bits 13 & 15: ptr_99e8 (all 1053 pts Bank 0 @ +0x40a0; Banks 1..4 pts 496..559 @ +0x49e0) */
- mov (0x94,a2),a0
- call sw_valid_zaf_ptr,[],0
- cmp 0,d0
- beq pd_skip_99e8
- call sw_to_uncached,[],0
- mov a0,a3
- mov a3,a0
- mov a2,a1
- add 0x40a0,a1
- mov 528,d0
- call pd_copy_words,[],0
- or 8192,d2
- mov a3,a0
- add 4352+992,a0
- mov a2,a1
- add 0x49e0,a1
- mov 32,d0
- call pd_copy_words,[],0
- mov a3,a0
- add 8704+992,a0
- mov a2,a1
- add 0x4a60,a1
- mov 32,d0
- call pd_copy_words,[],0
- mov a3,a0
- add 13056+992,a0
- mov a2,a1
- add 0x4ae0,a1
- mov 32,d0
- call pd_copy_words,[],0
- mov a3,a0
- add 17408+992,a0
- mov a2,a1
- add 0x4b60,a1
- mov 32,d0
+ add 0x5d60,a1
+ mov 128,d0
  call pd_copy_words,[],0
  or 32768,d2
-pd_skip_99e8:
- /* Bit 16: ptr_c60[0] first 32 B @ +0x4be0 */
- mov (0x68,a2),a0
- call sw_valid_pdaf_ptr,[],0
- cmp 0,d0
- beq pd_skip_c60
- call sw_to_uncached,[],0
+ mov a3,a0
+ add 382720,a0
  mov a2,a1
- add 0x4be0,a1
- mov 8,d0
+ add 0x5f60,a1
+ mov 128,d0
  call pd_copy_words,[],0
  or 65536,d2
-pd_skip_c60:
+pd_skip_a1:
  mov d2,(0xb0,a2)
  mov PD_SIZE,d0
  ret [d2,d3,a2,a3],32
