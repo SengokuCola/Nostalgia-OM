@@ -179,28 +179,41 @@ screen_rangefinder:
 sr_row:
  clr d3                              /* x = 0..63 chroma pairs */
 sr_col:
- /* Patch outer box: y in 36..91 (56 px), x in 11..52 (84 px). */
- cmp 36,d2
+ /* Patch outer box: y in 32..95 (64 px), x in 8..55 (96 px). */
+ cmp 32,d2
  bcs sr_copy
- cmp 92,d2
+ cmp 96,d2
  bcc sr_copy
- cmp 11,d3
+ cmp 8,d3
  bcs sr_copy
- cmp 53,d3
+ cmp 56,d3
  bcc sr_copy
  /* 1-px/1-pair hairline border on box perimeter. */
- cmp 36,d2
+ cmp 32,d2
  beq sr_border
- cmp 91,d2
+ cmp 95,d2
  beq sr_border
- cmp 11,d3
+ cmp 8,d3
  beq sr_border
- cmp 52,d3
+ cmp 55,d3
  beq sr_border
 
- /* Inside patch (x in 12..51, shift in -10..+10 => x+shift in 2..61):
-  * 50/50 YUYV ghost blend + warm Leica golden-amber tint (Cb -24, Cr +10). */
+ /* Inside patch (x in 9..54, clamped to safe pair range 0..63):
+  * 50/50 YUYV ghost blend + rich Leica golden-amber tint (Cb -32, Cr +14). */
  mov (4,sp),d0
+ /* Clamp pair index d3 + shift to [0..63] so large shifts stay in row. */
+ asr 2,d0                            /* shift in pairs */
+ add d3,d0
+ cmp 0,d0
+ bge 8f
+ clr d0
+8:
+ cmp 63,d0
+ ble 9f
+ mov 63,d0
+9:
+ sub d3,d0
+ asl2 d0
  mov a2,a0
  add d0,a0                           /* shifted ghost pair ptr */
  /* Byte 0: Y0 = (Y0_1 + Y0_2) >> 1 */
@@ -209,15 +222,15 @@ sr_col:
  add d1,d0
  lsr 1,d0
  movbu d0,(a3)
- /* Byte 1: Cb = max(20, ((Cb_1 + Cb_2) >> 1) - 24) */
+ /* Byte 1: Cb = max(16, ((Cb_1 + Cb_2) >> 1) - 32) */
  movbu (1,a2),d0
  movbu (1,a0),d1
  add d1,d0
  lsr 1,d0
- add -24,d0
- cmp 20,d0
+ add -32,d0
+ cmp 16,d0
  bge 6f
- mov 20,d0
+ mov 16,d0
 6:
  movbu d0,(1,a3)
  /* Byte 2: Y1 = (Y1_1 + Y1_2) >> 1 */
@@ -226,15 +239,15 @@ sr_col:
  add d1,d0
  lsr 1,d0
  movbu d0,(2,a3)
- /* Byte 3: Cr = min(236, ((Cr_1 + Cr_2) >> 1) + 10) */
+ /* Byte 3: Cr = min(240, ((Cr_1 + Cr_2) >> 1) + 14) */
  movbu (3,a2),d0
  movbu (3,a0),d1
  add d1,d0
  lsr 1,d0
- add 10,d0
- cmp 236,d0
+ add 14,d0
+ cmp 240,d0
  ble 7f
- mov 236,d0
+ mov 240,d0
 7:
  movbu d0,(3,a3)
  bra sr_next

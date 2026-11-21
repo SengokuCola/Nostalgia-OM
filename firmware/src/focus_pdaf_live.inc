@@ -1,21 +1,21 @@
-/* Test 19: Real-time Layer 0 Quad-Pixel PDAF engine (uncached DRAM only,
- * zero MMIO/DMA/SD I/O, pure 32-bit signed integer math, < 0.4 ms/frame).
+/* Test 20: Tight-center Layer 0 Quad-Pixel PDAF engine (uncached DRAM only,
+ * zero MMIO/DMA/SD I/O, pure 32-bit signed integer math, < 0.3 ms/frame).
  *
- * Reads live sensor Quad-Pixel A/B buffers from ptr_a0 at center AF row 13
- * (13 * 34560 + 11520 = 460800 for A-half, +933120 = 1393920 for B-half),
- * masks saturated highlights (where sensor B = clip - A inverts), bins 4 px
- * across the central 768 px (192 bins), computes integer ZNCC^2 (0..1024)
- * across lags -24..+24 bins (-96..+96 sensor px) with parabolic 1-px
- * interpolation, then applies 3-sample median + adaptive EMA + deadband /
- * per-step hysteresis to drive signed Split-Image (-6..+6) and Leica-style
- * Rangefinder Yellow-Patch (-10..+10) shifts cleanly with zero stop jitter.
+ * Improvements over Test 19:
+ * - Tight center 320-px ROI (x = 720..1040, matching the split circle / RF
+ *   patch) instead of 768 px, preventing out-of-focus background objects from
+ *   pulling the phase away from the central subject.
+ * - Finer 2-px binning (160 bins, +-24 bins = +-48 px) + 1-px parabolic fit.
+ * - Only highlight saturation (A + B >= sat_th) is masked; dark pixels remain valid.
+ * - Fast 1-frame adaptive EMA (no 3-frame median lag) + 2 px hysteresis deadband.
  */
 
-.set PD_ROI_X0,496                   /* center 768 px of 1760-px row (880 +- 384) */
-.set PD_NBINS,192                    /* 768 / 4 */
-.set PD_MAX_LAG,24                   /* +-24 bins = +-96 sensor pixels */
+.set PD_ROI_X0,720                   /* tight center 320 px of 1760-px row (880 +- 160) */
+.set PD_ROI_W,320
+.set PD_NBINS,160                    /* 320 / 2 */
+.set PD_MAX_LAG,24                   /* +-24 bins = +-48 sensor pixels */
 .set PD_NUM_LAGS,49                  /* 2 * 24 + 1 */
-.set PD_OVERLAP,144                  /* 192 - 2 * 24 */
+.set PD_OVERLAP,112                  /* 160 - 2 * 24 */
 .set PD_MIN_CNT,20                   /* minimum valid non-saturated bins */
 .set PD_MIN_ENERGY,256               /* reject flat/blank texture */
 .set PD_MIN_SCORE,350                /* r^2 >= 350/1024 (r >= 0.585) */
@@ -81,9 +81,9 @@ fs_pdaf_measure_raw:
  add 1393920+PD_ROI_X0*2,a3          /* B-half row 13 sub-row 1, col 496 */
  mov a3,(8,sp)
 
- /* Pass 1: find max(A + B) across 768 px to adapt saturation threshold. */
+ /* Pass 1: find max(A + B) across 320 px to adapt saturation threshold. */
  clr d2                              /* max_sum */
- mov 768,d3
+ mov PD_ROI_W,d3
 1:
  movhu (a2),d0
  movhu (a3),d1
@@ -109,7 +109,7 @@ fs_pdaf_measure_raw:
  mov d0,(12,sp)                      /* sat_th */
  mov d0,(PD_SAT_TH)
 
- /* Pass 2: 4-pixel horizontal box-average into PD_AB[192], PD_BB[192], PD_OK[192]. */
+ /* Pass 2: 2-pixel horizontal box-average into PD_AB[160], PD_BB[160], PD_OK[160]. */
  mov (4,sp),a0                       /* A pixel cursor */
  mov (8,sp),a1                       /* B pixel cursor */
  mov PD_AB,a2
@@ -123,8 +123,8 @@ pdm_bin_loop:
  clr d3                              /* sb */
  mov 1,d0
  mov d0,(40,sp)                      /* bin_ok = 1 */
- mov 4,d0
- mov d0,(36,sp)                      /* 4 pixels per bin */
+ mov 2,d0
+ mov d0,(36,sp)                      /* 2 pixels per bin */
 pdm_px4:
  movhu (a0),d0                       /* va */
  movhu (a1),d1                       /* vb */
@@ -132,25 +132,20 @@ pdm_px4:
  add 2,a1
  add d0,d2                           /* sa += va */
  add d1,d3                           /* sb += vb */
- cmp 0,d0
- beq pdm_px_bad
- cmp 0,d1
- beq pdm_px_bad
  add d1,d0                           /* va + vb */
  mov (12,sp),d1                      /* sat_th */
  cmp d1,d0
  bcs pdm_px_ok
-pdm_px_bad:
  clr d0
- mov d0,(40,sp)                      /* bin_ok = 0 */
+ mov d0,(40,sp)                      /* highlight saturated -> bin_ok = 0 */
 pdm_px_ok:
  mov (36,sp),d0
  add -1,d0
  mov d0,(36,sp)
  bne pdm_px4
 
- lsr 2,d2
- lsr 2,d3
+ lsr 1,d2
+ lsr 1,d3
  movhu d2,(a2)
  movhu d3,(a3)
  add 2,a2
@@ -349,11 +344,11 @@ pdm_next_lag:
  cmp PD_NUM_LAGS,d0
  bcs pdm_lag_loop
 
- /* Pass 4: parabolic sub-bin refinement (1-px resolution from 4-px bins). */
+ /* Pass 4: parabolic sub-bin refinement (1-px resolution from 2-px bins). */
  mov (20,sp),d2                      /* best_lag_idx */
  mov d2,d3
  add -PD_MAX_LAG,d3
- asl 2,d3                            /* lag_px = (best_lag_idx - 24) * 4 */
+ asl 1,d3                            /* lag_px = (best_lag_idx - 24) * 2 */
  cmp 0,d2
  beq pdm_no_sub
  cmp PD_NUM_LAGS-1,d2
@@ -376,17 +371,16 @@ pdm_next_lag:
  mov d0,(44,sp)                      /* save den */
  mov d2,d0
  sub d1,d0                           /* sR - sL (signed) */
- asl 1,d0                            /* 2 * (sR - sL) */
  ext d0                              /* sign-extend d0 into mdr for signed div */
  mov (44,sp),d1                      /* den (> 0) */
  div d1,d0                           /* sub_px */
- cmp 2,d0
+ cmp 1,d0
  ble 1f
- mov 2,d0
+ mov 1,d0
 1:
- cmp -2,d0
+ cmp -1,d0
  bge 2f
- mov -2,d0
+ mov -1,d0
 2:
  add d0,d3                           /* lag_px += sub_px */
 pdm_no_sub:
@@ -548,32 +542,8 @@ pdl_got_sample:
  bra pdl_quant
 
 pdl_med3:
- /* Shift 3-sample ring: med2 = med1, med1 = med0, med0 = raw. */
- mov (PD_MED1),d1
- mov d1,(PD_MED2)
- mov (PD_MED0),d2
- mov d2,(PD_MED1)
- mov d0,(PD_MED0)
- /* Median of (d0, d2, d1): sort 3 registers in 3 compare-swaps. */
- cmp d2,d0
- ble 1f
- mov d0,d3
- mov d2,d0
- mov d3,d2
-1:
- cmp d1,d2
- ble 2f
- mov d2,d3
- mov d1,d2
- mov d3,d1
-2:
- cmp d2,d0
- ble 3f
- bra 4f                              /* d0 > d2 -> d0 is already median */
-3:
- mov d2,d0                           /* d0 <= d2 -> d2 is median */
-4:
- /* Adaptive EMA in quarter-pixels: target = med * 4. */
+ /* Fast 1-frame adaptive EMA in quarter-pixels (no 3-frame median lag):
+  * |diff| > 4 px -> alpha = 0.75 (step = diff - diff/4); else alpha = 0.50. */
  asl 2,d0                            /* target_q2 */
  mov (PD_LAG_EMA),d1                 /* ema_q2 */
  mov d0,d2
@@ -585,21 +555,23 @@ pdl_med3:
  sub d3,d0
  mov d0,d3                           /* |diff| */
 5:
- cmp 24,d3
+ cmp 16,d3
  ble 6f
- /* Fast ring motion (> 6 px): alpha = 0.50 (step = diff >> 1). */
- asr 1,d2
+ /* Fast ring motion (> 4 px): step = diff - (diff >> 2) (alpha = 0.75). */
+ mov d2,d0
+ asr 2,d0
+ sub d0,d2
  bra 7f
 6:
- /* Fine focus or stopped ring: alpha = 0.25 with rounding. */
+ /* Fine focus or stopped ring: alpha = 0.50 with rounding. */
  cmp 0,d2
  bge 61f
- add -2,d2
+ add -1,d2
  bra 62f
 61:
- add 2,d2
+ add 1,d2
 62:
- asr 2,d2
+ asr 1,d2
 7:
  add d2,d1
  mov d1,(PD_LAG_EMA)
@@ -661,9 +633,9 @@ fs_dl_toggle:
 
 .balign 4
 pd_thresh_split:
- .long 5,12,21,33,49,69
+ .long 4,9,15,22,30,40
 pd_thresh_rf:
- .long 5,10,16,22,29,37,46,56,67,79
+ .long 4,8,12,16,20,24,29,34,39,44
 .balign 4
 pd_ab: .space 384,0
 pd_bb: .space 384,0
