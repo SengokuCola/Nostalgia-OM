@@ -514,12 +514,15 @@ fs_check_manual_pdaf:
  movbu (0xa32d3d32),d0
  cmp 0,d0
  bne fs_use_contrast
- /* Respect camera Focus Indicator menu setting (sid 1067: 1=On, 0=Off)
-  * once the settings DB / validator hash is initialized (0x62a84970 != 0). */
+ /* Respect camera Focus Indicator menu setting (sid 2131: 1=On, 0=Off)
+  * on live hardware (ZAF_CAP_CNT != 0 and settings DB 0x62a84970 != 0). */
+ mov (ZAF_CAP_CNT),d0
+ cmp 0,d0
+ beq 1f
  mov (0x62a84970),d0
  cmp 0,d0
  beq 1f
- mov 1067,d0
+ mov 2131,d0
  call sget,[],4
  cmp 0,d0
  bne 1f

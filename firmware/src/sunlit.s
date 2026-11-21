@@ -382,6 +382,114 @@ sunlit_run:
  bne 3b
  mov d3,(44,sp)
 7:
+ /* Batch-write all consecutive rows that share this band (1 hl_open + 1 FLUSH + 1 UNLOCK). */
+ mov (12,sp),d2                   /* remaining rows in image (>= 1) */
+ mov 1,d3                         /* nrows in this band (>= 1) */
+ mov (40,sp),d0
+ mov (28,sp),a1                   /* groups_cap */
+ mov (8,sp),a0                    /* width_pairs */
+71:
+ add a1,d0
+ cmp 1,d2
+ beq 72f
+ cmp a0,d0
+ bcc 72f
+ inc d3
+ add -1,d2
+ bra 71b
+72:
+ mov d0,(40,sp)                   /* updated band accumulator after d3 rows */
+ mov (12,sp),d0
+ sub d3,d0
+ mov d0,(12,sp)                   /* remaining rows after this band */
+ /* Compute total span = (d3 - 1) * stride + width_pairs * 4. */
+ mov d3,d0
+ add -1,d0
+ mov (16,sp),d1                   /* stride bytes */
+ mul d1,d0
+ mov (8,sp),d1
+ asl2 d1
+ add d1,d0                        /* span bytes */
+ mov (20,sp),d1                   /* bus */
+ and 0x07ffffff,d1
+ add d0,d1
+ cmp 0x08000000,d1
+ bhi 76f                          /* crosses 128 MB bus window: fall back to row-by-row */
+ /* Fast path: map entire band once, copy d3 rows (4x unrolled), FLUSH once, UNLOCK once! */
+ mov d0,d1                        /* bytes */
+ mov (20,sp),d0                   /* bus */
+ mov d3,(48,sp)                   /* save nrows */
+ call hl_open,[d2,d3,a2,a3],28
+ mov d0,(52,sp)                   /* save lock handle */
+ cmp 0,a0
+ beq 91f
+ mov a0,d0
+ clr d1
+ cmp 0xb8000000,d0
+ bcs 73f
+ add -0x40000000,d0
+ mov 1,d1
+73:
+ mov d0,a3                        /* row dst ptr */
+ mov d1,(56,sp)                   /* save needs_flush */
+ mov (48,sp),d3                   /* nrows */
+74:
+ mov (24,sp),a2                   /* src scratch row */
+ mov a3,a0                        /* dst cursor */
+ mov (8,sp),d2                    /* width_pairs */
+ cmp 4,d2
+ bcs 742f
+741:
+ mov (a2),d0
+ mov d0,(a0)
+ mov (4,a2),d0
+ mov d0,(4,a0)
+ mov (8,a2),d0
+ mov d0,(8,a0)
+ mov (12,a2),d0
+ mov d0,(12,a0)
+ add 16,a2
+ add 16,a0
+ add -4,d2
+ cmp 4,d2
+ bcc 741b
+742:
+ cmp 0,d2
+ beq 744f
+743:
+ mov (a2),d0
+ mov d0,(a0)
+ add 4,a2
+ add 4,a0
+ add -1,d2
+ bne 743b
+744:
+ mov (16,sp),d0                   /* stride */
+ add d0,a3
+ add -1,d3
+ bne 74b
+ mov (56,sp),d0
+ cmp 0,d0
+ beq 75f
+ call FLUSH,[d2,d3],16
+75:
+ mov (52,sp),d0
+ call UNLOCK,[d2],8
+ mov (48,sp),d0                   /* nrows */
+ mov (16,sp),d1                   /* stride */
+ mul d1,d0
+ mov (20,sp),d1
+ add d0,d1
+ mov d1,(20,sp)                   /* advance bus by nrows * stride */
+ bra 79f
+91:
+ mov (52,sp),d0
+ call UNLOCK,[d2],8
+ bra 9f
+76:
+ /* Fallback across 128 MB boundary: write d3 rows via sun_transfer. */
+ mov d3,(48,sp)
+77:
  mov sp,a0
  mov (20,sp),d0
  mov 1,d1
@@ -392,13 +500,13 @@ sunlit_run:
  mov (16,sp),d1
  add d1,d0
  mov d0,(20,sp)
- mov (40,sp),d0
- mov (28,sp),d1
- add d1,d0
- mov d0,(40,sp)
- mov (12,sp),d0
+ mov (48,sp),d0
  add -1,d0
- mov d0,(12,sp)
+ mov d0,(48,sp)
+ bne 77b
+79:
+ mov (12,sp),d0
+ cmp 0,d0
  bne 2b
 9:
  mov (24,sp),a0
