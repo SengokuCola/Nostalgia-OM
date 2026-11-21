@@ -632,6 +632,13 @@ pdl_in_focus:
  mov (PD_LOCK_ARMED),d0
  cmp 0,d0
  beq pdl_ret
+ /* Require 2 consecutive in-focus frames (PD_LOCK_ARMED >= 2) before chime/blink. */
+ cmp 2,d0
+ bge 1f
+ add 1,d0
+ mov d0,(PD_LOCK_ARMED)
+ bra pdl_ret
+1:
  mov (PD_LOCK_COOLDOWN),d0
  cmp 0,d0
  bne pdl_ret
@@ -639,7 +646,7 @@ pdl_in_focus:
  mov d0,(PD_LOCK_ARMED)
  mov 45,d0
  mov d0,(PD_LOCK_COOLDOWN)
- mov 4,d0
+ mov 6,d0
  mov d0,(FS_GREEN_TICKS)
  mov (MF_BEEP_REQ),d0
  add 1,d0
@@ -651,7 +658,7 @@ pdl_ret:
 
 .balign 4
 pd_thresh_split:
- .long 4,9,15,22,30,40
+ .long 1,3,6,10,15,22
 .balign 4
 pd_ab: .space 384,0
 pd_bb: .space 384,0

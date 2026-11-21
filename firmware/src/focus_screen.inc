@@ -532,9 +532,15 @@ fs_check_manual_pdaf:
  mov 1,d1
  movbu d1,(FS_MEASURED)
  call fs_pdaf_live,[d2,d3,a2,a3],28
- /* Split-Image + Microprism driven by signed optical PDAF (-6..+6). */
+ /* Split-Image + Microprism driven by signed optical PDAF (-6..+6).
+  * Once optical PDAF has seeded (PD_SEEDED == 1), hold last optical shift on brief
+  * low-confidence frames; before seeding (e.g. contrast-only test), fall back to contrast. */
  cmp 0,d0
+ bne 1f
+ mov (PD_SEEDED),d1
+ cmp 0,d1
  beq fs_pdaf_contrast_fb
+1:
  mov (PD_SPLIT_S),d0
  bra fs_apply_shift
 fs_pdaf_contrast_fb:

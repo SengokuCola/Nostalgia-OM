@@ -41,9 +41,9 @@ sun_transfer:
  mov 0x08000000,d1
  sub d0,d1
  lsr 2,d1
- cmp 256,d1
+ cmp 4096,d1
  bls 2f
- mov 256,d1
+ mov 4096,d1
 2:
  cmp d2,d1
  bls 3f
