@@ -217,7 +217,33 @@ fs_arm: /* first card-ready half press; no DEBUG.TXT dependency */
  call fopen,[],4
  cmp 0,a0
  beq fs_arm_out
+ mov a0,a2
+ clr d0
+ movbu d0,(4,sp)
+ mov sp,a0
+ inc4 a0
+ mov a2,a1
+ mov 1,d0
+ mov 1,d1
+ call fread,[d2,d3,a2,a3],24
+ mov a2,a0
  call fclose,[d2,a2,a3],16
+ clr d0
+ movbu (4,sp),d1
+ cmp 82,d1                         /* 'R' -> start in Rangefinder Yellow Patch */
+ beq 10f
+ cmp 114,d1                        /* 'r' */
+ beq 10f
+ cmp 89,d1                         /* 'Y' */
+ beq 10f
+ cmp 121,d1                        /* 'y' */
+ beq 10f
+ cmp 50,d1                         /* '2' */
+ bne 11f
+10:
+ mov 1,d0
+11:
+ mov d0,(FS_VISUAL_MODE)
  mov fs_phase_path,a0
  mov lg_mr,a1
  call fopen,[],4
@@ -478,11 +504,66 @@ fs_hold_done:
 fs_buffer_ok:
  mov (PH_MODE),d0
  cmp 2,d0
- bne fs_use_contrast
+ bne fs_check_manual_pdaf
  call fs_phase_read,[d2,d3,a2,a3],24
  cmp 99,d0
  bne fs_apply_shift
  mov 7,d0
+ mov d0,(28,sp)
+ jmp fs_failed
+fs_check_manual_pdaf:
+ cmp 1,d0
+ bne fs_use_contrast
+ movbu (0xa32d3d32),d0
+ cmp 0,d0
+ bne fs_use_contrast
+ /* Dumb manual lens + ZAF.TXT: run contrast stats for comparison + real Layer 0 PDAF! */
+ call fs_measure,[d2,d3,a2,a3],48
+ mov 1,d1
+ movbu d1,(FS_MEASURED)
+ call fs_pdaf_live,[d2,d3,a2,a3],28
+ mov (FS_VISUAL_MODE),d1
+ cmp 2,d1
+ bne fs_visual_active
+ /* Mode 2: user toggled overlay off via Delete key -> release IMG2 cleanly. */
+ mov 7,d0
+ mov d0,(28,sp)
+ jmp fs_failed
+fs_visual_active:
+ cmp 1,d1
+ beq fs_render_rf
+ /* Mode 0: Split-Image + Microprism driven by signed optical PDAF (-6..+6). */
+ cmp 0,d0
+ beq fs_pdaf_contrast_fb
+ mov (PD_SPLIT_S),d0
+ bra fs_apply_shift
+fs_pdaf_contrast_fb:
+ mov (fs_focus_stats+8+0x40000000),d0
+ mov (4,sp),d1
+ call fs_filter_band,[d2,d3,a2,a3],20
+ bra fs_apply_shift
+fs_render_rf:
+ /* Mode 1: Leica Rangefinder Yellow Patch driven by signed optical PDAF (-10..+10). */
+ mov (16,sp),d1
+ asl 15,d1
+ add FS_DST,d1
+ mov d1,(24,sp)
+ mov d1,a1
+ mov FS_SRC,a0
+ mov (PD_RF_S),d0
+ mov (PD_VALID),d2
+ clr d1
+ cmp 0,d2
+ beq fs_rf_call
+ mov 1,d1
+ cmp 0,d0
+ bne fs_rf_call
+ mov 2,d1                            /* in-focus locked: crisp white frame */
+fs_rf_call:
+ call screen_rangefinder,[d2,d3,a2,a3],48
+ cmp 0,d0
+ beq fs_mapped
+ mov 6,d0
  mov d0,(28,sp)
  jmp fs_failed
 fs_use_contrast:
@@ -678,6 +759,7 @@ fs_tile_free:
 
  .include "focus_contrast.inc"
  .include "focus_phase.inc"
+ .include "focus_pdaf_live.inc"
  .include "focus_trace.inc"
  .include "focus_commit.inc"
  .include "focus_capture.inc"

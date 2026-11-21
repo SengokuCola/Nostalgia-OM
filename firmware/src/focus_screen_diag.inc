@@ -125,6 +125,11 @@ fs_diag_text:
  mov 8,d3
  mov 1,d2
  call fs_diag_words,[d2,d3,a2,a3],24
+ LGS pdaf_live_label
+ mov pdaf_live_fields,a2
+ mov 8,d3
+ mov 1,d2
+ call fs_diag_words,[d2,d3,a2,a3],24
 9:
  ret [d2,d3,a2,a3],24
 
@@ -172,6 +177,10 @@ sb_diag_label: .asciz "\r\nBEEP on jobs drive queued consumed refused lastResult
 zaf_hook_fields:
  .long PH_MODE,ZAF_LV_CNT,ZAF_ENG_CNT,ZAF_LLK1_CNT,ZAF_CAP_CNT,ZAF_DISP_CNT,ZAF_LPOS_CNT,ZAF_LUT_CNT
 zaf_hook_label: .asciz "ZAF_UNLOCK ph_mode lv eng llk1 cap disp lpos lut: "
+.balign 4
+pdaf_live_fields:
+ .long FS_VISUAL_MODE,PD_VALID,PD_LAG_RAW,PD_LAG_EMA,PD_SCORE,PD_CNT,PD_SPLIT_S,PD_RF_S
+pdaf_live_label: .asciz "PDAF_LIVE mode valid lag_raw ema_q2 score cnt split rf: "
 .balign 4
 fs_diag_regs:
  .long 0x60,0x390,0x3a8,0x3c0,0x3d8,0x400,0x42c,0x430

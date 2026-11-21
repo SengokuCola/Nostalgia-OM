@@ -70,9 +70,11 @@ def decode_file(path: Path):
     print(f'  slot: latest={latest} locked={locked} ring={[hex(x) for x in (rf0,rf1,rf2,rf3)]}')
     print(f'  pdaf_gain={pdaf_gain} ({pdaf_gain/128:+.2f} EV) lens_mounted={lens_mounted} stream_en={stream_en}')
     edge_score = (16 * edge_fine / edge_coarse) if edge_coarse and edge_coarse != 0xffffffff else None
-    lag = struct.unpack('<h', struct.pack('<H', raw_xcorr & 0xffff))[0]
-    contrast = raw_xcorr >> 16
-    print(f'  edge: fine={edge_fine} coarse={edge_coarse} score={edge_score} | sw_raw: a0={raw_a0:#010x} b0={raw_b0:#010x} lag={lag} ctr={contrast}')
+    lag_raw, sc_raw = struct.unpack('<hH', struct.pack('<I', raw_a0))
+    lag_ema, cnt_b, val_b = struct.unpack('<hBB', struct.pack('<I', raw_b0))
+    sp_s, rf_s, vmode, low_s = struct.unpack('<bbBB', struct.pack('<I', raw_xcorr))
+    print(f'  edge: fine={edge_fine} coarse={edge_coarse} score={edge_score}')
+    print(f'  pdaf_live: valid={val_b} mode={vmode} raw={lag_raw:+d}px ema={lag_ema:+d}px score={sc_raw}/1024 cnt={cnt_b} split={sp_s:+d} rf={rf_s:+d} low={low_s}')
     print(f'  hooks: cap={cap_c} disp={disp_c} lpos={lpos_c} llk1={llk1_c} | valid_mask={mask:#x}')
     print(f'  ptr_a={[hex(x) for x in ptr_a]}')
     znames = ['99a8', '99ac', '99b0', '99e8', '99ec', '99f0', '99f4', '99fc', '9a08', '99c8']
@@ -93,10 +95,10 @@ def decode_file(path: Path):
         s_a1 = data[0x5d60:0x5f60]
         s_b1 = data[0x5f60:0x6160]
         for label, sl in [
-            ('ptr_a0 A r40 full', s_a40), ('ptr_a0 B r40 full', s_b40),
-            ('ptr_a0 A r41     ', s_a41), ('ptr_a0 B r41     ', s_b41),
-            ('ptr_a0 A r03     ', s_a03), ('ptr_a0 B r03     ', s_b03),
-            ('ptr_a1 A r43     ', s_a1),  ('ptr_a1 B r43     ', s_b1),
+            ('ptr_a0 A r13s1 full', s_a40), ('ptr_a0 B r13s1 full', s_b40),
+            ('ptr_a0 A r13s0     ', s_a41), ('ptr_a0 B r13s0     ', s_b41),
+            ('ptr_a0 A r01s0     ', s_a03), ('ptr_a0 B r01s0     ', s_b03),
+            ('ptr_a1 A r43       ', s_a1),  ('ptr_a1 B r43       ', s_b1),
         ]:
             print('  ' + summarize_raw_slice(label, sl))
         nz_ff_a = [i for i, b in enumerate(s_a40) if b != 0xff]

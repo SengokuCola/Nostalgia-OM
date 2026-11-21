@@ -484,12 +484,58 @@ sw_to_uncached:
  * (lags -8..+8 over 32 samples) on active A-half (+461680) vs B-half (+1394800)
  * of ptr_a0 (0xa33e9be0[latest_slot]) via uncached DRAM alias. */
 sw_sample_raw_ab:
+ /* Test 19: When fs_pdaf_live has seeded on a dumb manual lens, pack live PDAF
+  * telemetry into SW_RAW_AB (+0/+4/+8) for 60 Hz ZS*.BIN sweeps. Otherwise
+  * (electronic lens / unseeded harness fixture), preserve raw center A/B word
+  * reads at +461680 / +1394800 for backwards compatibility with emu_test.py. */
  mov SW_RAW_AB,a0
  clr d0
  mov d0,(a0)
  mov d0,(4,a0)
  mov 0x8000,d0
  mov d0,(8,a0)
+ movbu (0xa32d3d32),d0
+ cmp 0,d0
+ bne 2f
+ mov (PD_SEEDED),d0
+ cmp 0,d0
+ beq 2f
+ mov (PD_LAG_RAW),d0
+ and 0xffff,d0
+ mov (PD_SCORE),d1
+ and 0xffff,d1
+ asl 16,d1
+ or d1,d0
+ mov d0,(a0)
+ mov (PD_LAG_EMA),d0
+ asr 2,d0
+ and 0xffff,d0
+ mov (PD_CNT),d1
+ and 0xff,d1
+ asl 16,d1
+ or d1,d0
+ mov (PD_VALID),d1
+ and 0xff,d1
+ asl 24,d1
+ or d1,d0
+ mov d0,(4,a0)
+ mov (PD_SPLIT_S),d0
+ and 0xff,d0
+ mov (PD_RF_S),d1
+ and 0xff,d1
+ asl 8,d1
+ or d1,d0
+ mov (FS_VISUAL_MODE),d1
+ and 0xff,d1
+ asl 16,d1
+ or d1,d0
+ mov (PD_LOW_CNT),d1
+ and 0xff,d1
+ asl 24,d1
+ or d1,d0
+ mov d0,(8,a0)
+ ret [d2,d3,a2,a3],44
+2:
  movhu (0xa33e9c8c),d0
  cmp 4,d0
  bcc 9f
@@ -510,67 +556,6 @@ sw_sample_raw_ab:
  mov d0,(a0)
  mov (a3),d0
  mov d0,(4,a0)
- mov a2,(16,sp)
- mov a3,(20,sp)
- mov 0x7fffffff,d0
- mov d0,(4,sp)                     /* min_sad */
- clr d0
- mov d0,(8,sp)                     /* max_sad */
- mov -32768,d0
- mov d0,(12,sp)                    /* best_lag */
- mov 0,a2                          /* lag_idx = 0..16 -> lag = lag_idx - 8 */
-1:
- mov (16,sp),a0                    /* ptrA = base_a */
- mov (20,sp),a1                    /* ptrB = base_b - 16 + 2*lag_idx */
- add -16,a1
- mov a2,d0
- add d0,d0
- add d0,a1
- clr d2                            /* sad = 0 */
- mov 32,d3
-2:
- movhu (a0),d0
- movhu (a1),d1
- sub d1,d0
- cmp 0,d0
- bge 3f
- not d0
- inc d0
-3:
- add d0,d2
- add 2,a0
- add 2,a1
- add -1,d3
- bne 2b
- mov (4,sp),d0
- cmp d0,d2
- bcc 4f
- mov d2,(4,sp)
- mov a2,d0
- add -8,d0
- mov d0,(12,sp)
-4:
- mov (8,sp),d0
- cmp d2,d0
- bcc 5f
- mov d2,(8,sp)
-5:
- inc a2
- cmp 17,a2
- bne 1b
- mov (8,sp),d0
- mov (4,sp),d1
- sub d1,d0
- lsr 4,d0
- cmp 65535,d0
- bls 6f
- mov 65535,d0
-6:
- asl 16,d0
- mov (12,sp),d1
- and 0xffff,d1
- or d1,d0
- mov d0,(SW_RAW_AB+8)
 9:
  ret [d2,d3,a2,a3],44
 
@@ -955,14 +940,14 @@ pd_skip_slot:
  call pd_copy_words,[],0
  or 32,d2
  mov a3,a0
- add 472320,a0                     /* A-half row 41 col 0 (41*11520) */
+ add 449280,a0                     /* A-half row 13 sub-row 0 col 0 (13*34560) */
  mov a2,a1
  add 0x2280,a1
  mov 256,d0
  call pd_copy_words,[],0
  or 64,d2
  mov a3,a0
- add 1405440,a0                    /* B-half row 41 col 0 (933120 + 472320) */
+ add 1382400,a0                    /* B-half row 13 sub-row 0 col 0 (933120 + 449280) */
  mov a2,a1
  add 0x2680,a1
  mov 256,d0
