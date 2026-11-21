@@ -118,6 +118,41 @@ xb_art:
 1:
  retf [],0
 
+/* Test bank opts in by name AND slot. Other FILM 20 recipes keep their behaviour.
+ * Leaf: a1 = selected COLOR slot, preserves d1 and a1 (capture flags and slot). */
+xb_sunlit:
+ mov (xb_pp),a0
+ cmp 0,a0
+ beq 9f
+ mov a1,d0
+ sub a0,d0
+ cmp 224,d0                       /* P + 32 + 64*3: COLOR 4 */
+ bne 9f
+ movbu (715,a0),d0                /* selected look 5 of COLOR 4 */
+ cmp 5,d0
+ bne 9f
+ mov (708,a0),a0                  /* validated LOOKS image */
+ cmp 0,a0
+ beq 9f
+ add 1616,a0                      /* name of film index 19 */
+ mov (0,a0),d0
+ cmp 0x6c6e7553,d0
+ bne 9f
+ mov (4,a0),d0
+ cmp 0x46207469,d0
+ bne 9f
+ mov (8,a0),d0
+ cmp 0x61696c6f,d0
+ bne 9f
+ mov (12,a0),d0
+ cmp 0x6567,d0
+ bne 9f
+ mov 1,d0
+ retf [],0
+9:
+ clr d0
+ retf [],0
+
 /* capture (Art Effect -> flag converter 0x60555e47): a3 = capture, a2 = params+12 (flags), (-4,a2) = key.
  * Exit as stock: fx_back with d0 = the Art Effect id and a1 = its address, or fx_tail. */
 xb_cap:
@@ -154,6 +189,9 @@ xb_cap:
                                    * still through the Soft Focus passes (s1 called it after Glow / Halation / Border, so
                                    * a still with any of them kept the camera's strong Shading) */
  .endif
+ call xb_sunlit,[],0
+ cmp 0,d0
+ bne 2f
  .if XB_FX
  movbu (49,a1),d0
  .else
@@ -605,10 +643,11 @@ xb_rec:                           /* `call xb_rec,[d2,d3],12`, a0 = job -> a1 = 
  .set XB_USCLK, 0x98900284        /* glow-shots-1: the camera's us counter (counts down; editor.s USCLK) */
 xb_gs:                           /* `calls` (0,sp) = return, a0 = job */
  movm [d2,d3,a2,a3],(sp)
- add -28,sp                       /* (0) call slot, (4) job, (8) level, (12) result, (16) halation 0..5, (20) border 0..5,
+ add -32,sp                       /* (28) Sunlit for this invocation; (0) call slot, (4) job, (8) level, (12) result, (16) halation 0..5, (20) border 0..5,
                                      (24) gentler Shading -5..5 */
  mov a0,(4,sp)
  clr d0
+ mov d0,(28,sp)
  mov d0,(16,sp)
  mov d0,(20,sp)
  .if XB_SH
@@ -619,6 +658,27 @@ xb_gs:                           /* `calls` (0,sp) = return, a0 = job */
  call xb_slot,[d2,d3],12
  cmp 0,a1
  beq 90f
+ call xb_sunlit,[],0
+ cmp 0,d0
+ beq 81f
+ mov (4,sp),a0
+ mov (10276,a0),a0
+ cmp 0,a0
+ beq 81f
+ mov (5352,a0),d0
+ cmp 11,d0                        /* only the developed COLOR photo */
+ bne 81f
+ /* Pack Sunlit params into (28,sp): b0..7=1, b8..15=grain(0..3), b16..23=sharp(s8). */
+ movbu (53,a1),d0
+ and 3,d0
+ asl 8,d0
+ movbu (54,a1),d1
+ and 0xff,d1
+ asl 16,d1
+ or d1,d0
+ or 1,d0
+ mov d0,(28,sp)
+81:
  .if XB_HL
  movbu (30,a1),d0                 /* v0.28: the Halation row 1..5 (slot +30; 0 and below: none) */
  extb d0
@@ -647,6 +707,9 @@ xb_gs:                           /* `calls` (0,sp) = return, a0 = job */
  mov d0,(20,sp)
 16:
  .endif
+ mov (28,sp),d0
+ cmp 0,d0
+ bne 91f                          /* Sunlit reuses Grain slot for block size; skip CPU grain */
  movbu (53,a1),d0                 /* Grain 1..3 (older 4, 5 -> 3) */
  cmp 0,d0
  beq 91f
@@ -678,9 +741,12 @@ xb_gs:                           /* `calls` (0,sp) = return, a0 = job */
  cmp 0,d1
  bne 10f
  .endif
+ mov (28,sp),d1
+ cmp 0,d1
+ bne 10f
 90:                               /* no grain: the stock setup, as if called directly */
  mov (4,sp),a0
- add 28,sp
+ add 32,sp
  movm (sp),[d2,d3,a2,a3]
  jmp SF_ENT
 10:
@@ -740,6 +806,17 @@ xb_gs:                           /* `calls` (0,sp) = return, a0 = job */
  call VG_RUN,[d2,d3,a2,a3],104
 18:
  .endif
+ mov (28,sp),d0
+ cmp 0,d0
+ beq 19f
+ mov (4,sp),a0
+ call xb_rec,[d2,d3],12
+ cmp 0,a1
+ beq 19f
+ mov a1,a0
+ mov (28,sp),d0
+ call SUN_RUN,[d2,d3,a2,a3],88
+19:
  .if XB_BD
  mov (20,sp),d0                   /* borders: last, so no glow, halo or grain on the border */
  cmp 0,d0
@@ -768,7 +845,7 @@ xb_gs:                           /* `calls` (0,sp) = return, a0 = job */
  mov d2,(PT_MX)
 21:
  mov (12,sp),d0
- ret [d2,d3,a2,a3],44
+ ret [d2,d3,a2,a3],48
 
  .if XB_H0
 /* xb_h0 (v0.28 halation probe h0, experiment): which odd byte of buffer 0x1000 is Cb and which Cr, and whether chroma
