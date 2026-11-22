@@ -34,6 +34,7 @@
  * No store into the loaded image; stores: STATE (2x), the heap block, stack frames.
  */
  .include "screeninfo.inc"        /* screen info: ids, SICHK */
+ .include "mfmenu.inc"            /* MF Assist menu: ids, MFCHK */
 .section .hook_color,"ax"
  jmp hl_pp
 .section .hook_shutter,"ax"
@@ -2987,6 +2988,18 @@ gr_lc:
 /* st_get <- jmp from the string getter 0x610f56a6 (its frame: `call ..,[d2],8`; d0 id -> a0 the UTF-16 string):
  * our own strings, else as stock (language index 0x610f56bd, then the table lookup at 0x610f56ac). */
 st_get:
+ cmp ST_MF_SPLIT,d0               /* Test 26: MF Assist custom menu strings (0x7f70..0x7f7d) */
+ bcs 89f
+ cmp ST_MF_END,d0
+ bcc 89f
+ mov d0,d2
+ add -ST_MF_SPLIT,d2
+ asl2 d2
+ mov mf_strs,a0
+ add d2,a0
+ mov (a0),a0
+ ret [d2],8
+89:
  cmp ST_OFF_ZH,d0
  bne 90f
  mov off_zh_str,a0
@@ -3508,6 +3521,7 @@ sl_get:
  cmp 0,a1
  beq 9f
  SICHK si_get                     /* screen info (screeninfo.s): our tick rows */
+ MFCHK mf_get                     /* MF Assist menu (mfmenu.s) */
  cmp DL_SID,d0
  beq 5f
  cmp DL_MSID,d0
@@ -3687,6 +3701,7 @@ sl_gb:
 /* sl_cnt <- facade +28 word 0x60e57490 (d0 id, a0 -> d0 count); else pf_cnt. Sharp 8, Grain 4, NR 4, VigFix 2. */
 sl_cnt:
  SICHK si_cnt                     /* screen info (screeninfo.s) */
+ MFCHK mf_cnt                     /* MF Assist menu (mfmenu.s) */
  movm [d2,d3,a2,a3],(sp)
  mov mdr,d2                       /* v0.25 grid: the WB grid's ids -> our A-B / G-M bars (gr_id; MDR kept) */
  mov d2,a3
@@ -3793,6 +3808,7 @@ sl_cnt:
 /* sl_vbi <- facade +32 word 0x60e57494 (d0 id, d1 index, a0, a1 out or 0 -> d0 value, -1 none); else pf_vbi. */
 sl_vbi:
  SICHK si_vbi                     /* screen info (screeninfo.s) */
+ MFCHK mf_vbi                     /* MF Assist menu (mfmenu.s) */
  movm [d2,d3,a2,a3],(sp)
  mov mdr,d2                       /* v0.25 grid: the WB grid's ids -> our A-B / G-M bars (gr_id; MDR kept) */
  mov d2,a3
@@ -3887,6 +3903,7 @@ pf_vbi:
 /* sl_sel <- facade +40 word 0x60e5749c (selectable: d0 id, d1 value, a0 -> d0 1 / 0); else stock 0x60b86a01. */
 sl_sel:
  SICHK si_sel                     /* screen info (screeninfo.s) */
+ MFCHK mf_sel                     /* MF Assist menu (mfmenu.s) */
  cmp 901,d0                       /* v0.24: the COLOR picture mode, our film values FV0 + j */
  bne sl_sel0
  cmp FV0,d1
@@ -22907,6 +22924,7 @@ bl_v:                             /* the value */
  .include "newfilms.s"            /* #86: a new film set made again in every mode (ext13) */
 
  .include "focus_probe.inc"
+ .include "mfmenu.s"
  .include "focus_screen.inc"
  .include "shutter_beep.inc"
  .include "focus_drive.inc"

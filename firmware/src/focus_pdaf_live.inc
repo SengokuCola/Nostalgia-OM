@@ -588,6 +588,11 @@ pdl_med3:
  asr 2,d0
 
 pdl_quant:
+ /* Apply custom menu "合焦微调" (MF_CFG_OFS: 0..10 -> -5..+5, 2 px per step). */
+ mov (MF_CFG_OFS),d1
+ add -5,d1
+ asl 1,d1
+ add d1,d0
  mov (PD_SPLIT_S),d1
  mov pd_thresh_split,a0
  mov 6,d2
@@ -648,6 +653,10 @@ pdl_in_focus:
  mov d0,(PD_LOCK_COOLDOWN)
  mov 6,d0
  mov d0,(FS_GREEN_TICKS)
+ /* Gate double-beep on custom menu "合焦提示音" (MF_CFG_BEEP: 1=On, 0=Off). */
+ mov (MF_CFG_BEEP),d0
+ cmp 0,d0
+ beq pdl_ret
  mov (MF_BEEP_REQ),d0
  add 1,d0
  mov d0,(MF_BEEP_REQ)

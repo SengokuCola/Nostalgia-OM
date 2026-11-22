@@ -265,6 +265,7 @@ fs_arm: /* first card-ready half press; no DEBUG.TXT dependency */
 1:
  mov d0,(PH_MODE)
 fs_arm_ready:
+ call mf_ld,[d2,d3,a2,a3],20
  mov 1,d0
  mov d0,(FS_ON)
 fs_arm_out:
@@ -514,27 +515,21 @@ fs_check_manual_pdaf:
  movbu (0xa32d3d32),d0
  cmp 0,d0
  bne fs_use_contrast
- /* Respect camera Focus Indicator menu setting (sid 2131: 1=On, 0=Off)
-  * on live hardware (ZAF_CAP_CNT != 0 and settings DB 0x62a84970 != 0). */
- mov (ZAF_CAP_CNT),d0
- cmp 0,d0
- beq 1f
- mov (0x62a84970),d0
- cmp 0,d0
- beq 1f
- mov 2131,d0
- call sget,[],4
- cmp 0,d0
+ /* Dumb manual lens + ZAF.TXT: always run contrast stats + real Layer 0 PDAF
+  * so focus-confirm beep works even when Split-Image overlay is turned Off in menu! */
+ call fs_measure,[d2,d3,a2,a3],48
+ mov 1,d1
+ movbu d1,(FS_MEASURED)
+ call fs_pdaf_live,[d2,d3,a2,a3],28
+ /* Check custom MF Assist menu setting "裂像对焦" (MF_CFG_SPLIT: 1=On, 0=Off).
+  * When Off, release IMG2 cleanly without suppressing fs_pdaf_live / beep. */
+ mov (MF_CFG_SPLIT),d1
+ cmp 0,d1
  bne 1f
  mov 7,d0
  mov d0,(28,sp)
  jmp fs_failed
 1:
- /* Dumb manual lens + ZAF.TXT: run contrast stats for comparison + real Layer 0 PDAF! */
- call fs_measure,[d2,d3,a2,a3],48
- mov 1,d1
- movbu d1,(FS_MEASURED)
- call fs_pdaf_live,[d2,d3,a2,a3],28
  /* Split-Image + Microprism driven by signed optical PDAF (-6..+6).
   * Once optical PDAF has seeded (PD_SEEDED == 1), hold last optical shift on brief
   * low-confidence frames; before seeding (e.g. contrast-only test), fall back to contrast. */

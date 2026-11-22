@@ -62,6 +62,12 @@ si_upd:
  call si_wr,[d2,d3,a2,a3],20      /* a tick held back by the camera's own save of M */
 1:
  call si_ld,[d2,d3,a2,a3],20
+ movbu (mf_pend),d0
+ cmp 0,d0
+ beq 11f
+ call mf_wr,[d2,d3,a2,a3],20
+11:
+ call mf_ld,[d2,d3,a2,a3],20
  mov (SI_FR + 12,sp),a2           /* the updater's `this` */
  mov (6916,a2),d0
  cmp 5,d0
@@ -299,6 +305,7 @@ si_get:
  * facade. Ours: mode 0 sets a1 (1 shown / 0 hidden), modes 1 / 2 / 3 (the tick rows' OK sends 3) toggle; d0 0. The
  * stock SetValue would refuse our ids (its id check at 0x60ae9c08) and never reach .hook_set. Anything else: stock. */
 si_sv:
+ MFCHK mf_sv
  cmp SIB,d0
  bcs 1f
  cmp SIB + SI_N,d0
@@ -379,6 +386,7 @@ si_sel:
  rets
 si_dfl:                           /* <- facade +156 word 0x60e57510 (build.py; was cv_dflt): ours, else cv_dflt */
  SICHK si_def
+ MFCHK mf_def
  jmp cv_dflt                      /* v0.40: GetDefault goes cv_dflt -> ed_default */
 si_def:
  cmp 0,a1
