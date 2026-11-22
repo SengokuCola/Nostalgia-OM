@@ -543,28 +543,38 @@ pdl_got_sample:
  bra pdl_quant
 
 pdl_med3:
- /* Fast 1-frame adaptive EMA in quarter-pixels (no 3-frame median lag):
-  * |diff| > 4 px -> alpha = 0.75 (step = diff - diff/4); else alpha = 0.50. */
+ /* Test 30: 3-frame median filter (rejects single-frame correlation peak jumps)
+  * followed by smooth alpha=0.50 EMA in quarter-pixels. */
+ mov (PD_MED1),d2                    /* old m1 -> m2 */
+ mov (PD_MED0),d1                    /* old m0 -> m1 */
+ mov d1,(PD_MED1)
+ mov d0,(PD_MED0)                    /* new raw -> m0 */
+ mov d2,(PD_MED2)
+ /* Compute median3(d0, d1, d2) -> d0 via 3-compare sort network. */
+ cmp d1,d0
+ ble 1f
+ mov d0,d3
+ mov d1,d0
+ mov d3,d1
+1:
+ cmp d2,d1
+ ble 2f
+ mov d1,d3
+ mov d2,d1
+ mov d3,d2
+2:
+ cmp d1,d0
+ ble 3f
+ mov d0,d3
+ mov d1,d0
+ mov d3,d1
+3:
+ mov d1,d0                           /* d0 = median3(m0, m1, m2) */
  asl 2,d0                            /* target_q2 */
  mov (PD_LAG_EMA),d1                 /* ema_q2 */
  mov d0,d2
  sub d1,d2                           /* diff = target_q2 - ema_q2 */
- mov d2,d3
- cmp 0,d3
- bge 5f
- clr d0
- sub d3,d0
- mov d0,d3                           /* |diff| */
-5:
- cmp 16,d3
- ble 6f
- /* Fast ring motion (> 4 px): step = diff - (diff >> 2) (alpha = 0.75). */
- mov d2,d0
- asr 2,d0
- sub d0,d2
- bra 7f
-6:
- /* Fine focus or stopped ring: alpha = 0.50 with rounding. */
+ /* Smooth alpha = 0.50 with rounding. */
  cmp 0,d2
  bge 61f
  add -1,d2
@@ -573,7 +583,6 @@ pdl_med3:
  add 1,d2
 62:
  asr 1,d2
-7:
  add d2,d1
  mov d1,(PD_LAG_EMA)
  /* Rounded integer lag_px = (ema_q2 +- 2) >> 2. */
@@ -594,9 +603,24 @@ pdl_quant:
  asl 1,d1
  add d1,d0
  mov (PD_SPLIT_S),d1
+ mov d1,d3                           /* save prev_s */
  mov pd_thresh_split,a0
  mov 6,d2
  call fs_pdaf_quant,[d2,d3,a2,a3],32
+ /* Test 30: slew-rate clamp (max +-2 steps/frame) to prevent sudden visual jumps. */
+ mov d3,d1
+ add 2,d1
+ cmp d1,d0
+ ble 1f
+ mov d1,d0
+ bra 2f
+1:
+ mov d3,d1
+ add -2,d1
+ cmp d1,d0
+ bge 2f
+ mov d1,d0
+2:
  mov d0,(PD_SPLIT_S)
 
 pdl_ret:
