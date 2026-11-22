@@ -353,6 +353,7 @@ ed_trig:
  call ub_save,[d2,d3,a2,a3],24    /* films in camera memory: films, edits and Extras into store M (no card copies) */
  movbu d0,(STATUS,a2)
 t_out:
+ call cc_sync,[d2,d3,a2,a3],36    /* Test 31: preload/unload Cyber Card on HLS_EVENT if slot changed */
  ret [d2,d3,a2,a3],36
 
 /* ---------------------------------------------------------------- on-camera editor (Caduceus look editor
@@ -2546,11 +2547,11 @@ lv_g:                             /* G3: jmp from s_lv (the live view / movie re
  mov 11,d0                        /* the stock path: picture mode 11 (< 100) -> 0x6046b94f with d0 = 11 */
  jmp lv_skip
 
-.section .ext5,"ax"
+.section .ext13,"ax"
 s_wt:                            /* leaf: MDR = return, a0 = combiner context; keep a0 for the stock getter */
  mov (48,a0),a1
  cmp 11,a1                        /* job key 11: COLOR */
- bne 9f
+ bne 8f
  mov mdr,d1
  call xp,[],0
  mov d1,mdr
@@ -2558,6 +2559,14 @@ s_wt:                            /* leaf: MDR = return, a0 = combiner context; k
  beq 9f
  add 24,a1
  jmp (a1)
+8:
+ cmp 100,a1                       /* standard picture mode (Natural/Vivid/MONO/etc.) with Cyber Card on */
+ bcc 9f
+ mov (MF_CFG_CARD),d0
+ cmp 0,d0
+ beq 9f
+ mov 1024,d0                      /* sharp image unchanged (no Soft Focus blur) */
+ retf [],0
 9:
  mov (48,a0),a1
  mov 600,d0
@@ -22931,3 +22940,4 @@ bl_v:                             /* the value */
  .include "focus_pdaf_unlock.inc"
 
  .include "sunlit.s"
+ .include "cybercard.s"

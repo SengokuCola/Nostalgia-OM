@@ -865,40 +865,61 @@ def build(defaults, testfile, out):
         put('si_ord%d' % pg, 'si_ord%d' % (pg + 1) if pg < 2 else 'si_end',
             struct.pack('<4H', *order) + struct.pack('<%dH' % SIK, *(SIB + 32 * pg + k for k in SI_ROWS)))
         struct.pack_into('<2I', m, o(mrec) + 4, sy['si_ord%d' % pg], 4 + SIK)
-    # MF Assist custom menu settings (mfmenu.s, Test 29 — pure Split-Image + Offset):
-    #   AF -> 7. MF -> MF Assist (mode 0x11a, 0x6158f15c) gets 2 new rows after stock
-    #   Magnify (283) / Peaking (566) / Focus Indicator (1892): Split-Image (关/开), Focus Offset (-5..+5).
+    # MF Assist + Cyber Card custom menu settings (mfmenu.s, Test 31):
+    #   AF -> 7. MF -> MF Assist (mode 0x11a, 0x6158f15c) gets 4 new rows after stock
+    #   Magnify (283) / Peaking (566) / Focus Indicator (1892):
+    #   Split-Image (关/开), Focus Offset (-5..+5), Cyber Card (关/卡1..卡5), Card Pos (左下/居中/右下).
     MFB, MFN = sy['MFB'], sy['MF_N']
     MF_OBJ, MF_ONOFF = 0x6158aeb4, 0x6158b0c8
     assert u32(0x6158f15c, 3) == (0x20, 0x6158ddf4, 3), hex(0x6158f15c)
     assert u32(0x61529d24, 3) == (0x11a, 0x6152982a, 3) and struct.unpack_from('<3H', m, o(0x6152982a)) == (283, 566, 1892)
     ofs_vals = b''.join(struct.pack('<3I', k, ((sy['ST_MF_V0'] + k) << 16) | 4, MF_OBJ) for k in range(11))
     put('mf_ofs_vals', 'mf_ofs_vals_end', ofs_vals)
+    card_vals = (
+        struct.pack('<3I', 0, 0x05b40004, MF_OBJ) +
+        b''.join(struct.pack('<3I', k + 1, ((sy['ST_MF_C1'] + k) << 16) | 4, MF_OBJ) for k in range(5)))
+    put('mf_card_vals', 'mf_card_vals_end', card_vals)
+    pos_vals = b''.join(struct.pack('<3I', k, ((sy['ST_MF_P0'] + k) << 16) | 4, MF_OBJ) for k in range(3))
+    put('mf_pos_vals', 'mf_pos_vals_end', pos_vals)
     mf_stock = bytes(m[o(0x6158ddf4):o(0x6158ddf4) + 36 * 3])
     mf_new = (
-        struct.pack('<9I', MFB + 0, (sy['ST_MF_SPLIT'] << 16) | 4, MF_OBJ, MF_ONOFF,          2,  0, MF_OBJ, 0, 0) +
-        struct.pack('<9I', MFB + 1, (sy['ST_MF_OFS']   << 16) | 4, MF_OBJ, sy['mf_ofs_vals'], 11, 0, MF_OBJ, 0, 0))
+        struct.pack('<9I', MFB + 0, (sy['ST_MF_SPLIT'] << 16) | 4, MF_OBJ, MF_ONOFF,           2,  0, MF_OBJ, 0, 0) +
+        struct.pack('<9I', MFB + 1, (sy['ST_MF_OFS']   << 16) | 4, MF_OBJ, sy['mf_ofs_vals'],  11, 0, MF_OBJ, 0, 0) +
+        struct.pack('<9I', MFB + 2, (sy['ST_MF_CARD']  << 16) | 4, MF_OBJ, sy['mf_card_vals'], 6,  0, MF_OBJ, 0, 0) +
+        struct.pack('<9I', MFB + 3, (sy['ST_MF_POS']   << 16) | 4, MF_OBJ, sy['mf_pos_vals'],  3,  0, MF_OBJ, 0, 0))
     put('mf_recs', 'mf_recs_end', mf_stock + mf_new)
     struct.pack_into('<2I', m, o(0x6158f15c) + 4, sy['mf_recs'], 3 + MFN)
-    put('mf_ord', 'mf_ord_end', struct.pack('<5H', 283, 566, 1892, MFB + 0, MFB + 1))
+    put('mf_ord', 'mf_ord_end', struct.pack('<7H', 283, 566, 1892, MFB + 0, MFB + 1, MFB + 2, MFB + 3))
     struct.pack_into('<2I', m, o(0x61529d24) + 4, sy['mf_ord'], 3 + MFN)
-    # Picker screens (target 0x42, keys 0x63..0x64) + G8 links (0x615cc938) + OK action table (0x6150f6a4):
+    # Picker screens (target 0x42, keys 0x63..0x66) + G8 links (0x615cc938) + OK action table (0x6150f6a4):
     MF_POBJ, MF_PLAY, MF_PONOFF = 0x61574870, 0x61576be4, 0x61574d9c
     ptitles = (
         struct.pack('<2I', (sy['ST_MF_SPLIT'] << 16) | 4, MF_POBJ) +
-        struct.pack('<2I', (sy['ST_MF_OFS']   << 16) | 4, MF_POBJ))
+        struct.pack('<2I', (sy['ST_MF_OFS']   << 16) | 4, MF_POBJ) +
+        struct.pack('<2I', (sy['ST_MF_CARD']  << 16) | 4, MF_POBJ) +
+        struct.pack('<2I', (sy['ST_MF_POS']   << 16) | 4, MF_POBJ))
     put('mf_ptitles', 'mf_ptitles_end', ptitles)
     pofs_vals = b''.join(struct.pack('<3I', k, ((sy['ST_MF_V0'] + k) << 16) | 4, MF_POBJ) for k in range(11))
     put('mf_pofs_vals', 'mf_pofs_vals_end', pofs_vals)
+    pcard_vals = (
+        struct.pack('<3I', 0, 0x05b40004, MF_POBJ) +
+        b''.join(struct.pack('<3I', k + 1, ((sy['ST_MF_C1'] + k) << 16) | 4, MF_POBJ) for k in range(5)))
+    put('mf_pcard_vals', 'mf_pcard_vals_end', pcard_vals)
+    ppos_vals = b''.join(struct.pack('<3I', k, ((sy['ST_MF_P0'] + k) << 16) | 4, MF_POBJ) for k in range(3))
+    put('mf_ppos_vals', 'mf_ppos_vals_end', ppos_vals)
     phelps = (
         b''.join(struct.pack('<3I', k, (sy['ST_MF_SPLIT'] << 16) | 4, MF_POBJ) for k in range(2)) +
-        b''.join(struct.pack('<3I', k, (sy['ST_MF_OFS']   << 16) | 4, MF_POBJ) for k in range(11)))
+        b''.join(struct.pack('<3I', k, (sy['ST_MF_OFS']   << 16) | 4, MF_POBJ) for k in range(11)) +
+        b''.join(struct.pack('<3I', k, (sy['ST_MF_CARD']  << 16) | 4, MF_POBJ) for k in range(6)) +
+        b''.join(struct.pack('<3I', k, (sy['ST_MF_POS']   << 16) | 4, MF_POBJ) for k in range(3)))
     put('mf_phelps', 'mf_phelps_end', phelps)
     assert struct.unpack_from('<I', m, o(0x611f7f37))[0] == 0x6037bedc and m[o(0x611f7f47):o(0x611f7f4a)] == b'\xaa\x60\xd4'
     pk_stock = bytes(m[o(0x6037bedc):o(0x6037bedc) + 36 * 96])
     pk_new = (
-        struct.pack('<9I', 0x63, sy['mf_ptitles'] + 0, 2,  MF_PONOFF,          sy['mf_phelps'] + 0,  MF_PLAY, 0, 0, 0) +
-        struct.pack('<9I', 0x64, sy['mf_ptitles'] + 8, 11, sy['mf_pofs_vals'], sy['mf_phelps'] + 24, MF_PLAY, 0, 0, 0))
+        struct.pack('<9I', 0x63, sy['mf_ptitles'] + 0,  2,  MF_PONOFF,          sy['mf_phelps'] + 0,   MF_PLAY, 0, 0, 0) +
+        struct.pack('<9I', 0x64, sy['mf_ptitles'] + 8,  11, sy['mf_pofs_vals'], sy['mf_phelps'] + 24,  MF_PLAY, 0, 0, 0) +
+        struct.pack('<9I', 0x65, sy['mf_ptitles'] + 16, 6,  sy['mf_pcard_vals'],sy['mf_phelps'] + 156, MF_PLAY, 0, 0, 0) +
+        struct.pack('<9I', 0x66, sy['mf_ptitles'] + 24, 3,  sy['mf_ppos_vals'], sy['mf_phelps'] + 228, MF_PLAY, 0, 0, 0))
     put('mf_pickers', 'mf_pickers_end', pk_stock + pk_new)
     struct.pack_into('<I', m, o(0x611f7f37), sy['mf_pickers'])
     m[o(0x611f7f48)] = 96 + MFN
@@ -906,14 +927,18 @@ def build(defaults, testfile, out):
     g8_stock = bytes(m[o(0x615c540c):o(0x615c540c) + 24 * 416])
     g8_new = (
         struct.pack('<6I', 0x380, 0x3b, MFB + 0, 0x42, 0x63, 0) +
-        struct.pack('<6I', 0x381, 0x3b, MFB + 1, 0x42, 0x64, 0))
+        struct.pack('<6I', 0x381, 0x3b, MFB + 1, 0x42, 0x64, 0) +
+        struct.pack('<6I', 0x382, 0x3b, MFB + 2, 0x42, 0x65, 0) +
+        struct.pack('<6I', 0x383, 0x3b, MFB + 3, 0x42, 0x66, 0))
     put('mf_g8', 'mf_g8_end', g8_stock + g8_new)
     struct.pack_into('<2I', m, o(0x615cc938), sy['mf_g8'], 416 + MFN)
     assert u32(0x6150f6a4, 2) == (0x6150c5bc, 3)
     act_stock = bytes(m[o(0x6150c5bc):o(0x6150c5bc) + 24 * 3])
     act_new = (
         struct.pack('<6I', 1, MFB + 0, 0, 8, 0x380, 0) +
-        struct.pack('<6I', 1, MFB + 1, 0, 8, 0x381, 0))
+        struct.pack('<6I', 1, MFB + 1, 0, 8, 0x381, 0) +
+        struct.pack('<6I', 1, MFB + 2, 0, 8, 0x382, 0) +
+        struct.pack('<6I', 1, MFB + 3, 0, 8, 0x383, 0))
     put('mf_acts', 'mf_acts_end', act_stock + act_new)
     struct.pack_into('<2I', m, o(0x6150f6a4), sy['mf_acts'], 3 + MFN)
     a = 0x6139e26c + 16 * 1                                         # picker title icon 1
@@ -1006,6 +1031,7 @@ def make_xblock(out, sy, xtag):
                WB_V=sy['wb_v'], wb_wtk=sy['wb_wtk'], wb_wem=sy['wb_wem'], HL_RUN=sy['hl_run'], BD_RUN=sy['bd_run'], SUN_RUN=sy['sunlit_run'], TYPEMAP=0x60555b58,
                TG_OWN=sy['tg_own'], TG_BAD=sy['tg_bad'], GS_EFF=sy['gs_eff'],
                VG_RUN=sy['vg_run'], VG_LVL=sy['vg_lvl'], VG_NT=sy['vg_nt'], VG_ND=sy['vg_nd'],
+               CC_RUN=sy['cc_run'], CC_CARD=sy['MF_CFG_CARD'],
                PT_N=sy['pt_n'], PT_US=sy['pt_us'], PT_MX=sy['pt_mx'])    # glow-shots-1: our passes' timing (log)
     sys.path.insert(0, str(ROOT / 'firmware'))
     import mkicons                                # v0.25 WB grid row: the left cell's glyphs (xblock xb_wbc)

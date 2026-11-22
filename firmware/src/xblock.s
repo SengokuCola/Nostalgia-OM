@@ -216,6 +216,9 @@ xb_cap:
  cmp 0,d0
  bne 2f
  .endif
+ mov (CC_CARD),d0                 /* Test 31: Cyber Card enabled -> route COLOR still through xb_gs (w 1024) */
+ cmp 0,d0
+ bne 2f
  .if XB_FX
  ARTB d0
  .else
@@ -272,6 +275,18 @@ xb_cap:
  mov d1,(a2)
  jmp fx_tail
 7:
+ mov (CC_CARD),d0                 /* Test 31: Cyber Card enabled on non-COLOR standard mode -> xb_gs (w 1024) */
+ cmp 0,d0
+ beq 71f
+ mov (-4,a2),d0
+ cmp 0x00640000,d0                /* standard picture modes only (key < 100 << 16; leave Art Filters stock) */
+ bcc 71f
+ mov (a2),d1
+ or 128,d1
+ call xb_rv,[d2,d3],12            /* strip 0x80 from Image Review / thumbnail jobs */
+ mov d1,(a2)
+ jmp fx_tail
+71:
  clr d0
 8:
  jmp fx_back
@@ -657,7 +672,14 @@ xb_gs:                           /* `calls` (0,sp) = return, a0 = job */
  mov d0,(24,sp)
  call xb_slot,[d2,d3],12
  cmp 0,a1
+ bne 80f
+ /* Test 31: Cyber Card works in ALL still modes when enabled (MF_CFG_CARD != 0). */
+ mov (CC_CARD),d0
+ cmp 0,d0
  beq 90f
+ clr d0
+ bra 10f
+80:
  call xb_sunlit,[],0
  cmp 0,d0
  beq 81f
@@ -744,6 +766,9 @@ xb_gs:                           /* `calls` (0,sp) = return, a0 = job */
  mov (28,sp),d1
  cmp 0,d1
  bne 10f
+ mov (CC_CARD),d1
+ cmp 0,d1
+ bne 10f
 90:                               /* no grain: the stock setup, as if called directly */
  mov (4,sp),a0
  add 32,sp
@@ -820,15 +845,27 @@ xb_gs:                           /* `calls` (0,sp) = return, a0 = job */
  .if XB_BD
  mov (20,sp),d0                   /* borders: last, so no glow, halo or grain on the border */
  cmp 0,d0
+ beq 191f
+ mov (4,sp),a0
+ call xb_rec,[d2,d3],12
+ cmp 0,a1
+ beq 191f
+ mov a1,a0
+ mov (20,sp),d0
+ call BD_RUN,[d2,d3,a2,a3],88
+ .endif
+191:
+ /* Test 31: Cyber Card overlay on finished still JPEG (after all look/border passes). */
+ mov (CC_CARD),d0
+ cmp 0,d0
  beq 20f
  mov (4,sp),a0
  call xb_rec,[d2,d3],12
  cmp 0,a1
  beq 20f
  mov a1,a0
- mov (20,sp),d0
- call BD_RUN,[d2,d3,a2,a3],88
- .endif
+ mov (CC_CARD),d0
+ call CC_RUN,[d2,d3,a2,a3],104
 20:
  cmp 0,d2                         /* glow-shots-1: our passes' time on this photo (editor.s's log reads it) */
  beq 21f
@@ -1238,7 +1275,16 @@ xb_wl:                            /* a0 = S (ft8b: the builder's (4,sp)) */
  beq 9f
  mov (5352,a2),d0
  cmp 11,d0
- bne 9f
+ beq 7f
+ /* Test 31: Cyber Card enabled on non-COLOR standard mode -> use COLOR's work-list (has g_sf). */
+ cmp 100,d0
+ bcc 9f
+ mov (CC_CARD),d0
+ cmp 0,d0
+ beq 9f
+ mov 11,d2
+ bra 9f
+7:
  movbu d2,(xb_sw)                 /* rj1: only a COLOR job resets it (see xb_su) */
  call xb_slot,[d2,d3],12
  cmp 0,a1
