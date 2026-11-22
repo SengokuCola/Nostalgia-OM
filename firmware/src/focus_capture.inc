@@ -109,61 +109,102 @@ cap_base_ok:
  bcs cap_bad
  cmp 2048,d0
  bhi cap_bad
- /* Test 32: when FS_LV_CARD == 1, position 128x128 capture at 左下 / 居中 / 右下 (matching Cyber Card). */
+ /* Test 33: when FS_LV_CARD == 1, compute exact 38% height square dst_w = dst_h matching cc_run,
+  * and position at 左下 / 居中 / 右下 flush with the bottom edge of IMG1! */
+ mov d0,a2                        /* save img1_w */
+ mov (92,sp),d1
+ and 65535,d1
+ mov (136,sp),d2
+ cmp 1,d2
+ bne 1f
+ asl 1,d1                         /* physical panel height */
+1:
+ cmp 128,d1
+ bcs cap_bad
+ cmp 2048,d1
+ bhi cap_bad
+ mov d1,a3                        /* save img1_h */
+ mov 128,d2                       /* default tile size = 128 (Split-Image) */
+ mov (FS_LV_CARD),d0
+ cmp 0,d0
+ beq cap_sz_done
+ /* dst_h = (img1_h * 38 / 100) & ~1, clamped [128 .. min(img1_w, img1_h)]. */
+ mov a3,d0
+ mov 38,d2
+ mulu d2,d0
+ clr d2
+ mov d2,mdr
+ mov 100,d2
+ divu d2,d0
+ and 0xfffffffe,d0
+ cmp 128,d0
+ bcc 2f
+ mov 128,d0
+2:
+ mov a2,d2                        /* img1_w */
+ cmp d2,d0
+ bls 3f
+ mov d2,d0
+3:
+ mov a3,d2                        /* img1_h */
+ cmp d2,d0
+ bls 4f
+ mov d2,d0
+4:
+ and 0xfffffffe,d0
+ mov d0,d2                        /* dst_w = dst_h */
+cap_sz_done:
+ mov d2,(FS_LV_W)
+ mov d2,(FS_LV_H)
+ /* Compute X using dst_w (d2) and img1_w (a2). */
+ mov a2,d0                        /* img1_w */
  mov (FS_LV_CARD),d1
  cmp 0,d1
+ beq cap_x_center
+ cmp 2,d1
  beq cap_x_center
  mov (MF_CFG_POS),d1
  cmp 0,d1
  beq cap_x_left
  cmp 1,d1
  beq cap_x_center
- /* 右下: img1_w - 128 - img1_w / 20 */
- mov d0,d2
+ /* 右下: img1_w - dst_w - img1_w / 20 */
+ mov d0,d3
  clr d1
  mov d1,mdr
  mov 20,d1
- divu d1,d2                       /* margin = img1_w / 20 */
- add -128,d0
+ divu d1,d3                       /* margin = img1_w / 20 */
  sub d2,d0
+ sub d3,d0
  cmp 0,d0
  bge cap_x_ok
  clr d0
  bra cap_x_ok
 cap_x_left:
- /* 左下: img1_w / 20 (clamped <= img1_w - 128) */
- mov d0,d2
- add -128,d2
+ /* 左下: img1_w / 20 (clamped <= img1_w - dst_w) */
+ mov d0,d3
+ sub d2,d3
  clr d1
  mov d1,mdr
  mov 20,d1
  divu d1,d0
- cmp d2,d0
+ cmp d3,d0
  bls cap_x_ok
- mov d2,d0
+ mov d3,d0
  bra cap_x_ok
 cap_x_center:
- add -128,d0
+ sub d2,d0
  lsr 1,d0
 cap_x_ok:
  and 0xfffffffe,d0
  mov d0,(24,sp)
  mov d0,(116,sp)
- mov (92,sp),d0
- and 65535,d0
- mov (136,sp),d1
- cmp 1,d1
- bne cap_full_height
- asl 1,d0                         /* physical panel lines, before centring */
-cap_full_height:
- cmp 128,d0
- bcs cap_bad
- cmp 2048,d0
- bhi cap_bad
- add -128,d0
+ /* Compute Y using dst_h (d2) and img1_h (a3). */
+ mov a3,d0                        /* img1_h */
+ sub d2,d0
  mov (FS_LV_CARD),d1
  cmp 0,d1
- bne cap_y_bottom                 /* Test 32: flush with bottom edge for Cyber Card preview! */
+ bne cap_y_bottom                 /* flush with bottom edge for Cyber Card preview! */
  lsr 1,d0
 cap_y_bottom:
  mov d0,(28,sp)
@@ -223,7 +264,9 @@ cap_vstep:
  mov 9,d0
  mov d0,(132,sp)
  mov (24,sp),d0
- add 126,d0
+ mov (FS_LV_W),d1
+ add -2,d1
+ add d1,d0
  mov (32,sp),d1
  mul d1,d0
  lsr 12,d0
@@ -252,7 +295,9 @@ cap_vstep:
  mov 10,d0
  mov d0,(132,sp)
  mov (28,sp),d0
- add 127,d0
+ mov (FS_LV_H),d1
+ add -1,d1
+ add d1,d0
  mov (36,sp),d1
  mul d1,d0
  mov (40,sp),d1
@@ -288,6 +333,16 @@ cap_bound:
  mov (124,sp),d1
  cmp d1,d0
  bne cap_bad
+ /* Test 33: when FS_LV_CARD == 1, scale row step (36,sp) by dst_h / 128 so 128 rows cover dst_h! */
+ mov (FS_LV_CARD),d0
+ cmp 0,d0
+ beq 1f
+ mov (36,sp),d0
+ mov (FS_LV_H),d1
+ mulu d1,d0
+ lsr 7,d0
+ mov d0,(36,sp)
+1:
  clr d0
  mov d0,(140,sp)
  mov (136,sp),d0
@@ -338,6 +393,13 @@ cap_window:
  mov (24,sp),d2
  mov (32,sp),d0
  mul d0,d2
+ mov (FS_LV_CARD),d1
+ cmp 0,d1
+ beq 1f
+ mov (FS_LV_W),d1
+ mulu d1,d0
+ lsr 7,d0                         /* scaled horizontal step = hstep * dst_w / 128 */
+1:
  asl 1,d0
  mov d0,(128,sp)
  mov (4,sp),a1

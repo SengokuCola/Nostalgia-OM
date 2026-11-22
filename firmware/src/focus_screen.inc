@@ -102,7 +102,16 @@ fs_stop:
  bne 1f
  FS_INC 8
 1:
+ /* Test 33: keep IMG2 Cyber Card overlay latched across shutter/Rec View while still in 0x0801. */
+ mov (FS_LV_CARD),d0
+ cmp 0,d0
+ beq 2f
+ movhu (LG_GUI),d0
+ cmp 0x0801,d0
+ beq 3f
+2:
  call fs_clear,[d2,d3,a2,a3],24
+3:
  mov (4,sp),d0
  mov (8,sp),d1
  mov (12,sp),a0
@@ -339,6 +348,12 @@ fs_tick:
  /* Test 32: decide whether IMG2 displays semi-transparent Cyber Card preview (FS_LV_CARD=1)
   * or Split-Image Focus (FS_LV_CARD=0). Cyber Card preview activates whenever 图卡 != 关,
   * 图卡预览 == 开, and CARD<n>.BIN is loaded in RAM. */
+ mov (FB_SLOT),d0
+ cmp 0,d0
+ beq 99f
+ mov 2,d0
+ bra 100f
+99:
  clr d0
  mov (MF_CFG_CARD),d1
  cmp 0,d1
@@ -419,6 +434,17 @@ fs_claimed:
  mov d1,(FS_D+32)
  cmp 0,d0
  beq fs_captured
+ /* Test 33: in Cyber Card preview mode, hold previous IMG2 tile on any single missed capture -> zero flicker! */
+ mov (FS_LV_CARD),d0
+ cmp 0,d0
+ beq 102f
+ clr d0
+ call LOCK,[d2],8
+ mov d0,(20,sp)
+ mov 1,d0
+ mov d0,(28,sp)
+ jmp fs_publish_skip
+102:
  mov (4,sp),d0
  cmp 1,d0
  bne fs_failed
@@ -475,8 +501,8 @@ fs_captured_tile:
  /* Test 32: if Cyber Card live-view preview is active (FS_LV_CARD == 1), blend the cached
   * anime card at 50% semi-transparency onto FS_SRC -> FS_DST and publish directly on IMG2! */
  mov (FS_LV_CARD),d0
- cmp 0,d0
- beq 101f
+ cmp 1,d0
+ bne 101f
  mov (16,sp),d0
  asl 15,d0
  add FS_DST,d0
@@ -541,6 +567,22 @@ fs_hold_done:
  mov d0,(28,sp)
  jmp fs_publish_skip
 fs_buffer_ok:
+ mov (FS_LV_CARD),d0
+ cmp 2,d0
+ bne fs_focus_tile
+ mov (16,sp),d0
+ asl 15,d0
+ add FS_DST,d0
+ mov d0,(24,sp)
+ mov d0,a1
+ mov (FB_SLOT),d0
+ cmp 1,d0
+ bcs fs_failed
+ cmp NF,d0
+ bhi fs_failed
+ call fb_draw,[d2,d3,a2,a3],32
+ jmp fs_mapped
+fs_focus_tile:
  mov (PH_MODE),d0
  cmp 2,d0
  bne fs_check_manual_pdaf
@@ -668,18 +710,19 @@ fs_request_copy:
  mov (0x42c,a0),d0
  and 0xffff0000,d0
  add d1,d0
- or 128,d0
+ mov (FS_LV_W),d2
+ or d2,d0
  mov d0,(FS_REQ+16)
  mov (12,sp),d1
  mov d1,d2
  and 0x8000,d2
  and 0xffff0000,d1
- mov 128,d3
+ mov (FS_LV_H),d3
  cmp 0,d2
  beq fs_tile_area
  lsr 1,d1
  and 0xffff0000,d1
- mov 64,d3
+ lsr 1,d3                         /* EVF field mode halves vertical display lines */
  /* Whole-frame pitch stays at 256 bytes. Field scanning steps alternate rows. */
 fs_tile_area:
  mov (0x430,a0),d0
@@ -687,6 +730,36 @@ fs_tile_area:
  add d1,d0
  or d3,d0
  mov d0,(FS_REQ+20)
+ /* Test 33: program IMG2 hardware H/V scaler when FS_LV_CARD == 1 and dst > 128! */
+ mov (FS_LV_CARD),d0
+ cmp 0,d0
+ beq fs_scale_done
+ mov (FS_LV_W),d1
+ cmp 129,d1
+ bcs fs_scale_done
+ mov 0x11,d0                      /* enable H-scale (bit 0) + V-scale (bit 4) */
+ mov d0,(FS_REQ+24)
+ mov 524288,d0                    /* (128 << 12) / dst_w */
+ clr d3
+ mov d3,mdr
+ divu d1,d0
+ mov d0,(FS_REQ+28)
+ /* V-scale unit is 8192 (13-bit) on TFT (ch==2) or EVF field mode (d2!=0), 4096 (12-bit) on progressive EVF. */
+ mov 524288,d0                    /* 128 << 12 */
+ mov (4,sp),d3                    /* channel */
+ cmp 2,d3
+ beq 103f
+ cmp 0,d2                         /* field flag */
+ beq 104f
+103:
+ mov 1048576,d0                   /* 128 << 13 */
+104:
+ clr d3
+ mov d3,mdr
+ mov (FS_LV_H),d1
+ divu d1,d0
+ mov d0,(FS_REQ+36)
+fs_scale_done:
  clr d0
  call LOCK,[d2],8
  mov d0,(20,sp)
@@ -774,6 +847,7 @@ fs_failed:
 fs_failure_traced:
  jmp fs_publish_skip
 fs_tick_clear:
+ call fb_close,[d2,d3,a2,a3],24
  call fs_clear,[d2,d3,a2,a3],24
 fs_tick_out:
  ret [d2,d3,a2,a3],48
@@ -841,11 +915,15 @@ fs_ev_latched: .long 0
 fs_measured: .long 0
 fs_blackout: .long 0
 fs_lv_card:  .long 0
+fs_lv_w:     .long 128
+fs_lv_h:     .long 128
 fs_th_samples: .space 88,0
 .set FS_TH_SAMPLES,fs_th_samples+0x40000000
 .set FS_MEASURED,fs_measured+0x40000000
 .set FS_BLACKOUT,fs_blackout+0x40000000
 .set FS_LV_CARD,fs_lv_card+0x40000000
+.set FS_LV_W,fs_lv_w+0x40000000
+.set FS_LV_H,fs_lv_h+0x40000000
 fs_owner: .space 120,0
 fs_req: .space 52,0
 .balign 128

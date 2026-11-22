@@ -683,10 +683,19 @@ cc_lv_blend:
  mov 128,d0
 3:
  mov d0,(24,sp)                   /* fit_w */
- /* ox = ((128 - fit_w) >> 1) & ~1 */
+ /* ox anchored by MF_CFG_POS: 0=左下 -> 0, 1=居中 -> (128-fit_w)/2, 2=右下 -> 128-fit_w. */
+ mov (MF_CFG_POS),d3
+ cmp 0,d3
+ beq 31f
  mov 128,d1
  sub d0,d1
+ cmp 1,d3
+ bne 32f
  lsr 1,d1
+ bra 32f
+31:
+ clr d1
+32:
  and 0xfffffffe,d1
  mov d1,(32,sp)                   /* ox */
  /* fit_h = (src_h * 128) / max_dim, clamped [2..128]. */

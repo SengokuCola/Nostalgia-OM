@@ -31,7 +31,8 @@ class P:                                   # toolchain and stock identity (set f
     STOCK = None
 
 LAYOUT = HERE / 'vendor' / 'caduceus-bundles-layout.json'    # Caduceus (Apache-2.0) bundle-table layout
-HOOKS = {'.hook_sb_done': (0x6054c30f, bytes.fromhex('f1ecf064803e')),
+HOOKS = {'.hook_fb_key': (0x610b9fdb, bytes.fromhex('43049f009e')),
+         '.hook_sb_done': (0x6054c30f, bytes.fromhex('f1ecf064803e')),
          '.hook_af_write': (0x609a0e4f, bytes.fromhex('fc83e4ab3ea3')),
          '.hook_zaf_lv': (0x609ed0d4, bytes.fromhex('dd5d6190ff0004')),
          '.hook_zaf_eng': (0x60902150, bytes.fromhex('fc8e0ca33ca3')),
@@ -344,6 +345,14 @@ def build(defaults, testfile, out):
                                    f'.set LVDB, {lvboxes[0].shape[1]}\n.set LV_GAP, {mkicons.LV_GAP}\n.set LV_DGAP, {mkicons.LV_DGAP}\n' +
                                    'fl_lvst:\n' + db(mkicons.pack4(lvst[0])) + f'.set LVSTB, {lvst[0].shape[1]}\n'
                                    f'.set LVSTI, {lvst[1]}\n.set LV_SGAP, {mkicons.LV_SGAP}\n .balign 2\n')
+    from PIL import Image, ImageDraw, ImageFont
+    font = ImageFont.truetype('DejaVuSansMono.ttf', 10)
+    glyphs = bytearray()
+    for code in range(32, 127):
+        tile = Image.new('1', (8, 12))
+        ImageDraw.Draw(tile).text((0, 0), chr(code), fill=1, font=font)
+        glyphs.extend(tile.tobytes())
+    (out / 'fb_font.inc').write_text(db(bytes(glyphs)))
     subprocess.run([P.AS, '-I', out, '-I', HERE / 'src', '-o', out / 'p.o', HERE / 'src' / 'editor.s'], check=True)
     subprocess.run([P.LD, '-T', HERE / 'src' / 'editor.ld', '-o', out / 'p.elf', out / 'p.o'], check=True)
     blobs = {}
@@ -613,14 +622,27 @@ def build(defaults, testfile, out):
     vrec = {struct.unpack_from('<H', m, o(VAL) + 20 * i)[0]: VAL + 20 * i for i in range(1712)}
     alist, alen = sy['ar_list'], (sy['ar_lend'] - sy['ar_list'])
     codes = list(struct.unpack_from(f'<{alen // 2}H', m, o(alist)))
-    assert len(codes) == 48 and codes[-1] == 3200 and len(set(codes)) == 48
+    assert len(codes) == len(set(codes)) == 49 and codes[-2:] == [sy['FB_CODE'], 3200]
     FNL, ARL = 0x615685d4, 0x6156855c                       # value labels: the Fn buttons' (50), ▶ / ▼'s (10)
     labs = {}
     for L, n in ((FNL, 50), (ARL, 10)):
         for k in range(n):
             labs.setdefault(u32(L + 12 * k)[0], bytes(m[o(L) + 12 * k:o(L) + 12 * k + 12]))
+    fb_label = struct.pack('<3I', sy['FB_CODE'], sy['FB_TITLE'] << 16 | 4, 0x61570e04)
+    labs[sy['FB_CODE']] = fb_label
+    for key in (4, 5, 7, 8):
+        variant = 0x61571ba0 + 24 * (key + 1)
+        picker = u32(variant, 6)
+        assert picker[0] & 0xffff == key and picker[1:5] == (55, 0x61570e08, 0x61571288, 0x61571708)
+        for i, name in enumerate(('fb_titles', 'fb_icons', 'fb_help')):
+            dst = sy[name]
+            table = bytes(m[o(picker[i+2]):o(picker[i+2]) + 55 * 12])
+            entry = fb_label if i != 1 else struct.pack('<3I', sy['FB_CODE'], (0x7fec << 16) | 12, 0x61570e04)
+            m[o(dst):o(dst) + 56 * 12] = table + entry
+            struct.pack_into('<I', m, o(variant) + 8 + 4 * i, dst)
+        struct.pack_into('<I', m, o(variant) + 4, 56)
     lab = b''.join(labs[c] for c in codes)
-    assert len(lab) == 12 * 48 and sy['ar_rows'] - sy['ar_lab'] >= len(lab)
+    assert len(lab) == 12 * len(codes) and sy['ar_rows'] - sy['ar_lab'] >= len(lab)
     m[o(sy['ar_lab']):o(sy['ar_lab']) + len(lab)] = lab
     # validator: ▶ 53 / ▼ 51 in place; ▲ 50 <- 1957's record, ◀ 52 <- 572's (other bodies' buttons)
     for sid, was in ((53, 53), (51, 51), (50, 1957), (52, 572)):
@@ -670,7 +692,7 @@ def build(defaults, testfile, out):
     for r in recs:
         if struct.unpack_from('<I', r)[0] in (53, 51):
             assert struct.unpack_from('<2I', r, 12) == (ARL, 10)
-            struct.pack_into('<2I', r, 12, sy['ar_lab'], 48)
+            struct.pack_into('<2I', r, 12, sy['ar_lab'], len(codes))
     for sid, pic in ((50, 0x7fe0), (52, 0x7fe1)):
         r = bytearray(recs[rs.index(53)])
         struct.pack_into('<I', r, 0, sid)
