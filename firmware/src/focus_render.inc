@@ -114,3 +114,102 @@ sm_store:
 sm_bad:
  mov 1,d0
  ret [d2,d3,a2,a3],40
+
+/* screen_reticle (Test 27): copy unmodified live-view 128x128 tile (a0 -> a1) and draw a clean
+ * focus sampling reticle (4 corner brackets + center '+') showing the MF PDAF ROI.
+ * Color: bright green (0x15962c96) when in focus (FS_GREEN_TICKS > 0 or PD_VALID==1 && PD_SPLIT_S==0),
+ * crisp white (0x80eb80eb) otherwise.
+ * call screen_reticle,[d2,d3,a2,a3],20: a0 = FS_SRC, a1 = FS_DST -> d0 = 0. */
+.global screen_reticle
+screen_reticle:
+ mov a1,a2                         /* save dst base */
+ mov 2048,d3                       /* 8192 dwords / 4 = 2048 */
+sr_cpy:
+ mov (a0),d0
+ mov (4,a0),d1
+ mov d0,(a1)
+ mov d1,(4,a1)
+ mov (8,a0),d0
+ mov (12,a0),d1
+ mov d0,(8,a1)
+ mov d1,(12,a1)
+ add 16,a0
+ add 16,a1
+ add -1,d3
+ bne sr_cpy
+ /* Choose reticle color: green when in focus, white otherwise. */
+ mov 0x80eb80eb,d2                 /* white */
+ mov (FS_GREEN_TICKS),d0
+ cmp 0,d0
+ bne sr_green
+ mov (PD_VALID),d0
+ cmp 1,d0
+ bne sr_draw
+ mov (PD_SPLIT_S),d0
+ cmp 0,d0
+ bne sr_draw
+sr_green:
+ mov 0x15962c96,d2                 /* green */
+sr_draw:
+ /* Horizontal corner bars: y = 28..29 and y = 98..99, px = 8..17 (left) & 46..55 (right). */
+ mov a2,a0
+ add 28*256,a0                     /* top outer bar */
+ call sr_hbars,[],0
+ mov a2,a0
+ add 98*256,a0                     /* bottom outer bar */
+ call sr_hbars,[],0
+ /* Vertical corner bars: y = 28..47 (20 rows) and y = 80..99 (20 rows), px = 8 & 55. */
+ mov a2,a0
+ add 28*256,a0
+ call sr_vbars,[],0
+ mov a2,a0
+ add 80*256,a0
+ call sr_vbars,[],0
+ /* Center crosshair '+': horiz y = 63..64, px = 29..34; vert y = 58..69, px = 31..32. */
+ mov a2,a0
+ add 63*256 + 29*4,a0
+ mov 6,d3
+sr_ch:
+ mov d2,(a0)
+ mov d2,(256,a0)
+ add 4,a0
+ add -1,d3
+ bne sr_ch
+ mov a2,a0
+ add 58*256 + 31*4,a0
+ mov 12,d3
+sr_cv:
+ mov d2,(a0)
+ mov d2,(4,a0)
+ add 256,a0
+ add -1,d3
+ bne sr_cv
+ clr d0
+ ret [d2,d3,a2,a3],20
+
+/* sr_hbars: leaf helper, a0 = row start, d2 = color -> draws 2 rows x (px 8..17 and px 46..55). */
+sr_hbars:
+ mov a0,a1
+ add 8*4,a1
+ mov 10,d3
+1:
+ mov d2,(a1)
+ mov d2,(256,a1)
+ mov d2,(38*4,a1)
+ mov d2,(256+38*4,a1)
+ add 4,a1
+ add -1,d3
+ bne 1b
+ ret [],0
+
+/* sr_vbars: leaf helper, a0 = row start, d2 = color -> draws 20 rows at px 8 and px 55. */
+sr_vbars:
+ mov a0,a1
+ mov 20,d3
+1:
+ mov d2,(8*4,a1)
+ mov d2,(55*4,a1)
+ add 256,a1
+ add -1,d3
+ bne 1b
+ ret [],0

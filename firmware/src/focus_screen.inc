@@ -521,15 +521,6 @@ fs_check_manual_pdaf:
  mov 1,d1
  movbu d1,(FS_MEASURED)
  call fs_pdaf_live,[d2,d3,a2,a3],28
- /* Check custom MF Assist menu setting "裂像对焦" (MF_CFG_SPLIT: 1=On, 0=Off).
-  * When Off, release IMG2 cleanly without suppressing fs_pdaf_live / beep. */
- mov (MF_CFG_SPLIT),d1
- cmp 0,d1
- bne 1f
- mov 7,d0
- mov d0,(28,sp)
- jmp fs_failed
-1:
  /* Split-Image + Microprism driven by signed optical PDAF (-6..+6).
   * Once optical PDAF has seeded (PD_SEEDED == 1), hold last optical shift on brief
   * low-confidence frames; before seeding (e.g. contrast-only test), fall back to contrast. */
@@ -553,6 +544,26 @@ fs_use_contrast:
  mov (4,sp),d1
  call fs_filter_band,[d2,d3,a2,a3],20
 fs_apply_shift:
+ /* Check custom MF Assist menu setting "分像对焦" (MF_CFG_SPLIT: 0=关, 1=准星, 2=分像).
+  * Applied here so EVERY overlay path respects it, while fs_pdaf_live + beep already ran. */
+ mov (MF_CFG_SPLIT),d1
+ cmp 0,d1
+ bne 10f
+ mov 7,d0
+ mov d0,(28,sp)
+ jmp fs_failed
+10:
+ cmp 1,d1
+ bne 20f
+ mov (16,sp),d0
+ asl 15,d0
+ add FS_DST,d0
+ mov d0,(24,sp)
+ mov d0,a1
+ mov FS_SRC,a0
+ call screen_reticle,[d2,d3,a2,a3],20
+ bra fs_mapped
+20:
  call fs_set_strength,[d2,d3,a2,a3],32
  mov (16,sp),d0
  asl 15,d0

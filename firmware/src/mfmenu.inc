@@ -13,11 +13,13 @@
  .set MF_VER, 1
  .set MF_LEN, 24                  /* +0 magic, +4 u16 ver, +6 u16 len, +8 CRC-32 of 12..23, +12 split, +16 beep, +20 ofs */
 
- .set ST_MF_SPLIT, 0x7f70         /* "裂像对焦" */
+ .set ST_MF_SPLIT, 0x7f70         /* "分像对焦" */
  .set ST_MF_BEEP,  0x7f71         /* "合焦提示音" */
  .set ST_MF_OFS,   0x7f72         /* "合焦微调" */
  .set ST_MF_V0,    0x7f73         /* "-5" .. "+5" (11 strings: 0x7f73 .. 0x7f7d) */
- .set ST_MF_END,   0x7f7e
+ .set ST_MF_RET,   0x7f7e         /* "准星" */
+ .set ST_MF_SPL,   0x7f7f         /* "分像" */
+ .set ST_MF_END,   0x7f80
 
  .macro MFCHK to                  /* d0 in MFB..MFB+MF_N-1 -> jmp \to (flags only) */
  cmp MFB,d0

@@ -48,9 +48,9 @@ mf_ld:
  call ub_cpy,[],0
  /* Clamp loaded values to valid ranges. */
  mov (mf_ram + 12),d0
- cmp 2,d0
+ cmp 3,d0
  bcs 1f
- mov 1,d0
+ mov 2,d0
  mov d0,(mf_ram + 12)
 1:
  mov (mf_ram + 16),d0
@@ -69,11 +69,12 @@ mf_ld:
  mov mf_ram,a0
  mov MF_LEN,d1
  call ub_zero,[],0
+ mov 2,d0
+ mov d0,(mf_ram + 12)             /* split = 2 (分像), 1 (准星), 0 (关) */
  mov 1,d0
- mov d0,(mf_ram + 12)             /* split = On */
- mov d0,(mf_ram + 16)             /* beep  = On */
+ mov d0,(mf_ram + 16)             /* beep  = 1 (开) */
  mov 5,d0
- mov d0,(mf_ram + 20)             /* ofs   = 0 (-5..+5 -> 5) */
+ mov d0,(mf_ram + 20)             /* ofs   = 5 (0) */
 7:
  call mf_sync,[],0
 9:
@@ -178,9 +179,11 @@ mf_put:
  mov mf_ram + 12,a2
  add d0,a2                        /* &mf_ram.val[idx] */
  mov (a2),d0                      /* cur_val */
+ cmp 0,d3
+ beq 4f
  cmp 2,d3
  beq 5f
- /* Binary setting (0=Off, 1=On). */
+ /* Binary setting (idx=1, beep: 0=关, 1=开). */
  cmp 0,d2
  bne 1f
  mov a3,d1
@@ -189,6 +192,31 @@ mf_put:
 1:
  mov d0,d1
  xor 1,d1
+ bra 7f
+4:
+ /* 3-mode setting (idx=0, split: 0=关, 1=准星, 2=分像). */
+ cmp 0,d2
+ bne 41f
+ mov a3,d1
+ cmp 3,d1
+ bcs 7f
+ mov 2,d1
+ bra 7f
+41:
+ cmp 2,d2
+ bne 42f
+ mov d0,d1
+ add 2,d1
+ cmp 3,d1
+ bcs 7f
+ add -3,d1
+ bra 7f
+42:
+ mov d0,d1
+ add 1,d1
+ cmp 3,d1
+ bcs 7f
+ clr d1
  bra 7f
 5:
  /* 11-step offset setting (0..10 -> -5..+5). */
@@ -225,9 +253,14 @@ mf_put:
 
 /* mf_cnt / mf_vbi / mf_sel / mf_def: CALLS facade handlers. */
 mf_cnt:
+ cmp MFB + 0,d0
+ beq 2f
  cmp MFB + 2,d0
  beq 1f
  mov 2,d0
+ rets
+2:
+ mov 3,d0
  rets
 1:
  mov 11,d0
@@ -235,6 +268,11 @@ mf_cnt:
 
 mf_vbi:
  mov 2,a0
+ cmp MFB + 0,d0
+ bne 10f
+ mov 3,a0
+ bra 1f
+10:
  cmp MFB + 2,d0
  bne 1f
  mov 11,a0
@@ -252,6 +290,11 @@ mf_vbi:
 
 mf_sel:
  mov 2,a0
+ cmp MFB + 0,d0
+ bne 10f
+ mov 3,a0
+ bra 1f
+10:
  cmp MFB + 2,d0
  bne 1f
  mov 11,a0
@@ -267,6 +310,11 @@ mf_def:
  cmp 0,a1
  beq 1f
  mov 1,d1
+ cmp MFB + 0,d0
+ bne 20f
+ mov 2,d1
+ bra 2f
+20:
  cmp MFB + 2,d0
  bne 2f
  mov 5,d1
@@ -278,12 +326,13 @@ mf_def:
  mov -268435434,d0
  rets
 
-/* ---- UTF-16LE strings for st_get (0x7f70 .. 0x7f7d) ---- */
+/* ---- UTF-16LE strings for st_get (0x7f70 .. 0x7f7f) ---- */
  .balign 4
 mf_strs:
  .long mf_s_split, mf_s_beep, mf_s_ofs
  .long mf_s_m5, mf_s_m4, mf_s_m3, mf_s_m2, mf_s_m1
  .long mf_s_0, mf_s_p1, mf_s_p2, mf_s_p3, mf_s_p4, mf_s_p5
+ .long mf_s_ret, mf_s_spl
 
  .balign 2
 mf_s_split: .hword 0x5206, 0x50cf, 0x5bf9, 0x7126, 0                /* 分像对焦 */
@@ -300,8 +349,10 @@ mf_s_p2:    .hword '+', '2', 0
 mf_s_p3:    .hword '+', '3', 0
 mf_s_p4:    .hword '+', '4', 0
 mf_s_p5:    .hword '+', '5', 0
+mf_s_ret:   .hword 0x51c6, 0x661f, 0                                /* 准星 */
+mf_s_spl:   .hword 0x5206, 0x50cf, 0                                /* 分像 */
 
-/* ---- Runtime state & uncached mirrors for focus_screen / focus_pdaf_live ---- */
+/* ---- Runtime state & cache-line-isolated uncached mirrors ---- */
  .balign 4
 mf_ram:
  .space MF_LEN, 0
@@ -309,10 +360,11 @@ mf_ok:
  .byte 0
 mf_pend:
  .byte 0
- .balign 4
-mf_cfg_split: .long 1
+ .balign 64                       /* isolate uncached MF_CFG_* from cached mf_ram/mf_pend! */
+mf_cfg_split: .long 2
 mf_cfg_beep:  .long 1
 mf_cfg_ofs:   .long 5
+ .balign 64
  .set MF_CFG_SPLIT, mf_cfg_split + 0x40000000
  .set MF_CFG_BEEP,  mf_cfg_beep  + 0x40000000
  .set MF_CFG_OFS,   mf_cfg_ofs   + 0x40000000
@@ -327,6 +379,10 @@ mf_ord:                           /* 6 x u16 = 12 B (row order for mode 0x11a) *
  .space 2 * (3 + MF_N), 0
 mf_ord_end:
  .balign 4
+mf_split_vals:                    /* 3 x 12 B = 36 B (list-row value list: 关 / 准星 / 分像) */
+ .space 12 * 3, 0
+mf_split_vals_end:
+ .balign 4
 mf_ofs_vals:                      /* 11 x 12 B = 132 B (list-row value list for -5..+5) */
  .space 12 * 11, 0
 mf_ofs_vals_end:
@@ -335,12 +391,16 @@ mf_ptitles:                       /* 3 x 8 B = 24 B (picker screen titles) */
  .space 8 * MF_N, 0
 mf_ptitles_end:
  .balign 4
+mf_psplit_vals:                   /* 3 x 12 B = 36 B (picker button labels: 关 / 准星 / 分像) */
+ .space 12 * 3, 0
+mf_psplit_vals_end:
+ .balign 4
 mf_pofs_vals:                     /* 11 x 12 B = 132 B (picker button labels for -5..+5) */
  .space 12 * 11, 0
 mf_pofs_vals_end:
  .balign 4
-mf_phelps:                        /* (2 + 2 + 11) x 12 B = 180 B (picker help strings per item) */
- .space 12 * 15, 0
+mf_phelps:                        /* (3 + 2 + 11) x 12 B = 192 B (picker help strings per item) */
+ .space 12 * 16, 0
 mf_phelps_end:
  .balign 4
 mf_pickers:                       /* 99 x 36 B = 3564 B (stock 96 + our 3 picker screens) */
