@@ -599,61 +599,6 @@ pdl_quant:
  call fs_pdaf_quant,[d2,d3,a2,a3],32
  mov d0,(PD_SPLIT_S)
 
- /* Test 22: MF focus-lock green blink + double-beep state machine.
-  * Decrement visual flash & cooldown timers every frame. */
- mov (FS_GREEN_TICKS),d0
- cmp 0,d0
- ble 1f
- add -1,d0
- mov d0,(FS_GREEN_TICKS)
-1:
- mov (PD_LOCK_COOLDOWN),d0
- cmp 0,d0
- ble 2f
- add -1,d0
- mov d0,(PD_LOCK_COOLDOWN)
-2:
- mov (PD_VALID),d0
- cmp 1,d0
- bne pdl_ret
- mov (PD_SPLIT_S),d0
- cmp 0,d0
- beq pdl_in_focus
-
- /* Out of focus: re-arm if |PD_SPLIT_S| >= 2, or cooldown expired while defocused. */
- cmp 2,d0
- bge pdl_rearm
- cmp -2,d0
- ble pdl_rearm
- mov (PD_LOCK_COOLDOWN),d0
- cmp 0,d0
- bne pdl_ret
-pdl_rearm:
- mov 1,d0
- mov d0,(PD_LOCK_ARMED)
- bra pdl_ret
-
-pdl_in_focus:
- mov (PD_LOCK_ARMED),d0
- cmp 0,d0
- beq pdl_ret
- mov (PD_LOCK_COOLDOWN),d0
- cmp 0,d0
- bne pdl_ret
- clr d0
- mov d0,(PD_LOCK_ARMED)
- mov 18,d0                           /* Test 28: shorter ~0.8s cooldown for snappier MF */
- mov d0,(PD_LOCK_COOLDOWN)
- mov 6,d0
- mov d0,(FS_GREEN_TICKS)
- /* Gate double-beep on custom menu "合焦提示音" (MF_CFG_BEEP: 1=On, 0=Off). */
- mov (MF_CFG_BEEP),d0
- cmp 0,d0
- beq pdl_ret
- mov (MF_BEEP_REQ),d0
- add 1,d0
- mov d0,(MF_BEEP_REQ)
-
 pdl_ret:
  mov (PD_VALID),d0
  ret [d2,d3,a2,a3],28

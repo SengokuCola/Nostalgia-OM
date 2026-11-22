@@ -1,24 +1,18 @@
-/* ---- MF Assist custom menu settings (Test 26) ----
- * Virtual setting IDs MFB+0..MFB+2 in AF -> 2. MF -> MF Assist (mode 0x114).
- * Uses the exact same facade hooks (sl_get, si_sv, sl_cnt, sl_vbi, sl_sel, si_dfl)
- * and M-store persistence ('OM3M' at M + 0x3C100) as screeninfo.s. */
+/* ---- MF Assist custom menu settings (Test 29 — pure Split-Image + Offset) ----
+ * Virtual setting IDs MFB+0..MFB+1 in AF -> 7. MF -> MF Assist (mode 0x11a). */
 
 .section .ext13,"ax"
 
-/* mf_sync: copy mf_ram[12..27] -> uncached MF_CFG_* mirrors (leaf, uses d0). */
+/* mf_sync: copy mf_ram[12..19] -> uncached MF_CFG_* mirrors (leaf, uses d0). */
 mf_sync:
  mov (mf_ram + 12),d0
  mov d0,(MF_CFG_SPLIT)
  mov (mf_ram + 16),d0
- mov d0,(MF_CFG_BEEP)
- mov (mf_ram + 20),d0
  mov d0,(MF_CFG_OFS)
- mov (mf_ram + 24),d0
- mov d0,(MF_CFG_SIZE)
  ret [],0
 
 /* mf_ld: `call mf_ld,[d2,d3,a2,a3],20`: load 'OM3M' record from M into mf_ram once
- * per power-on (missing/bad record -> defaults: split=1, beep=1, ofs=5). Reads only. */
+ * per power-on (missing/bad record -> defaults: split=1, ofs=5). Reads only. */
 mf_ld:
  movbu (mf_ok),d0
  cmp 0,d0
@@ -48,43 +42,26 @@ mf_ld:
  mov a3,a1
  mov MF_LEN,d1
  call ub_cpy,[],0
- /* Clamp loaded values to valid ranges. */
  mov (mf_ram + 12),d0
- cmp 3,d0
+ cmp 2,d0
  bcs 1f
- mov 2,d0
+ mov 1,d0
  mov d0,(mf_ram + 12)
 1:
  mov (mf_ram + 16),d0
- cmp 2,d0
- bcs 2f
- mov 1,d0
- mov d0,(mf_ram + 16)
-2:
- mov (mf_ram + 20),d0
  cmp 11,d0
- bcs 3f
- mov 5,d0
- mov d0,(mf_ram + 20)
-3:
- mov (mf_ram + 24),d0
- cmp 3,d0
  bcs 7f
- mov 1,d0
- mov d0,(mf_ram + 24)
+ mov 5,d0
+ mov d0,(mf_ram + 16)
  bra 7f
 8:
  mov mf_ram,a0
  mov MF_LEN,d1
  call ub_zero,[],0
- mov 2,d0
- mov d0,(mf_ram + 12)             /* split = 2 (分像), 1 (准星), 0 (关) */
  mov 1,d0
- mov d0,(mf_ram + 16)             /* beep  = 1 (开) */
+ mov d0,(mf_ram + 12)             /* split = 1 (开) */
  mov 5,d0
- mov d0,(mf_ram + 20)             /* ofs   = 5 (0) */
- mov 1,d0
- mov d0,(mf_ram + 24)             /* size  = 1 (中: 80x80) */
+ mov d0,(mf_ram + 16)             /* ofs   = 5 (0) */
 7:
  call mf_sync,[],0
 9:
@@ -135,7 +112,7 @@ mf_wr:
 
 /* mf_get <- sl_get (CALLS: d0 id, a0 facade, a1 out != 0, MDR return) -> (a1) val, d0 0 */
 mf_get:
- add -16,sp                       /* (0) call slot, (4) a1, (8) MDR, (12) d0 */
+ add -16,sp
  mov a1,(4,sp)
  mov d0,(12,sp)
  mov mdr,d0
@@ -156,10 +133,9 @@ mf_get:
  clr d0
  rets
 
-/* mf_sv <- si_sv (CALLS: d0 id, d1 mode, a1 value, a0 facade).
- * mode 0: set to a1; mode 1/3: next/toggle; mode 2: prev/toggle. */
+/* mf_sv <- si_sv (CALLS: d0 id, d1 mode, a1 value, a0 facade). */
 mf_sv:
- add -20,sp                       /* (0) call slot, (4) MDR, (8) id, (12) mode, (16) a1 */
+ add -20,sp
  mov d0,(8,sp)
  mov d1,(12,sp)
  mov a1,(16,sp)
@@ -184,18 +160,14 @@ mf_put:
  mov d3,d0
  exthu d0
  add -MFB,d0
- mov d0,d3                        /* idx: 0, 1, or 2 */
+ mov d0,d3                        /* idx: 0 (split) or 1 (ofs) */
  asl2 d0
  mov mf_ram + 12,a2
- add d0,a2                        /* &mf_ram.val[idx] */
+ add d0,a2
  mov (a2),d0                      /* cur_val */
- cmp 0,d3
- beq 4f
- cmp 3,d3
- beq 4f
- cmp 2,d3
+ cmp 1,d3
  beq 5f
- /* Binary setting (idx=1, beep: 0=关, 1=开). */
+ /* Binary setting (idx=0, split: 0=关, 1=开). */
  cmp 0,d2
  bne 1f
  mov a3,d1
@@ -205,33 +177,8 @@ mf_put:
  mov d0,d1
  xor 1,d1
  bra 7f
-4:
- /* 3-mode setting (idx=0, split: 0=关, 1=准星, 2=分像). */
- cmp 0,d2
- bne 41f
- mov a3,d1
- cmp 3,d1
- bcs 7f
- mov 2,d1
- bra 7f
-41:
- cmp 2,d2
- bne 42f
- mov d0,d1
- add 2,d1
- cmp 3,d1
- bcs 7f
- add -3,d1
- bra 7f
-42:
- mov d0,d1
- add 1,d1
- cmp 3,d1
- bcs 7f
- clr d1
- bra 7f
 5:
- /* 11-step offset setting (0..10 -> -5..+5). */
+ /* 11-step offset setting (idx=1, ofs: 0..10 -> -5..+5). */
  cmp 0,d2
  bne 6f
  mov a3,d1
@@ -265,16 +212,9 @@ mf_put:
 
 /* mf_cnt / mf_vbi / mf_sel / mf_def: CALLS facade handlers. */
 mf_cnt:
- cmp MFB + 0,d0
- beq 2f
- cmp MFB + 3,d0
- beq 2f
- cmp MFB + 2,d0
+ cmp MFB + 1,d0
  beq 1f
  mov 2,d0
- rets
-2:
- mov 3,d0
  rets
 1:
  mov 11,d0
@@ -282,15 +222,7 @@ mf_cnt:
 
 mf_vbi:
  mov 2,a0
- cmp MFB + 0,d0
- beq 11f
- cmp MFB + 3,d0
- bne 10f
-11:
- mov 3,a0
- bra 1f
-10:
- cmp MFB + 2,d0
+ cmp MFB + 1,d0
  bne 1f
  mov 11,a0
 1:
@@ -307,15 +239,7 @@ mf_vbi:
 
 mf_sel:
  mov 2,a0
- cmp MFB + 0,d0
- beq 11f
- cmp MFB + 3,d0
- bne 10f
-11:
- mov 3,a0
- bra 1f
-10:
- cmp MFB + 2,d0
+ cmp MFB + 1,d0
  bne 1f
  mov 11,a0
 1:
@@ -329,13 +253,8 @@ mf_sel:
 mf_def:
  cmp 0,a1
  beq 1f
- mov 1,d1                         /* beep=1, size=1 */
- cmp MFB + 0,d0
- bne 20f
- mov 2,d1                         /* split=2 */
- bra 2f
-20:
- cmp MFB + 2,d0
+ mov 1,d1                         /* split=1 */
+ cmp MFB + 1,d0
  bne 2f
  mov 5,d1                         /* ofs=5 (0) */
 2:
@@ -346,18 +265,15 @@ mf_def:
  mov -268435434,d0
  rets
 
-/* ---- UTF-16LE strings for st_get (0x7f70 .. 0x7f83) ---- */
+/* ---- UTF-16LE strings for st_get (0x7f70 .. 0x7f7c) ---- */
  .balign 4
 mf_strs:
- .long mf_s_split, mf_s_beep, mf_s_ofs
+ .long mf_s_split, mf_s_ofs
  .long mf_s_m5, mf_s_m4, mf_s_m3, mf_s_m2, mf_s_m1
  .long mf_s_0, mf_s_p1, mf_s_p2, mf_s_p3, mf_s_p4, mf_s_p5
- .long mf_s_ret, mf_s_spl
- .long mf_s_size, mf_s_sz0, mf_s_sz1, mf_s_sz2
 
  .balign 2
 mf_s_split: .hword 0x5206, 0x50cf, 0x5bf9, 0x7126, 0                /* 分像对焦 */
-mf_s_beep:  .hword 0x5408, 0x7126, 0x63d0, 0x793a, 0x97f3, 0        /* 合焦提示音 */
 mf_s_ofs:   .hword 0x5408, 0x7126, 0x5fae, 0x8c03, 0                /* 合焦微调 */
 mf_s_m5:    .hword '-', '5', 0
 mf_s_m4:    .hword '-', '4', 0
@@ -370,12 +286,6 @@ mf_s_p2:    .hword '+', '2', 0
 mf_s_p3:    .hword '+', '3', 0
 mf_s_p4:    .hword '+', '4', 0
 mf_s_p5:    .hword '+', '5', 0
-mf_s_ret:   .hword 0x51c6, 0x661f, 0                                /* 准星 */
-mf_s_spl:   .hword 0x5206, 0x50cf, 0                                /* 分像 */
-mf_s_size:  .hword 0x51c6, 0x661f, 0x5c3a, 0x5bf8, 0                /* 准星尺寸 */
-mf_s_sz0:   .hword 0x5c0f, 0                                        /* 小 */
-mf_s_sz1:   .hword 0x4e2d, 0                                        /* 中 */
-mf_s_sz2:   .hword 0x5927, 0                                        /* 大 */
 
 /* ---- Runtime state & cache-line-isolated uncached mirrors ---- */
  .balign 4
@@ -386,67 +296,47 @@ mf_ok:
 mf_pend:
  .byte 0
  .balign 64                       /* isolate uncached MF_CFG_* from cached mf_ram/mf_pend! */
-mf_cfg_split: .long 2
-mf_cfg_beep:  .long 1
+mf_cfg_split: .long 1
 mf_cfg_ofs:   .long 5
-mf_cfg_size:  .long 1
  .balign 64
  .set MF_CFG_SPLIT, mf_cfg_split + 0x40000000
- .set MF_CFG_BEEP,  mf_cfg_beep  + 0x40000000
  .set MF_CFG_OFS,   mf_cfg_ofs   + 0x40000000
- .set MF_CFG_SIZE,  mf_cfg_size  + 0x40000000
 
 /* ---- Patched menu tables populated by firmware/build.py ---- */
  .balign 4
-mf_recs:                          /* 7 x 36 B = 252 B (stock 283, 566, 1892 + our 4 rows) */
+mf_recs:                          /* 5 x 36 B = 180 B (stock 283, 566, 1892 + our 2 rows) */
  .space 36 * (3 + MF_N), 0
 mf_recs_end:
  .balign 4
-mf_ord:                           /* 7 x u16 = 14 B (row order for mode 0x11a) */
+mf_ord:                           /* 5 x u16 = 10 B (row order for mode 0x11a) */
  .space 2 * (3 + MF_N), 0
 mf_ord_end:
- .balign 4
-mf_split_vals:                    /* 3 x 12 B = 36 B (list-row value list: 关 / 准星 / 分像) */
- .space 12 * 3, 0
-mf_split_vals_end:
- .balign 4
-mf_size_vals:                     /* 3 x 12 B = 36 B (list-row value list: 小 / 中 / 大) */
- .space 12 * 3, 0
-mf_size_vals_end:
  .balign 4
 mf_ofs_vals:                      /* 11 x 12 B = 132 B (list-row value list for -5..+5) */
  .space 12 * 11, 0
 mf_ofs_vals_end:
  .balign 4
-mf_ptitles:                       /* 4 x 8 B = 32 B (picker screen titles) */
+mf_ptitles:                       /* 2 x 8 B = 16 B (picker screen titles) */
  .space 8 * MF_N, 0
 mf_ptitles_end:
- .balign 4
-mf_psplit_vals:                   /* 3 x 12 B = 36 B (picker button labels: 关 / 准星 / 分像) */
- .space 12 * 3, 0
-mf_psplit_vals_end:
- .balign 4
-mf_psize_vals:                    /* 3 x 12 B = 36 B (picker button labels: 小 / 中 / 大) */
- .space 12 * 3, 0
-mf_psize_vals_end:
  .balign 4
 mf_pofs_vals:                     /* 11 x 12 B = 132 B (picker button labels for -5..+5) */
  .space 12 * 11, 0
 mf_pofs_vals_end:
  .balign 4
-mf_phelps:                        /* (3 + 2 + 11 + 3) x 12 B = 228 B (picker help strings per item) */
- .space 12 * 19, 0
+mf_phelps:                        /* (2 + 11) x 12 B = 156 B (picker help strings per item) */
+ .space 12 * 13, 0
 mf_phelps_end:
  .balign 4
-mf_pickers:                       /* 99 x 36 B = 3564 B (stock 96 + our 3 picker screens) */
+mf_pickers:                       /* 98 x 36 B = 3528 B (stock 96 + our 2 picker screens) */
  .space 36 * (96 + MF_N), 0
 mf_pickers_end:
  .balign 4
-mf_g8:                            /* 419 x 24 B = 10056 B (stock 416 + our 3 G8 action links) */
+mf_g8:                            /* 418 x 24 B = 10032 B (stock 416 + our 2 G8 action links) */
  .space 24 * (416 + MF_N), 0
 mf_g8_end:
  .balign 4
-mf_acts:                          /* 6 x 24 B = 144 B (stock 283/566/1892 + our 3 OK actions) */
+mf_acts:                          /* 5 x 24 B = 120 B (stock 283/566/1892 + our 2 OK actions) */
  .space 24 * (3 + MF_N), 0
 mf_acts_end:
  .balign 4
