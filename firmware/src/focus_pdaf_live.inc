@@ -17,8 +17,8 @@
 .set PD_NUM_LAGS,49                  /* 2 * 24 + 1 */
 .set PD_OVERLAP,112                  /* 160 - 2 * 24 */
 .set PD_MIN_CNT,20                   /* minimum valid non-saturated bins */
-.set PD_MIN_ENERGY,256               /* reject flat/blank texture */
-.set PD_MIN_SCORE,250                /* r^2 >= 250/1024 (r >= 0.494, better for wide-open f/0.95) */
+.set PD_MIN_ENERGY,128               /* Test 28: more responsive on soft/low-contrast subjects */
+.set PD_MIN_SCORE,180                /* Test 28: r^2 >= 180/1024 (r >= 0.42, snappier on f/0.95) */
 .set PD_HOLD_LIMIT,8                 /* frames to hold before low-conf */
 
 .set PD_AB,pd_ab+0x40000000
@@ -637,19 +637,12 @@ pdl_in_focus:
  mov (PD_LOCK_ARMED),d0
  cmp 0,d0
  beq pdl_ret
- /* Require 2 consecutive in-focus frames (PD_LOCK_ARMED >= 2) before chime/blink. */
- cmp 2,d0
- bge 1f
- add 1,d0
- mov d0,(PD_LOCK_ARMED)
- bra pdl_ret
-1:
  mov (PD_LOCK_COOLDOWN),d0
  cmp 0,d0
  bne pdl_ret
  clr d0
  mov d0,(PD_LOCK_ARMED)
- mov 45,d0
+ mov 18,d0                           /* Test 28: shorter ~0.8s cooldown for snappier MF */
  mov d0,(PD_LOCK_COOLDOWN)
  mov 6,d0
  mov d0,(FS_GREEN_TICKS)
@@ -667,7 +660,7 @@ pdl_ret:
 
 .balign 4
 pd_thresh_split:
- .long 2,5,9,14,20,28
+ .long 3,6,10,15,21,28
 .balign 4
 pd_ab: .space 384,0
 pd_bb: .space 384,0

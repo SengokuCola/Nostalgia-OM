@@ -17,6 +17,12 @@ sb_done_entry:
  jmp sb_reply_join
 .section .ext13,"ax"
 sb_record_done:
+ movhu (186,a3),d0
+ cmp 4097,d0                      /* a still capture job */
+ bne 1f
+ mov 4,d0
+ mov d0,(FS_BLACKOUT)             /* Test 28: clear IMG2 across still capture blackout */
+1:
  mov (sb_enabled+0x40000000),d0
  cmp 1,d0
  bne sb_resume

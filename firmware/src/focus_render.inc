@@ -115,28 +115,68 @@ sm_bad:
  mov 1,d0
  ret [d2,d3,a2,a3],40
 
-/* screen_reticle (Test 27): copy unmodified live-view 128x128 tile (a0 -> a1) and draw a clean
- * focus sampling reticle (4 corner brackets + center '+') showing the MF PDAF ROI.
- * Color: bright green (0x15962c96) when in focus (FS_GREEN_TICKS > 0 or PD_VALID==1 && PD_SPLIT_S==0),
- * crisp white (0x80eb80eb) otherwise.
- * call screen_reticle,[d2,d3,a2,a3],20: a0 = FS_SRC, a1 = FS_DST -> d0 = 0. */
+/* screen_reticle (Test 28): copy ONLY the box x box center sub-rectangle (48/80/112 px)
+ * from FS_SRC (a0) to FS_DST (a1) at matching (pad, pad) offset (stride 256 B) and draw
+ * crisp 2px corner brackets on the outer edge + tiny center '+' crosshair.
+ * Color: bright green (0x15962c96) when in focus, crisp white (0x80eb80eb) otherwise.
+ * call screen_reticle,[d2,d3,a2,a3],32: a0 = FS_SRC, a1 = FS_DST, d0 = size_code (0=48, 1=80, 2=112)
+ * Returns d0 = 0. */
 .global screen_reticle
 screen_reticle:
- mov a1,a2                         /* save dst base */
- mov 2048,d3                       /* 8192 dwords / 4 = 2048 */
-sr_cpy:
- mov (a0),d0
- mov (4,a0),d1
- mov d0,(a1)
- mov d1,(4,a1)
- mov (8,a0),d0
- mov (12,a0),d1
- mov d0,(8,a1)
- mov d1,(12,a1)
- add 16,a0
- add 16,a1
+ mov a1,(4,sp)                     /* save FS_DST base */
+ /* Map size_code (0/1/2) -> box (48/80/112), pad (40/24/8), arm_pairs (6/9/12), arm_rows (12/18/24). */
+ cmp 0,d0
+ beq sr_sz_s
+ cmp 2,d0
+ beq sr_sz_l
+ mov 80,d1                         /* 中: box = 80, pad = 24 */
+ mov 24,d2
+ mov 9,d3                          /* arm_pairs */
+ bra sr_sz_ok
+sr_sz_s:
+ mov 48,d1                         /* 小: box = 48, pad = 40 */
+ mov 40,d2
+ mov 6,d3
+ bra sr_sz_ok
+sr_sz_l:
+ mov 112,d1                        /* 大: box = 112, pad = 8 */
+ mov 8,d2
+ mov 12,d3
+sr_sz_ok:
+ mov d1,(8,sp)                     /* box (rows = pixels) */
+ mov d2,(12,sp)                    /* pad (rows = pixels) */
+ mov d3,(16,sp)                    /* arm_pairs */
+ /* Compute starting byte offset = pad*256 + pad*2 */
+ mov d2,d0
+ asl 8,d0
+ mov d2,d3
+ asl 1,d3
+ add d3,d0
+ add d0,a0                         /* src row start */
+ add d0,a1                         /* dst row start */
+ mov a1,a2                         /* save dst sub-rect top-left */
+ /* Copy box rows x (box/2) pairs, stride 256 B. */
+ mov d1,d3                         /* row_cnt = box */
+ mov d1,d2
+ lsr 1,d2                          /* pairs_per_row = box / 2 */
+ mov 256,d0
+ mov d2,d1
+ asl2 d1
+ sub d1,d0                         /* row_gap = 256 - box*2 */
+sr_row:
+ mov d2,d1                         /* inner pair count */
+sr_px:
+ mov (a0),a3
+ mov a3,(a1)
+ add 4,a0
+ add 4,a1
+ add -1,d1
+ bne sr_px
+ add d0,a0
+ add d0,a1
  add -1,d3
- bne sr_cpy
+ bne sr_row
+
  /* Choose reticle color: green when in focus, white otherwise. */
  mov 0x80eb80eb,d2                 /* white */
  mov (FS_GREEN_TICKS),d0
@@ -151,24 +191,42 @@ sr_cpy:
 sr_green:
  mov 0x15962c96,d2                 /* green */
 sr_draw:
- /* Horizontal corner bars: y = 28..29 and y = 98..99, px = 8..17 (left) & 46..55 (right). */
+ /* a2 = top-left of box x box sub-rect in FS_DST.
+  * Right-edge pair byte offset = (box/2 - 1) * 4 = box*2 - 4. */
+ mov (8,sp),d1                     /* box */
+ mov d1,d0
+ asl 1,d0
+ add -4,d0                         /* right_x_off = box*2 - 4 */
+ mov (16,sp),d3                    /* arm_pairs */
+ mov d3,a3                         /* arm_pairs */
+ /* Top horizontal brackets (rows 0..1) */
  mov a2,a0
- add 28*256,a0                     /* top outer bar */
  call sr_hbars,[],0
+ /* Bottom horizontal brackets (rows box-2..box-1) */
+ mov (8,sp),d1
+ add -2,d1
+ asl 8,d1
  mov a2,a0
- add 98*256,a0                     /* bottom outer bar */
+ add d1,a0
  call sr_hbars,[],0
- /* Vertical corner bars: y = 28..47 (20 rows) and y = 80..99 (20 rows), px = 8 & 55. */
+ /* Top vertical brackets (rows 0..arm_rows-1, arm_rows = arm_pairs*2) */
  mov a2,a0
- add 28*256,a0
  call sr_vbars,[],0
+ /* Bottom vertical brackets (rows box-arm_rows..box-1) */
+ mov a3,d1
+ asl 1,d1                          /* arm_rows */
+ mov (8,sp),a0
+ sub d1,a0                         /* box - arm_rows */
+ mov a0,d1
+ asl 8,d1
  mov a2,a0
- add 80*256,a0
+ add d1,a0
  call sr_vbars,[],0
- /* Center crosshair '+': horiz y = 63..64, px = 29..34; vert y = 58..69, px = 31..32. */
+ /* Center crosshair '+' at center of 128x128 tile (y=63..64, px=30..33; y=60..67, px=31..32). */
+ mov (4,sp),a2                     /* FS_DST base */
  mov a2,a0
- add 63*256 + 29*4,a0
- mov 6,d3
+ add 63*256 + 30*4,a0
+ mov 4,d3
 sr_ch:
  mov d2,(a0)
  mov d2,(256,a0)
@@ -176,8 +234,8 @@ sr_ch:
  add -1,d3
  bne sr_ch
  mov a2,a0
- add 58*256 + 31*4,a0
- mov 12,d3
+ add 60*256 + 31*4,a0
+ mov 8,d3
 sr_cv:
  mov d2,(a0)
  mov d2,(4,a0)
@@ -185,30 +243,36 @@ sr_cv:
  add -1,d3
  bne sr_cv
  clr d0
- ret [d2,d3,a2,a3],20
+ ret [d2,d3,a2,a3],32
 
-/* sr_hbars: leaf helper, a0 = row start, d2 = color -> draws 2 rows x (px 8..17 and px 46..55). */
+/* sr_hbars: leaf helper, a0 = row start, d0 = right_x_off, d2 = color, a3 = arm_pairs. */
 sr_hbars:
- mov a0,a1
- add 8*4,a1
- mov 10,d3
+ mov a0,a1                         /* left arm cursor */
+ mov a0,d1
+ add d0,d1                         /* right-edge byte addr */
+ mov d1,a0                         /* right arm cursor (moves left) */
+ mov a3,d3                         /* arm_pairs */
 1:
  mov d2,(a1)
  mov d2,(256,a1)
- mov d2,(38*4,a1)
- mov d2,(256+38*4,a1)
+ mov d2,(a0)
+ mov d2,(256,a0)
  add 4,a1
+ add -4,a0
  add -1,d3
  bne 1b
  ret [],0
 
-/* sr_vbars: leaf helper, a0 = row start, d2 = color -> draws 20 rows at px 8 and px 55. */
+/* sr_vbars: leaf helper, a0 = row start, d0 = right_x_off, d2 = color, a3 = arm_pairs. */
 sr_vbars:
  mov a0,a1
- mov 20,d3
+ mov a3,d3
+ asl 1,d3                          /* arm_rows = arm_pairs * 2 */
 1:
- mov d2,(8*4,a1)
- mov d2,(55*4,a1)
+ mov d2,(a1)
+ mov a1,a0
+ add d0,a0
+ mov d2,(a0)
  add 256,a1
  add -1,d3
  bne 1b

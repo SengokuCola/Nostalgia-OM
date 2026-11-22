@@ -5,7 +5,7 @@
 
 .section .ext13,"ax"
 
-/* mf_sync: copy mf_ram[12..23] -> uncached MF_CFG_* mirrors (leaf, uses d0). */
+/* mf_sync: copy mf_ram[12..27] -> uncached MF_CFG_* mirrors (leaf, uses d0). */
 mf_sync:
  mov (mf_ram + 12),d0
  mov d0,(MF_CFG_SPLIT)
@@ -13,6 +13,8 @@ mf_sync:
  mov d0,(MF_CFG_BEEP)
  mov (mf_ram + 20),d0
  mov d0,(MF_CFG_OFS)
+ mov (mf_ram + 24),d0
+ mov d0,(MF_CFG_SIZE)
  ret [],0
 
 /* mf_ld: `call mf_ld,[d2,d3,a2,a3],20`: load 'OM3M' record from M into mf_ram once
@@ -61,9 +63,15 @@ mf_ld:
 2:
  mov (mf_ram + 20),d0
  cmp 11,d0
- bcs 7f
+ bcs 3f
  mov 5,d0
  mov d0,(mf_ram + 20)
+3:
+ mov (mf_ram + 24),d0
+ cmp 3,d0
+ bcs 7f
+ mov 1,d0
+ mov d0,(mf_ram + 24)
  bra 7f
 8:
  mov mf_ram,a0
@@ -75,6 +83,8 @@ mf_ld:
  mov d0,(mf_ram + 16)             /* beep  = 1 (开) */
  mov 5,d0
  mov d0,(mf_ram + 20)             /* ofs   = 5 (0) */
+ mov 1,d0
+ mov d0,(mf_ram + 24)             /* size  = 1 (中: 80x80) */
 7:
  call mf_sync,[],0
 9:
@@ -181,6 +191,8 @@ mf_put:
  mov (a2),d0                      /* cur_val */
  cmp 0,d3
  beq 4f
+ cmp 3,d3
+ beq 4f
  cmp 2,d3
  beq 5f
  /* Binary setting (idx=1, beep: 0=关, 1=开). */
@@ -255,6 +267,8 @@ mf_put:
 mf_cnt:
  cmp MFB + 0,d0
  beq 2f
+ cmp MFB + 3,d0
+ beq 2f
  cmp MFB + 2,d0
  beq 1f
  mov 2,d0
@@ -269,7 +283,10 @@ mf_cnt:
 mf_vbi:
  mov 2,a0
  cmp MFB + 0,d0
+ beq 11f
+ cmp MFB + 3,d0
  bne 10f
+11:
  mov 3,a0
  bra 1f
 10:
@@ -291,7 +308,10 @@ mf_vbi:
 mf_sel:
  mov 2,a0
  cmp MFB + 0,d0
+ beq 11f
+ cmp MFB + 3,d0
  bne 10f
+11:
  mov 3,a0
  bra 1f
 10:
@@ -309,15 +329,15 @@ mf_sel:
 mf_def:
  cmp 0,a1
  beq 1f
- mov 1,d1
+ mov 1,d1                         /* beep=1, size=1 */
  cmp MFB + 0,d0
  bne 20f
- mov 2,d1
+ mov 2,d1                         /* split=2 */
  bra 2f
 20:
  cmp MFB + 2,d0
  bne 2f
- mov 5,d1
+ mov 5,d1                         /* ofs=5 (0) */
 2:
  mov d1,(a1)
  clr d0
@@ -326,13 +346,14 @@ mf_def:
  mov -268435434,d0
  rets
 
-/* ---- UTF-16LE strings for st_get (0x7f70 .. 0x7f7f) ---- */
+/* ---- UTF-16LE strings for st_get (0x7f70 .. 0x7f83) ---- */
  .balign 4
 mf_strs:
  .long mf_s_split, mf_s_beep, mf_s_ofs
  .long mf_s_m5, mf_s_m4, mf_s_m3, mf_s_m2, mf_s_m1
  .long mf_s_0, mf_s_p1, mf_s_p2, mf_s_p3, mf_s_p4, mf_s_p5
  .long mf_s_ret, mf_s_spl
+ .long mf_s_size, mf_s_sz0, mf_s_sz1, mf_s_sz2
 
  .balign 2
 mf_s_split: .hword 0x5206, 0x50cf, 0x5bf9, 0x7126, 0                /* 分像对焦 */
@@ -351,6 +372,10 @@ mf_s_p4:    .hword '+', '4', 0
 mf_s_p5:    .hword '+', '5', 0
 mf_s_ret:   .hword 0x51c6, 0x661f, 0                                /* 准星 */
 mf_s_spl:   .hword 0x5206, 0x50cf, 0                                /* 分像 */
+mf_s_size:  .hword 0x51c6, 0x661f, 0x5c3a, 0x5bf8, 0                /* 准星尺寸 */
+mf_s_sz0:   .hword 0x5c0f, 0                                        /* 小 */
+mf_s_sz1:   .hword 0x4e2d, 0                                        /* 中 */
+mf_s_sz2:   .hword 0x5927, 0                                        /* 大 */
 
 /* ---- Runtime state & cache-line-isolated uncached mirrors ---- */
  .balign 4
@@ -364,18 +389,20 @@ mf_pend:
 mf_cfg_split: .long 2
 mf_cfg_beep:  .long 1
 mf_cfg_ofs:   .long 5
+mf_cfg_size:  .long 1
  .balign 64
  .set MF_CFG_SPLIT, mf_cfg_split + 0x40000000
  .set MF_CFG_BEEP,  mf_cfg_beep  + 0x40000000
  .set MF_CFG_OFS,   mf_cfg_ofs   + 0x40000000
+ .set MF_CFG_SIZE,  mf_cfg_size  + 0x40000000
 
 /* ---- Patched menu tables populated by firmware/build.py ---- */
  .balign 4
-mf_recs:                          /* 6 x 36 B = 216 B (stock 283, 566, 1892 + our 3 rows) */
+mf_recs:                          /* 7 x 36 B = 252 B (stock 283, 566, 1892 + our 4 rows) */
  .space 36 * (3 + MF_N), 0
 mf_recs_end:
  .balign 4
-mf_ord:                           /* 6 x u16 = 12 B (row order for mode 0x11a) */
+mf_ord:                           /* 7 x u16 = 14 B (row order for mode 0x11a) */
  .space 2 * (3 + MF_N), 0
 mf_ord_end:
  .balign 4
@@ -383,11 +410,15 @@ mf_split_vals:                    /* 3 x 12 B = 36 B (list-row value list: 关 /
  .space 12 * 3, 0
 mf_split_vals_end:
  .balign 4
+mf_size_vals:                     /* 3 x 12 B = 36 B (list-row value list: 小 / 中 / 大) */
+ .space 12 * 3, 0
+mf_size_vals_end:
+ .balign 4
 mf_ofs_vals:                      /* 11 x 12 B = 132 B (list-row value list for -5..+5) */
  .space 12 * 11, 0
 mf_ofs_vals_end:
  .balign 4
-mf_ptitles:                       /* 3 x 8 B = 24 B (picker screen titles) */
+mf_ptitles:                       /* 4 x 8 B = 32 B (picker screen titles) */
  .space 8 * MF_N, 0
 mf_ptitles_end:
  .balign 4
@@ -395,12 +426,16 @@ mf_psplit_vals:                   /* 3 x 12 B = 36 B (picker button labels: 关 
  .space 12 * 3, 0
 mf_psplit_vals_end:
  .balign 4
+mf_psize_vals:                    /* 3 x 12 B = 36 B (picker button labels: 小 / 中 / 大) */
+ .space 12 * 3, 0
+mf_psize_vals_end:
+ .balign 4
 mf_pofs_vals:                     /* 11 x 12 B = 132 B (picker button labels for -5..+5) */
  .space 12 * 11, 0
 mf_pofs_vals_end:
  .balign 4
-mf_phelps:                        /* (3 + 2 + 11) x 12 B = 192 B (picker help strings per item) */
- .space 12 * 16, 0
+mf_phelps:                        /* (3 + 2 + 11 + 3) x 12 B = 228 B (picker help strings per item) */
+ .space 12 * 19, 0
 mf_phelps_end:
  .balign 4
 mf_pickers:                       /* 99 x 36 B = 3564 B (stock 96 + our 3 picker screens) */

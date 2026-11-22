@@ -336,6 +336,15 @@ fs_tick:
  call fs_gate,[],0
  cmp 1,d0
  bne fs_tick_clear
+ /* Test 28: hold off IMG2 for a few ticks during/after shutter blackout so stale/corrupt
+  * capture buffers never flash purple/black patterns in the reticle/split area. */
+ mov (FS_BLACKOUT),d0
+ cmp 0,d0
+ ble 1f
+ add -1,d0
+ mov d0,(FS_BLACKOUT)
+ bra fs_tick_clear
+1:
  mov (4,sp),d0
  cmp 1,d0
  beq fs_tft
@@ -546,6 +555,7 @@ fs_use_contrast:
 fs_apply_shift:
  /* Check custom MF Assist menu setting "分像对焦" (MF_CFG_SPLIT: 0=关, 1=准星, 2=分像).
   * Applied here so EVERY overlay path respects it, while fs_pdaf_live + beep already ran. */
+ mov d0,a2                         /* preserve signed shift d0 for fs_set_strength! */
  mov (MF_CFG_SPLIT),d1
  cmp 0,d1
  bne 10f
@@ -553,6 +563,38 @@ fs_apply_shift:
  mov d0,(28,sp)
  jmp fs_failed
 10:
+ /* Test 28: 16-sample YCbYCr sanity check on FS_SRC to reject post-shutter purple/black
+  * garbage tiles (dark luma Y<24 combined with extreme high chroma Cb>224 or Cr>224). */
+ mov FS_SRC,a0
+ clr d2                            /* bad_cnt */
+ mov 16,d3
+11:
+ mov (a0),d0
+ mov d0,a1
+ and 0xff,d0                       /* Y0 */
+ cmp 24,d0
+ bcc 13f
+ mov a1,d0
+ lsr 8,d0
+ and 0xff,d0                       /* Cb */
+ cmp 224,d0
+ bhi 12f
+ mov a1,d0
+ lsr 24,d0                         /* Cr */
+ cmp 224,d0
+ bls 13f
+12:
+ inc d2
+13:
+ add 2048,a0
+ add -1,d3
+ bne 11b
+ cmp 6,d2
+ bcs 14f
+ mov 7,d0
+ mov d0,(28,sp)
+ jmp fs_failed
+14:
  cmp 1,d1
  bne 20f
  mov (16,sp),d0
@@ -561,9 +603,11 @@ fs_apply_shift:
  mov d0,(24,sp)
  mov d0,a1
  mov FS_SRC,a0
- call screen_reticle,[d2,d3,a2,a3],20
+ mov (MF_CFG_SIZE),d0
+ call screen_reticle,[d2,d3,a2,a3],32
  bra fs_mapped
 20:
+ mov a2,d0                         /* restore signed shift d0 for fs_set_strength */
  call fs_set_strength,[d2,d3,a2,a3],32
  mov (16,sp),d0
  asl 15,d0
@@ -592,6 +636,36 @@ fs_request_copy:
  add -1,d2
  bne fs_request_copy
  mov (24,sp),d0
+ /* Test 28: in Reticle mode (MF_CFG_SPLIT==1), crop IMG2 hardware window to the exact
+  * reticle box (小=48, 中=80, 大=112) to drastically shrink the opaque square & lag! */
+ mov 128,a2                        /* box = 128 */
+ mov 0,a3                          /* pad = 0 */
+ mov (MF_CFG_SPLIT),d1
+ cmp 1,d1
+ bne 30f
+ mov (MF_CFG_SIZE),d1
+ cmp 0,d1
+ beq 31f
+ cmp 2,d1
+ beq 32f
+ mov 80,a2                         /* 中: 80x80, pad=24 */
+ mov 24,a3
+ bra 33f
+31:
+ mov 48,a2                         /* 小: 48x48, pad=40 */
+ mov 40,a3
+ bra 33f
+32:
+ mov 112,a2                        /* 大: 112x112, pad=8 */
+ mov 8,a3
+33:
+ mov a3,d1
+ asl 8,d1
+ add d1,d0                         /* + pad*256 */
+ mov a3,d1
+ asl 1,d1
+ add d1,d0                         /* + pad*2 (exact 16-byte aligned!) */
+30:
  lsr 4,d0
  mov d0,(FS_REQ)
  mov (4,sp),d0
@@ -600,22 +674,28 @@ fs_request_copy:
  mov d0,a0
  mov (12,sp),d1
  and 0x7fff,d1
+ mov a3,d2
+ add d2,d1                         /* x + pad */
  asl 16,d1
  mov (0x42c,a0),d0
  and 0xffff0000,d0
  add d1,d0
- or 128,d0
+ mov a2,d1                         /* box width */
+ or d1,d0
  mov d0,(FS_REQ+16)
  mov (12,sp),d1
  mov d1,d2
  and 0x8000,d2
- and 0xffff0000,d1
- mov 128,d3
+ lsr 16,d1
+ mov a3,d3
+ add d3,d1                         /* y + pad */
+ asl 16,d1
+ mov a2,d3                         /* box height */
  cmp 0,d2
  beq fs_tile_area
  lsr 1,d1
  and 0xffff0000,d1
- mov 64,d3
+ lsr 1,d3                          /* box height / 2 for field mode */
  /* Whole-frame pitch stays at 256 bytes. Field scanning steps alternate rows. */
 fs_tile_area:
  mov (0x430,a0),d0
@@ -775,9 +855,11 @@ fs_held: .long 0
 fs_device: .long 0
 fs_ev_latched: .long 0
 fs_measured: .long 0
+fs_blackout: .long 0
 fs_th_samples: .space 88,0
 .set FS_TH_SAMPLES,fs_th_samples+0x40000000
 .set FS_MEASURED,fs_measured+0x40000000
+.set FS_BLACKOUT,fs_blackout+0x40000000
 fs_owner: .space 120,0
 fs_req: .space 52,0
 .balign 128
