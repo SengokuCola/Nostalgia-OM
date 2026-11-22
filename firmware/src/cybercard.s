@@ -22,6 +22,7 @@
  * Locals (36 B): (4) want_slot, (8) fp, (12) pixel_bytes. */
 .global cc_sync
 cc_sync:
+ call mf_ld,[d2,d3,a2,a3],20      /* ensure OM3M loaded before checking MF_CFG_CARD */
  mov (MF_CFG_CARD),d0
  mov (CC_SLOT_UC),d1
  cmp d1,d0
@@ -112,11 +113,17 @@ cc_sync:
  cmp d1,d0
  bne cc_sync_close
 
- /* Close file & publish static cc_buf to image-processing task. */
+ /* Close file & publish static cc_buf to image-processing + live-view tasks. */
  mov (8,sp),a0
  call fclose,[d2,a2,a3],16
  mov cc_buf,a0
  mov a0,(CC_BUF_UC)
+ /* Ensure live-view IMG2 hook is armed when Cyber Card preview is enabled (without needing FOCUS.TXT). */
+ mov (MF_CFG_PREV),d0
+ cmp 0,d0
+ beq cc_sync_ret
+ mov 1,d0
+ mov d0,(FS_ON)
  bra cc_sync_ret
 
 cc_sync_close:
@@ -632,6 +639,337 @@ cc_pair_next:
 
 cc_blend_done:
  ret [d2,d3,a2,a3],48
+
+/* cc_lv_blend: `call cc_lv_blend,[d2,d3,a2,a3],64` from focus_screen.inc (FS_LV_CARD == 1).
+ * Blends cached OM3P card (CC_BUF_UC) at 50% semi-transparent alpha onto captured 128x128
+ * YCbYCr 4:2:2 live-view tile (a0 = FS_SRC, a1 = FS_DST_tile).
+ * Preserves aspect ratio, anchored at bottom-center of the 128x128 tile; transparent pixels
+ * pass live-view background through untouched (no dark box).
+ * Locals (64 B):
+ *   (4)  src_tile, (8) dst_tile, (12) cc_buf, (16) src_w, (20) src_h,
+ *   (24) fit_w (even), (28) fit_h, (32) ox (even), (36) oy, (40) step_x (16.16),
+ *   (44) dy, (48) row_ptr, (52) pair_idx, (56) fx (16.16), (60) bg_word. */
+.global cc_lv_blend
+cc_lv_blend:
+ mov a0,(4,sp)
+ mov a1,(8,sp)
+ mov (CC_BUF_UC),a2
+ cmp 0,a2
+ beq cc_lv_copy_all
+ mov a2,(12,sp)
+ movhu (6,a2),d0                  /* src_w */
+ mov d0,(16,sp)
+ movhu (8,a2),d1                  /* src_h */
+ mov d1,(20,sp)
+ /* max_dim = max(src_w, src_h) in d2. */
+ mov d0,d2
+ cmp d1,d2
+ bcc 1f
+ mov d1,d2
+1:
+ /* fit_w = ((src_w * 128) / max_dim) & ~1, clamped [2..128]. */
+ mov (16,sp),d0
+ asl 7,d0
+ clr d1
+ mov d1,mdr
+ divu d2,d0
+ and 0xfffffffe,d0
+ cmp 2,d0
+ bcc 2f
+ mov 2,d0
+2:
+ cmp 128,d0
+ bls 3f
+ mov 128,d0
+3:
+ mov d0,(24,sp)                   /* fit_w */
+ /* ox = ((128 - fit_w) >> 1) & ~1 */
+ mov 128,d1
+ sub d0,d1
+ lsr 1,d1
+ and 0xfffffffe,d1
+ mov d1,(32,sp)                   /* ox */
+ /* fit_h = (src_h * 128) / max_dim, clamped [2..128]. */
+ mov (20,sp),d0
+ asl 7,d0
+ clr d1
+ mov d1,mdr
+ divu d2,d0
+ cmp 2,d0
+ bcc 4f
+ mov 2,d0
+4:
+ cmp 128,d0
+ bls 5f
+ mov 128,d0
+5:
+ mov d0,(28,sp)                   /* fit_h */
+ /* oy = 128 - fit_h (flush bottom) */
+ mov 128,d1
+ sub d0,d1
+ mov d1,(36,sp)                   /* oy */
+ /* step_x = (src_w << 16) / fit_w (16.16 fixed point; zero divides in inner loop!). */
+ mov (16,sp),d0
+ asl 16,d0
+ clr d1
+ mov d1,mdr
+ mov (24,sp),d1
+ divu d1,d0
+ mov d0,(40,sp)                   /* step_x */
+
+ clr d0
+ mov d0,(44,sp)                   /* dy = 0 */
+cc_lv_row:
+ mov (44,sp),d0
+ cmp 128,d0
+ bcc cc_lv_ret
+ /* a0 = src_tile + dy*256, a1 = dst_tile + dy*256 */
+ mov d0,d1
+ asl 8,d1
+ mov (4,sp),a0
+ add d1,a0
+ mov (8,sp),a1
+ add d1,a1
+ /* If dy < oy: copy whole 64-pair row verbatim. */
+ mov (36,sp),d2                   /* oy */
+ cmp d2,d0
+ bcc cc_lv_row_active
+ mov 64,d3
+cc_lv_cp0:
+ mov (a0),d0
+ mov d0,(a1)
+ add 4,a0
+ add 4,a1
+ add -1,d3
+ bne cc_lv_cp0
+ bra cc_lv_next_row
+
+cc_lv_row_active:
+ /* Compute sy = ((dy - oy) * src_h) / fit_h, clamped < src_h. */
+ sub d2,d0                        /* dy - oy */
+ mov (20,sp),d1                   /* src_h */
+ mulu d1,d0
+ clr d1
+ mov d1,mdr
+ mov (28,sp),d1                   /* fit_h */
+ divu d1,d0                       /* sy */
+ mov (20,sp),d1
+ cmp d1,d0
+ bcs 1f
+ mov d1,d0
+ add -1,d0
+1:
+ /* row_ptr = cc_buf + 16 + sy * (src_w * 4). */
+ mov (16,sp),d1
+ asl2 d1
+ mulu d1,d0
+ add 16,d0
+ mov (12,sp),a2
+ add d0,a2
+ mov a2,(48,sp)                   /* row_ptr */
+
+ /* Left transparent margin: ox/2 pairs copied verbatim. */
+ mov (32,sp),d3
+ lsr 1,d3
+ cmp 0,d3
+ beq cc_lv_mid
+cc_lv_cpl:
+ mov (a0),d0
+ mov d0,(a1)
+ add 4,a0
+ add 4,a1
+ add -1,d3
+ bne cc_lv_cpl
+
+cc_lv_mid:
+ /* Active span: fit_w / 2 pairs blended at 50% alpha (A >> 1). */
+ mov (24,sp),d0
+ lsr 1,d0
+ mov d0,(52,sp)                   /* rem_pairs */
+ clr d0
+ mov d0,(56,sp)                   /* fx = 0 */
+
+cc_lv_pair:
+ mov (52,sp),d0
+ cmp 0,d0
+ beq cc_lv_right
+ /* Sample fg0 at fx >> 16, advance fx += step_x. */
+ mov (56,sp),d0
+ mov d0,d1
+ lsr 16,d1                        /* sx0 */
+ mov (40,sp),d2
+ add d2,d0                        /* fx1 */
+ mov d0,d3
+ lsr 16,d3                        /* sx1 */
+ add d2,d0                        /* fx_next */
+ mov d0,(56,sp)
+ mov (16,sp),d2
+ cmp d2,d1
+ bcs 1f
+ mov d2,d1
+ add -1,d1
+1:
+ cmp d2,d3
+ bcs 2f
+ mov d2,d3
+ add -1,d3
+2:
+ asl2 d1
+ asl2 d3
+ mov (48,sp),a2
+ mov a2,a3
+ add d1,a2                        /* a2 = fg0 */
+ add d3,a3                        /* a3 = fg1 */
+
+ /* Semi-transparent preview alpha: A0 = fg0.A >> 1, A1 = fg1.A >> 1 (max 127 = 50%). */
+ movbu (3,a2),d0
+ lsr 1,d0                         /* A0 */
+ movbu (3,a3),d1
+ lsr 1,d1                         /* A1 */
+ mov d0,d2
+ or d1,d2
+ bne cc_lv_blend_px
+ /* Both transparent -> copy live-view background verbatim! */
+ mov (a0),d0
+ mov d0,(a1)
+ bra cc_lv_pair_next
+
+cc_lv_blend_px:
+ mov (a0),d2
+ mov d2,(60,sp)                   /* bg_word = [Y0, Cb, Y1, Cr] */
+ /* Blend Y0: (bg_Y0*(255-A0) + fg_Y0*A0 + 128) >> 8 */
+ mov d0,d3                        /* A0 */
+ mov 255,d2
+ sub d3,d2
+ mov (60,sp),d0
+ and 0xff,d0
+ mulu d2,d0
+ movbu (0,a2),d2
+ mulu d3,d2
+ add d2,d0
+ add 128,d0
+ lsr 8,d0
+ push_y0_lv:
+ mov d0,d3                        /* save out_Y0 in d3? No, use (52,sp)? Keep out in d3 -> need free reg! */
+ /* Use a0/a1 on stack? Wait: a0/a1 are src/dst! Save a0/a1? No, we have d0..d3, a2, a3!
+  * Let's compute Y0 into (60,sp) wait we still need bg_word! Let's pack directly!
+  * Register plan: d0=scratch, d1=A1, d2=scratch, d3=A0 -> save out_Y0 into a0? NO!
+  * Let's compute Ac, Cb, Cr, Y1 cleanly using a2=fg0, a3=fg1! */
+ mov (60,sp),d2                   /* bg_word */
+ /* Save out_Y0 by replacing low byte of d2? Wait: d2 is bg_word, we don't need bg_Y0 anymore! */
+ and 0xffffff00,d2
+ or d0,d2
+ mov d2,(60,sp)                   /* (60,sp) now has [out_Y0, bg_Cb, bg_Y1, bg_Cr] */
+
+ /* Blend Y1 (d1 = A1) */
+ mov d1,d3                        /* A1 */
+ mov 255,d2
+ sub d3,d2
+ mov (60,sp),d0
+ lsr 16,d0
+ and 0xff,d0                      /* bg_Y1 */
+ mulu d2,d0
+ movbu (0,a3),d2                  /* fg_Y1 */
+ mulu d3,d2
+ add d2,d0
+ add 128,d0
+ lsr 8,d0
+ asl 16,d0
+ mov (60,sp),d2
+ and 0xff00ffff,d2
+ or d0,d2
+ mov d2,(60,sp)                   /* (60,sp) now has [out_Y0, bg_Cb, out_Y1, bg_Cr] */
+
+ /* Chroma alpha Ac = (A0 + A1 + 1) >> 1; pick stronger pixel between a2 and a3. */
+ movbu (3,a2),d0
+ movbu (3,a3),d1
+ cmp d1,d0
+ bcc 3f
+ mov a3,a2                        /* a2 = stronger fg pixel */
+3:
+ lsr 1,d0
+ lsr 1,d1
+ add d1,d0
+ inc d0
+ lsr 1,d0                         /* Ac in d0 */
+ mov d0,d3                        /* d3 = Ac */
+ mov 255,d2
+ sub d3,d2                        /* d2 = invAc */
+
+ /* Blend Cb */
+ mov (60,sp),d0
+ lsr 8,d0
+ and 0xff,d0
+ mulu d2,d0
+ movbu (1,a2),d1
+ mulu d3,d1
+ add d1,d0
+ add 128,d0
+ lsr 8,d0
+ asl 8,d0
+ mov (60,sp),d1
+ and 0xffff00ff,d1
+ or d0,d1
+ mov d1,(60,sp)                   /* (60,sp) now has [out_Y0, out_Cb, out_Y1, bg_Cr] */
+
+ /* Blend Cr (d2 = invAc, d3 = Ac) */
+ mov (60,sp),d0
+ lsr 24,d0
+ mulu d2,d0
+ movbu (2,a2),d1
+ mulu d3,d1
+ add d1,d0
+ add 128,d0
+ lsr 8,d0
+ asl 24,d0
+ mov (60,sp),d1
+ and 0x00ffffff,d1
+ or d0,d1
+ mov d1,(a1)
+
+cc_lv_pair_next:
+ add 4,a0
+ add 4,a1
+ mov (52,sp),d0
+ add -1,d0
+ mov d0,(52,sp)
+ bra cc_lv_pair
+
+cc_lv_right:
+ /* Right transparent margin: (128 - ox - fit_w) / 2 pairs copied verbatim. */
+ mov 128,d3
+ mov (32,sp),d0
+ sub d0,d3
+ mov (24,sp),d0
+ sub d0,d3
+ lsr 1,d3
+ cmp 0,d3
+ ble cc_lv_next_row
+cc_lv_cpr:
+ mov (a0),d0
+ mov d0,(a1)
+ add 4,a0
+ add 4,a1
+ add -1,d3
+ bne cc_lv_cpr
+
+cc_lv_next_row:
+ mov (44,sp),d0
+ inc d0
+ mov d0,(44,sp)
+ bra cc_lv_row
+
+cc_lv_copy_all:
+ mov 8192,d3
+1:
+ mov (a0),d0
+ mov d0,(a1)
+ add 4,a0
+ add 4,a1
+ add -1,d3
+ bne 1b
+cc_lv_ret:
+ ret [d2,d3,a2,a3],64
 
  .balign 4
 cc_path: .asciz "C:\\OM3MOD\\CARD1.BIN"

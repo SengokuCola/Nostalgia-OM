@@ -2997,16 +2997,11 @@ gr_lc:
 /* st_get <- jmp from the string getter 0x610f56a6 (its frame: `call ..,[d2],8`; d0 id -> a0 the UTF-16 string):
  * our own strings, else as stock (language index 0x610f56bd, then the table lookup at 0x610f56ac). */
 st_get:
- cmp ST_MF_SPLIT,d0               /* Test 26: MF Assist custom menu strings (0x7f70..0x7f7d) */
+ cmp ST_MF_SPLIT,d0               /* Test 32: MF Assist + CP custom menu strings (0x7f70..0x7f9e) */
  bcs 89f
  cmp ST_MF_END,d0
  bcc 89f
- mov d0,d2
- add -ST_MF_SPLIT,d2
- asl2 d2
- mov mf_strs,a0
- add d2,a0
- mov (a0),a0
+ call mf_str_get,[d2,d3,a2,a3],20
  ret [d2],8
 89:
  cmp ST_OFF_ZH,d0
@@ -6332,6 +6327,11 @@ fl_k:
 /* fl_has: `call fl_has,[],0`, d0 film j 0..19, a0 the LOOKS.BIN copy -> d0 1 when it has a name or any non-zero
  * byte (as the Control Panel's Empty), else 0. Uses d1, a1. */
 fl_has:
+ /* Test 32: respect custom 20-bit film filter bitmask (MF_CFG_FLMASK). */
+ mov (MF_CFG_FLMASK),d1
+ lsr d0,d1
+ btst 1,d1
+ beq 2f
  mov d0,d1
  asl 4,d1
  mov a0,a1
@@ -6352,6 +6352,7 @@ fl_has:
  inc a1
  add -1,d1
  bne 1b
+2:
  clr d0
  ret [],0
 3:
@@ -16935,6 +16936,7 @@ nm_ex:
  call nm_load,[d2,d3,a2,a3],36
  call ex_live,[d2,d3,a2,a3],48
  call cr_hp,[d2,d3,a2,a3],20      /* crop modes: at a half-press load, cr_on and the crop back (crop.s) */
+ call cc_sync,[d2,d3,a2,a3],36    /* Test 32: load OM3M + preload CARD<n>.BIN at boot if saved ON */
  ret [d2,d3,a2,a3],36
 
 /* ex_live: `call ex_live,[d2,d3,a2,a3],48` at each half-press (the first: sd_load via nm_ex; then lg_pr after the editor's save),

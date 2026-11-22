@@ -336,8 +336,26 @@ fs_tick:
  call fs_gate,[],0
  cmp 1,d0
  bne fs_tick_clear
- /* Test 28: hold off IMG2 for a few ticks during/after shutter blackout so stale/corrupt
-  * capture buffers never flash purple/black patterns in the reticle/split area. */
+ /* Test 32: decide whether IMG2 displays semi-transparent Cyber Card preview (FS_LV_CARD=1)
+  * or Split-Image Focus (FS_LV_CARD=0). Cyber Card preview activates whenever 图卡 != 关,
+  * 图卡预览 == 开, and CARD<n>.BIN is loaded in RAM. */
+ clr d0
+ mov (MF_CFG_CARD),d1
+ cmp 0,d1
+ beq 100f
+ mov (MF_CFG_PREV),d1
+ cmp 0,d1
+ beq 100f
+ mov (CC_BUF_UC),d1
+ cmp 0,d1
+ beq 100f
+ mov 1,d0
+100:
+ mov d0,(FS_LV_CARD)
+ /* Test 28: hold off IMG2 for a few ticks during/after shutter blackout in Split-Image mode.
+  * In Cyber Card preview mode (FS_LV_CARD == 1), skip blackout so Rec View stays visible! */
+ cmp 0,d0
+ bne 1f
  mov (FS_BLACKOUT),d0
  cmp 0,d0
  ble 1f
@@ -454,6 +472,20 @@ fs_captured:
  inc d0
  mov d0,(FS_EV_LATCHED)
 fs_captured_tile:
+ /* Test 32: if Cyber Card live-view preview is active (FS_LV_CARD == 1), blend the cached
+  * anime card at 50% semi-transparency onto FS_SRC -> FS_DST and publish directly on IMG2! */
+ mov (FS_LV_CARD),d0
+ cmp 0,d0
+ beq 101f
+ mov (16,sp),d0
+ asl 15,d0
+ add FS_DST,d0
+ mov d0,(24,sp)
+ mov d0,a1
+ mov FS_SRC,a0
+ call cc_lv_blend,[d2,d3,a2,a3],64
+ jmp fs_mapped
+101:
  mov (FS_FLIP),d0
  cmp 0,d0
  beq fs_try_one
@@ -808,10 +840,12 @@ fs_device: .long 0
 fs_ev_latched: .long 0
 fs_measured: .long 0
 fs_blackout: .long 0
+fs_lv_card:  .long 0
 fs_th_samples: .space 88,0
 .set FS_TH_SAMPLES,fs_th_samples+0x40000000
 .set FS_MEASURED,fs_measured+0x40000000
 .set FS_BLACKOUT,fs_blackout+0x40000000
+.set FS_LV_CARD,fs_lv_card+0x40000000
 fs_owner: .space 120,0
 fs_req: .space 52,0
 .balign 128

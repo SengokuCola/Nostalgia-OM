@@ -109,8 +109,43 @@ cap_base_ok:
  bcs cap_bad
  cmp 2048,d0
  bhi cap_bad
+ /* Test 32: when FS_LV_CARD == 1, position 128x128 capture at 左下 / 居中 / 右下 (matching Cyber Card). */
+ mov (FS_LV_CARD),d1
+ cmp 0,d1
+ beq cap_x_center
+ mov (MF_CFG_POS),d1
+ cmp 0,d1
+ beq cap_x_left
+ cmp 1,d1
+ beq cap_x_center
+ /* 右下: img1_w - 128 - img1_w / 20 */
+ mov d0,d2
+ clr d1
+ mov d1,mdr
+ mov 20,d1
+ divu d1,d2                       /* margin = img1_w / 20 */
+ add -128,d0
+ sub d2,d0
+ cmp 0,d0
+ bge cap_x_ok
+ clr d0
+ bra cap_x_ok
+cap_x_left:
+ /* 左下: img1_w / 20 (clamped <= img1_w - 128) */
+ mov d0,d2
+ add -128,d2
+ clr d1
+ mov d1,mdr
+ mov 20,d1
+ divu d1,d0
+ cmp d2,d0
+ bls cap_x_ok
+ mov d2,d0
+ bra cap_x_ok
+cap_x_center:
  add -128,d0
  lsr 1,d0
+cap_x_ok:
  and 0xfffffffe,d0
  mov d0,(24,sp)
  mov d0,(116,sp)
@@ -126,7 +161,11 @@ cap_full_height:
  cmp 2048,d0
  bhi cap_bad
  add -128,d0
+ mov (FS_LV_CARD),d1
+ cmp 0,d1
+ bne cap_y_bottom                 /* Test 32: flush with bottom edge for Cyber Card preview! */
  lsr 1,d0
+cap_y_bottom:
  mov d0,(28,sp)
  asl 16,d0
  mov (116,sp),d1
