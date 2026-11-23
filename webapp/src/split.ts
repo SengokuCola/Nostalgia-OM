@@ -1,3 +1,4 @@
+// Modified by SengokuCola for the Caduceus for OM-3 fork.
 // Split toning (Caduceus for OM-3 v0.26): a Shadows and a Highlights tint, each one of the camera wheel's 12 colours
 // with a strength. The camera bends its R, G and B gamma curves (firmware st_run, research/splittone/model.py); this
 // module holds the same numbers for the preview and the editor.

@@ -1,5 +1,7 @@
 # LookLab: the Caduceus for OM-3 web app
 
+Modified by SengokuCola for the Caduceus for OM-3 fork.
+
 A static web app for making, previewing and sharing the films of
 [Caduceus for OM-3](https://github.com/androidfanman/caduceus-om3) (the creative profiles the camera lists as FILM
 1–20). Everything runs in the browser: there is no backend, and no photo or look is ever uploaded. The live site is
@@ -59,6 +61,10 @@ npm run dev        # http://localhost:5173
 npm test
 VITE_DEFAULT_CAMERA=om3 npx vite build   # static site in dist/; copy it to ../looklab/ for the live site
 ```
+
+Before publishing LookLab, sync
+`public/LICENSE` and `public/NOTICE` from the repository root. Vite includes these files in the static
+build alongside the existing font licences and sample-photo credits.
 
 ## Self-host on a NAS (Docker)
 

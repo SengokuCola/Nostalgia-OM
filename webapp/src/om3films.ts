@@ -1,3 +1,4 @@
+// Modified by SengokuCola for the Caduceus for OM-3 fork.
 // The film sims for the OM-3: our own looks, designed by hand from public descriptions of each film and tuned by eye
 // (scripts/films.py makes src/data/om3films.json from short recipes). Each becomes an ordinary OM-3 look: Hue / Light
 // / Saturation per sector, Highlights / Shadows / Midtones, Blacks / Whites, Contrast, Sharp and the WB shift. No grain,
