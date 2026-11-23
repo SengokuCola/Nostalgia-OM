@@ -77,7 +77,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    if: github.event_name == 'push' && github.repository == 'SengokuCola/nostalgia'
+    if: github.event_name == 'push' && github.repository == 'SengokuCola/Nostalgia-OM'
     needs: build
     runs-on: ubuntu-24.04
     permissions:

@@ -2,7 +2,7 @@
 
 **Nostalgia 怀旧** 为 **OM SYSTEM OM-3（原厂固件 1.1）** 提供 20 个胶片槽、机内色彩编辑和配方导入。拍摄时可以用 Film Box 在取景画面里切换胶片，用分像辅助手动对焦，也可以预览 Cyber Card 图卡并叠加到 JPEG 照片上。部分机内菜单和 LookLab 提供简体中文界面。
 
-[下载 Nostalgia](https://github.com/SengokuCola/nostalgia/releases) · [使用指南](docs/USING.md) · [报告问题](https://github.com/SengokuCola/nostalgia/issues)
+[下载 Nostalgia](https://github.com/SengokuCola/Nostalgia-OM/releases) · [使用指南](docs/USING.md) · [报告问题](https://github.com/SengokuCola/Nostalgia-OM/issues)
 
 可以在线调整胶片配方，或从源码在本地运行中文版。[在线 LookLab](https://androidfanman.github.io/caduceus-om3/looklab/) · [LookLab 源码](webapp/README.md)
 

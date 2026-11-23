@@ -4,7 +4,7 @@ This file was updated by SengokuCola for the fork.
 
 ## Fork release builds
 
-Nostalgia starts at `v0.1.0`, with the Git tag `fork-v0.1.0`. The **Nostalgia Release** workflow uses GNU binutils 2.42 for `mn10300-elf` on Ubuntu 24.04. A manual run uploads `nostalgia-<version>.zip` and its checksum as an Actions artifact. Pushing the corresponding tag publishes a prerelease in `SengokuCola/nostalgia`. The firmware version screen allows at most nine characters after the leading `v`.
+Nostalgia starts at `v0.1.0`, with the Git tag `fork-v0.1.0`. The **Nostalgia Release** workflow uses GNU binutils 2.42 for `mn10300-elf` on Ubuntu 24.04. A manual run uploads `nostalgia-<version>.zip` and its checksum as an Actions artifact. Pushing the corresponding tag publishes a prerelease in `SengokuCola/Nostalgia-OM`. The firmware version screen allows at most nine characters after the leading `v`.
 
 For a local build, install `python3-pil`, `python3-numpy`, `python3-scipy`, `fonts-dejavu-extra` and `fonts-noto-cjk`. Set `OM3_TOOLCHAIN` to the binutils build directory and `OM3_STOCK` to the official OM-3 1.1 firmware file. Then run:
 
