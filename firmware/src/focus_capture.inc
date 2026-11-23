@@ -54,6 +54,9 @@ cap_snapshot:
  mov (64,sp),d0
  and 0x20,d0
  beq cap_bad
+ mov (FS_LV_CARD),d0
+ cmp 0,d0
+ bne cap_geometry_only            /* IMG2 overlays only depend on visible IMG1 area. */
  mov (84,sp),d0
  cmp 0,d0
  bne cap_bad
@@ -100,6 +103,7 @@ cap_base_ok:
  cmp 0xa0000000,d0
  bcc cap_bad
  mov d0,(16,sp)
+cap_geometry_only:
  /* Panel-relative centre, no porch in the source coordinate. */
  mov 5,d0
  mov d0,(132,sp)
@@ -129,8 +133,34 @@ cap_base_ok:
  cmp 0,d0
  beq cap_sz_done
  /* dst_h = (img1_h * 38 / 100) & ~1, clamped [128 .. min(img1_w, img1_h)]. */
- mov a3,d0
  mov 38,d2
+ cmp 2,d0
+ bne cap_size_percent
+ /* Draw at native texel pitch and reserve at least half of IMG1 for the scene. */
+ mov a2,d2
+ lsr 1,d2
+ cmp 256,d2
+ bls 1f
+ mov 256,d2
+1:
+ mov a3,d0
+ lsr 1,d0
+ add a3,d0                         /* width <= 1.5 * height */
+ cmp d2,d0
+ bcc 2f
+ mov d0,d2
+2:
+ and 0xfffffffe,d2
+ mov d2,(FS_LV_W)
+ mov d2,d0
+ mov 9,d1
+ mulu d1,d0
+ lsr 4,d0
+ and 0xfffffffe,d0
+ mov d0,(FS_LV_H)
+ bra cap_position
+cap_size_percent:
+ mov a3,d0
  mulu d2,d0
  clr d2
  mov d2,mdr
@@ -156,13 +186,14 @@ cap_base_ok:
 cap_sz_done:
  mov d2,(FS_LV_W)
  mov d2,(FS_LV_H)
+cap_position:
  /* Compute X using dst_w (d2) and img1_w (a2). */
  mov a2,d0                        /* img1_w */
  mov (FS_LV_CARD),d1
  cmp 0,d1
  beq cap_x_center
  cmp 2,d1
- beq cap_x_center
+ beq cap_x_left
  mov (MF_CFG_POS),d1
  cmp 0,d1
  beq cap_x_left
@@ -201,10 +232,11 @@ cap_x_ok:
  mov d0,(116,sp)
  /* Compute Y using dst_h (d2) and img1_h (a3). */
  mov a3,d0                        /* img1_h */
+ mov (FS_LV_H),d2
  sub d2,d0
  mov (FS_LV_CARD),d1
- cmp 0,d1
- bne cap_y_bottom                 /* flush with bottom edge for Cyber Card preview! */
+ cmp 1,d1
+ beq cap_y_bottom                 /* flush with bottom edge for Cyber Card preview! */
  lsr 1,d0
 cap_y_bottom:
  mov d0,(28,sp)
@@ -212,6 +244,13 @@ cap_y_bottom:
  mov (116,sp),d1
  or d0,d1
  mov d1,(116,sp)
+ mov (FS_LV_CARD),d0
+ cmp 0,d0
+ beq cap_sample_source
+ /* Card and picker are independent surfaces. Neither samples IMG1. */
+ mov (136,sp),d0
+ bra cap_return_geometry
+cap_sample_source:
  mov 6,d0
  mov d0,(132,sp)
  mov (96,sp),d0
@@ -333,16 +372,6 @@ cap_bound:
  mov (124,sp),d1
  cmp d1,d0
  bne cap_bad
- /* Test 33: when FS_LV_CARD == 1, scale row step (36,sp) by dst_h / 128 so 128 rows cover dst_h! */
- mov (FS_LV_CARD),d0
- cmp 0,d0
- beq 1f
- mov (36,sp),d0
- mov (FS_LV_H),d1
- mulu d1,d0
- lsr 7,d0
- mov d0,(36,sp)
-1:
  clr d0
  mov d0,(140,sp)
  mov (136,sp),d0
@@ -393,13 +422,6 @@ cap_window:
  mov (24,sp),d2
  mov (32,sp),d0
  mul d0,d2
- mov (FS_LV_CARD),d1
- cmp 0,d1
- beq 1f
- mov (FS_LV_W),d1
- mulu d1,d0
- lsr 7,d0                         /* scaled horizontal step = hstep * dst_w / 128 */
-1:
  asl 1,d0
  mov d0,(128,sp)
  mov (4,sp),a1
@@ -475,6 +497,7 @@ cap_recheck_next:
  mov (132,sp),d1
  cmp 14,d1
  beq cap_rotated
+ cap_return_geometry:
  mov (116,sp),d1
  cmp 1,d0
  bne cap_success

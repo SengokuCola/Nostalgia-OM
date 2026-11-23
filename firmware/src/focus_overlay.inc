@@ -123,7 +123,9 @@ ov_write:
  mov (20,a1),d2
  mov d2,d1
  and 65535,d1
- cmp 64,d1
+ mov (FS_LV_H),d0
+ lsr 1,d0
+ cmp d0,d1
  bne ov_restore_field
  mov (0x720,a3),d1
  and 0x01000000,d1

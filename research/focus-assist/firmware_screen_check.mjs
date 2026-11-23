@@ -11,9 +11,10 @@ const sy=JSON.parse(fs.readFileSync(SYMS));
 const hash=x=>createHash('sha256').update(x).digest('hex');
 const words=x=>hash(new Uint8Array(Uint32Array.from(x).buffer));
 const assert=(v,m)=>{if(!v)throw Error(m);};
+class FilmDisplayLab extends D.DisplayLab { static INSN_LIMIT=100000000; }
 const out=[];
 for(const device of ['tft','evf']){
- const lab=new D.DisplayLab(labEnv({rom:expandImage(fs.readFileSync(BUILD+'/main.bin'))}));
+ const lab=new FilmDisplayLab(labEnv({rom:expandImage(fs.readFileSync(BUILD+'/main.bin'))}));
  try{
   lab.start();
   // Standalone DISPLAY fixture after loader and service initialization.
@@ -196,6 +197,110 @@ for(const device of ['tft','evf']){
    tick();
    assert(get('FS_OWNER')===0,'stale ZAF remained visible');
    put('PH_MODE',0);
+  }
+  if (sy.FB_SLOT) {
+   frame(640,480,640,480,0);
+   // The lab has no stock attach for custom IMG2. Check its actual DMA source and taps.
+   const composeTile=()=>{
+    const req=sy.FS_REQ, word=i=>lab.sim.u32(req+i*4);
+    const w=word(4)&65535,h=word(5)&65535;
+    const picker=get('FS_LV_CARD')===2, pitch=32, lastX=picker?255:127,lastY=picker?143:127;
+    assert(word(0)*16===(picker?sy.FS_SRC:sy.FS_DST) &&
+     word(1)===pitch && word(2)===pitch,'IMG2 buffer');
+    assert(word(6)===17 && Math.ceil((w-1)*word(7)/4096)===lastX &&
+     Math.ceil((h-1)*word(9)/4096)===lastY,'IMG2 scaler span');
+    if(!picker){
+     // The emulator implements YC422, not the stock colour wheel's RGBA format.
+     // Verify the native descriptor and actual source pixels independently.
+     assert(word(3)===3 && word(12)===0x1100,'pixel-alpha plane disabled');
+     assert(lab.sim.u32(sy.FS_DST)===0 && lab.sim.u32(sy.FS_DST+8*4)===0x80808080 &&
+       lab.sim.u32(sy.FS_DST+16*4)===0x808080ff,'transparent, half and opaque card pixels');
+     assert(lab.sim.u32(sy.FS_DST+24*4)===0xfe0000c0,'red channel or alpha packing');
+     return;
+    }
+    const view=lab.compose(device);
+    assert((view.header.drawn&2) && view.errors.every(e=>e.source==='harness' &&
+     e.name==='IMG_EDGE_UNKNOWN' && e.offset===0x504 && e.value===1),JSON.stringify(view.errors));
+    return view;
+   };
+   const card=Buffer.alloc(16+16*16*4,128);
+   card[19]=0;card[27]=255;card.set([76,85,255,192],28);
+   card.writeUInt16LE(16,6);card.writeUInt16LE(16,8);
+   put('CC_BUF_UC',lab.alloc(card,16));put('MF_CFG_CARD',1);put('MF_CFG_PREV',1);
+   if(device==='tft'){
+    const h=lab.alloc(Buffer.alloc(4),4), rec=sy.cc_rec_sample+0x40000000;
+    lab.sim.word(h,0x60f147f8);let calls=0;
+    lab.hook(sy.cc_stock_recdisp-IMAGE_BASE+0x50000000,(hle,r)=>{
+     assert(r.a0===h && r.a1===h,'capture-review handle');
+     calls++;hle.finish(r,{d0:17});
+    },'native capture-review submit');
+    const submit=()=>call('cc_recdisp',{a0:h,a1:h},[0x30,24]);
+    put('FS_BLACKOUT',4);
+    lab.sim.write(sy.lg_on,Uint8Array.of(2));submit();
+    assert(get('FS_OWNER')===1 && get('CC_REVIEW') && get('FS_BLACKOUT')===4,'review must publish during blackout with debug off');
+    composeTile();
+    call('fs_stop',{d0:mask},[0xf0,64]);
+    // Replay REC_DISP's pending TFT DMAEN (IMG1 plus native OSD, IMG2 cleared).
+    lab.sim.word(0x9bb90060,0x27);
+    lab.update();
+    assert(get('FS_OWNER')===1 && (lab.vsc.bank(ch).get('DMAEN')&16),'review lost after histogram stop and stock commit');
+    assert(!lab.sim.u32(rec),'disabled capture-review probe');
+    lab.sim.write(sy.lg_on,Uint8Array.of(1));submit();
+    assert(calls===2 && lab.sim.u32(rec)===1 && lab.sim.u32(rec+4)===0x60f147f8,'capture-review diagnostic');
+    assert(lab.sim.u32(rec+72)===bank.get('IMG1DMASADR') &&
+     lab.sim.u32(rec+192)===bank.get('IMG1DMASADR'),'capture-review TFT snapshots');
+   }
+   put('CC_REVIEW',0);put('FS_BLACKOUT',0);
+   put('MF_CFG_POS',2);
+   for(let n=0;n<3;n++){tick();lab.update();lab.compose(device);}
+
+   assert(get('FS_OWNER')===1,'card acquisition');composeTile();
+   const osdBefore=lab.vsc.bank(ch).get('DMAEN')&15;
+   const focusStrength=lab.sim.u32(sy.fs_strength+0x40000000);
+   const focusMap=hash(lab.sim.read(sy.FS_MAP,16384));
+   put('FB_SLOT',1);
+   const before=get('FS_FRAMES');
+   const previousTile=sy.FS_DST+get('FS_FLIP')*32768;
+   const original=hash(lab.sim.read(previousTile,32768));
+   tick();
+   if(!get('FS_OWNER'))assert(hash(lab.sim.read(previousTile,32768))===original,'latched card was overwritten');
+   for(let n=0;n<3 && !get('FS_OWNER');n++){lab.update();lab.compose(device);tick();}
+   assert(get('FS_OWNER')===1 && get('FS_FRAMES')===before+1,'film box missing on '+device);
+   assert((lab.vsc.bank(ch).get('DMAEN')&15)===0 && get('FB_OSD_CHANNEL')===ch,'picker HUD mask '+[lab.vsc.bank(ch).get('DMAEN'),get('FB_OSD_CHANNEL'),ch]);
+   const first=hash(lab.sim.read(sy.FS_SRC,256*144*2));
+   composeTile();
+   const areaX=lab.sim.u32(sy.FS_REQ+16);
+   const areaY=lab.sim.u32(sy.FS_REQ+20);
+   const sourceX=bank.get('IMG1AREA1')>>>16,sourceY=bank.get('IMG1AREA2')>>>16;
+   assert((areaX&65535)===256 && (areaY&65535)===144,'picker size');
+   assert((areaX>>>16)-sourceX===32 && (areaY>>>16)-sourceY===168,'picker left placement');
+   assert(get('FB_PAINTED')===1,'first high-resolution page');
+   put('FB_SLOT',2);
+   tick();
+   assert(lab.sim.u32(sy.FS_REQ)*16===sy.FS_MAP && hash(lab.sim.read(sy.FS_SRC,256*144*2))===first,
+    'holding frame must retire the scanout without overwriting it');
+   for(let n=0;n<4 && get('FB_PAINTED')!==2;n++){
+     assert(get('FS_OWNER')===1 && (lab.vsc.bank(ch).get('DMAEN')&31)===16,'stock HUD flashed while dialing on '+device);
+     lab.update();lab.compose(device);tick();
+   }
+   assert(get('FB_PAINTED')===2,'film box did not redraw on '+device);
+   assert(hash(lab.sim.read(sy.FS_SRC,256*144*2))!==first,'unchanged film box');
+   call('fb_close',{},[0xf0,24]);
+   assert(!get('FB_SLOT') && !get('FS_OWNER'),'film box did not release '+device);
+   assert((lab.vsc.bank(ch).get('DMAEN')&15)===osdBefore && !get('FB_OSD_CHANNEL'),'restore HUD');
+   lab.update();lab.compose(device);tick();assert(get('FS_LV_CARD')===1 && get('FS_OWNER')===1,'card resume');
+   call('fs_set_strength',{d0:focusStrength},[0xf0,32]);
+   assert(hash(lab.sim.read(sy.FS_MAP,16384))===focusMap,'focus map after picker close');
+   call('fs_stop',{d0:mask},[0xf0,64]);
+   assert(!get('FS_OWNER'),'stale card survived capture stop');
+   put('FS_BLACKOUT',2);tick();tick();assert(!get('FS_OWNER'),'card in shutter blackout');
+   const invalidRow=Buffer.alloc(640*2);
+   for(let x=0;x<invalidRow.length;x+=4)invalidRow.set([8,250,8,250],x);
+   lab.bus_rows(source[0].address,D.LV_STRIDE,invalidRow.length,480,Array(480).fill(invalidRow));
+   tick();assert(get('FS_OWNER')===1,'card lost on changing background');composeTile();
+   frame(640,480,640,480,3);
+   tick();assert(get('FS_OWNER')===1,'card after shutter blackout');
+   put('MF_CFG_CARD',0);call('fs_stop',{d0:mask},[0xf0,64]);
   }
   // Changed epoch during render: force the race at the entry of our own renderer.
   const framesBeforeRace=get('FS_FRAMES');

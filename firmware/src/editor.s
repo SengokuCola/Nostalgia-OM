@@ -1,3 +1,4 @@
+/* Modified by SengokuCola for the Caduceus for OM-3 fork. */
 /* v0.24 film test 7 (owner): the wheel's Film and Extras pages are hidden (their code stays; 1 brings them back) */
  .set W_FILM, 0
  .set W_EXTRAS, 0
@@ -230,7 +231,9 @@ hl_pp_cb:                         /* tools/test/emu_test.py enters here */
  mov (SEC_READY),d0               /* section 6 (slot_any) ready? Before it STATE is 0: the same exit */
  and 0x20,d0
  beq 8f                           /* short, so the gate stays right before the call; Z still set at 8 */
- call slot_any,[d2,d3,a2],16      /* P valid and some COLOR slot with H/L on (+31 & 2)? Else no getter call */
+ call fb_color_source,[d2,d3,a2],16
+ cmp 2,d0
+ beq hl_values
  cmp 0,d0
 8:
  beq hl_out
@@ -253,6 +256,7 @@ hl_pp_cb:                         /* tools/test/emu_test.py enters here */
  movbu (31,a1),d0
  btst 2,d0
  beq hl_out                       /* H/L not enabled for this slot */
+hl_values:
  clr d1
 hl_v:                             /* all 24 values -7..7 before any write */
  movbu (d1,a1),d0
@@ -2997,6 +3001,11 @@ gr_lc:
 /* st_get <- jmp from the string getter 0x610f56a6 (its frame: `call ..,[d2],8`; d0 id -> a0 the UTF-16 string):
  * our own strings, else as stock (language index 0x610f56bd, then the table lookup at 0x610f56ac). */
 st_get:
+ cmp FB_TITLE,d0
+ bne 1f
+ mov fb_title,a0
+ ret [d2],8
+1:
  cmp ST_MF_SPLIT,d0               /* Test 32: MF Assist + CP custom menu strings (0x7f70..0x7f9e) */
  bcs 89f
  cmp ST_MF_END,d0
@@ -11796,6 +11805,12 @@ lg_pr:                            /* jmp from pr_ed, pr_hook's frame: as `call e
  clr d0
 1:
  movbu d0,(hl_hp + 0x40000000)
+ cmp 0,d0
+ beq 2f
+ clr d0
+ mov d0,(CC_REVIEW)
+ call fb_close,[d2,d3,a2,a3],24
+2:
  clr d0                           /* L1: the first shutter event releases the hooks held since the early load */
  movbu d0,(el_hold)
  call lg_pre,[d2,d3,a2,a3],36
@@ -16456,12 +16471,12 @@ ar_vp:                            /* the same for the ✥ choice screen's pictur
 ar_list:                          /* the arrows' functions (codes; their names: research/NOTES.md "v0.27 arrow keys") */
  .short 3348, 3349, 3350, 3351, 3456, 44, 22, 9, 84, 6, 3341, 3437, 3428, 157, 3462, 1356, 266, 2136, 682, 1468
  .short 475, 90, 140, 216, 404, 856, 69, 88, 1327, 3450, 1712, 1175, 85, 3297, 567, 1898, 106, 2133, 36, 3408
- .short 452, 1108, 3279, 16, 3265, 3409, 425, 3200
+ .short 452, 1108, 3279, 16, 3265, 3409, 425, FB_CODE, 3200
 ar_lend:
  .balign 4
 ar_lab:                           /* value labels {code, string << 16 | type, ptr} for ar_list (build.py, from the Fn
                                    * buttons' and the arrows' label lists) */
- .space 12 * 48
+ .space 12 * 49
 ar_rows:                          /* the stills Button Function rows (build.py) */
  .space 2 * 16
  .balign 4
@@ -16644,8 +16659,7 @@ ex_fill:
  blt 80f
  mov d0,d3
  mov (LPTR,a2),a0
- call fl_has,[],0
- cmp 0,d0
+ cmp 0,a0                        /* The picker visibility filter does not change the applied film. */
  beq 80f
  mov ex_txt,a1                    /* "FILM n Name" */
  mov ex_film,a0
@@ -22935,11 +22949,14 @@ bl_v:                             /* the value */
  .include "newfilms.s"            /* #86: a new film set made again in every mode (ext13) */
 
  .include "focus_probe.inc"
+ .include "filmbox.s"
  .include "mfmenu.s"
  .include "focus_screen.inc"
  .include "shutter_beep.inc"
  .include "focus_drive.inc"
  .include "focus_pdaf_unlock.inc"
 
+ .ifndef OM3_NO_SUNLIT
  .include "sunlit.s"
+ .endif
  .include "cybercard.s"

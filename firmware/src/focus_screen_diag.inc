@@ -28,6 +28,15 @@ fs_diag_text:
  mov 1,d2
  call fs_diag_words,[d2,d3,a2,a3],24
  LGS fs_diag_title
+ mov cc_rec_sample+0x40000000,a2
+ mov (a2),d0
+ cmp 0,d0
+ beq 8f
+ LGS cc_rec_label
+ mov 62,d3
+ clr d2
+ call fs_diag_words,[d2,d3,a2,a3],24
+8:
  LGS fs_diag_state_label
  mov fs_diag_states,a2
  mov 8,d3
@@ -186,6 +195,7 @@ fs_diag_regs:
  .long 0x60,0x390,0x3a8,0x3c0,0x3d8,0x400,0x42c,0x430
  .long 0x4f0,0x4f4,0x4f8,0x4fc,0x500,0x394,0x404,0x624
 fs_diag_title: .asciz "\r\nSCREEN VISUAL TEST 2 - diagnostics (hex words)\r\n"
+cc_rec_label: .asciz "REC_DISP count type pre/post EVF TFT: "
 fs_miss_label: .asciz "EVF_MISS address changed held: "
 fs_latched_label: .asciz "EVF source changes while original stayed latched: "
 fs_focus_label: .asciz "FOCUS fine coarse split samples: "

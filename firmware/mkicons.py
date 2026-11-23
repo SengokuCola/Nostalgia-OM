@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Modified by SengokuCola for the Caduceus for OM-3 fork.
 """Left-column pictures for our Picture Mode rows (v0.23), drawn from scratch (DejaVu Sans Condensed, a free font) in
 the camera's OSD text style (palette 0 clear, 7 dark edge 2 px, 10 white fill, 11 / 12 soft fill); no camera graphics
 are copied.

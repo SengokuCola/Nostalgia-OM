@@ -1,4 +1,5 @@
 # Using Caduceus for OM-3
+<!-- Modified by SengokuCola for the Caduceus for OM-3 fork. -->
 
 This page is for **v0.40.2**, the latest version. Not installed yet? Start with [Install](INSTALL.md).
 
@@ -19,6 +20,8 @@ This page is for **v0.40.2**, the latest version. Not installed yet? Start with 
 <!-- picture: Picture Mode list with FILM 1 (Portra 400) selected -->
 
 ## Choosing a film
+
+In the Film Box test build, open the still-photo **Button Function** settings, set the arrow pad to **Direct Function**, and assign **Film Box** to an arrow key. With the creative dial on **COLOR**, press that key during live view to open the film picker. The picker temporarily hides the shooting HUD. Each film has a cartridge icon and a short description; unknown names show a custom-recipe label. Turn either dial to browse, press **OK** to apply the displayed film, or half-press the shutter to return to shooting with your previous film.
 
 1. Turn the creative dial to **COLOR**.
 2. Open **Picture Mode** (from the super control panel or the menu).
@@ -128,7 +131,7 @@ white balance the last film left.
 
 ## The film in your photos
 
-Every JPEG taken on a FILM keeps the film in its EXIF: the name (Image Description, for example `FILM 9 Velvia 50`) and
+Applying a film in Film Box uses the same EXIF path as selecting it in Picture Mode. Browsing and cancelling keeps the previous film. Every JPEG taken on a FILM keeps the film in its EXIF: the name (Image Description, for example `FILM 9 Velvia 50`) and
 the whole recipe as a short code in the User Comment: the film as it was set when you took the photo, with your
 changes on the camera and the white balance. Open the JPEG in LookLab (**Open...**), or paste the
 comment with **Paste link**, and the film is added to your films. Photos on COLOR 1–4 with your own settings, CRT, ART

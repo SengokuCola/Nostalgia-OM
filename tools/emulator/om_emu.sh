@@ -1,4 +1,5 @@
 # The om-emu pin, shared by research/setup.sh and tools/emulator/bump_om_emu.sh. Source it with REPO and EMU set.
+# Modified by SengokuCola for the Caduceus for OM-3 fork.
 EMU_GIT=https://github.com/flatpanda/om-emu
 EMU_PIN=$REPO/tools/emulator/om-emu.pin   # "COMMIT YYYY-MM-DD": the om-emu commit to use, and when upstream was last checked
 EMU_MAX_AGE_DAYS=7                        # as tools/test/emu_test.py

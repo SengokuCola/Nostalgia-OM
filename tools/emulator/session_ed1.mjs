@@ -1,3 +1,4 @@
+// Modified by SengokuCola for the Caduceus for OM-3 fork.
 // Editor test 1 in a full om-emu E147 play session (our script).
 //   OM_EMU_MODEL=E147 node session_ed1.mjs EMU_DIR IMAGE CARD.omsd OUT.json SAVE.omsd 'tokens...'
 // NV_FILE=PATH keeps the camera's settings between runs (S-NVRAM). Tokens: s1 (half-press click), ok/down/info/... (key click), main+N / sub+N (dials), wait. After each token: STATE,

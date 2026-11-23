@@ -175,9 +175,15 @@ fs_filter_state: .space 12
 /* Rebuild displaced pair indices only when the measured band changes.
  * White rings, seam and untouched pixels keep their generated indices. */
 fs_set_strength:
+ mov (fs_map_dirty+0x40000000),d1
+ cmp 0,d1
+ bne 1f
  mov (fs_strength+0x40000000),d1
  cmp d0,d1
  beq fs_strength_done
+1:
+ clr d1
+ mov d1,(fs_map_dirty+0x40000000)
  mov d0,(fs_strength+0x40000000)
  mov d0,(4,sp)
  mov d0,d1
@@ -190,11 +196,21 @@ fs_set_strength:
  clr d3
 fs_shape_pair:
  movbu (a2),d2
+ btst 1,d3
+ beq 1f
+ lsr 4,d2
  inc a2
- cmp 1,d2
- bcs fs_shape_next
+1:
+ and 15,d2
+ mov d3,d1
+ cmp 0,d2
+ beq fs_shape_write
  cmp 4,d2
- bhi fs_shape_next
+ bls 2f
+ mov 65540,d1
+ sub d2,d1
+ bra fs_shape_write
+2:
  mov (4,sp),d0
  cmp 2,d2
  bls fs_shape_horizontal

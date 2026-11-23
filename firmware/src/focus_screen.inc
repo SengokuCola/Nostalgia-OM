@@ -34,19 +34,56 @@
 1:
  .endm
 fs_update_entry:
- FS_ARMED fs_update,d2
+ mov (SEC_READY),d2
+ and 32,d2
+ beq 1f
+ jmp fs_update_ready
+1:
  jmp fs_stock_update
+.section .ext13,"ax"
+fs_update_ready:
+ mov (FS_ON),d2
+ cmp 1,d2
+ bne 1f
+ jmp fs_update
+1:
+ jmp fs_stock_update
+.section .ext1,"ax"
 fs_stop_entry:
  /* Stock stop immediately clears d1. The unarmed path retains the native
   * frame, return address and original caller's arguments. */
- FS_ARMED fs_stop_armed,d1
+ mov (SEC_READY),d1
+ and 32,d1
+ beq 1f
+ jmp fs_stop_ready
+1:
  jmp fs_stock_stop
+.section .ext13,"ax"
+fs_stop_ready:
+ mov (FS_ON),d1
+ cmp 1,d1
+ bne 1f
+ jmp fs_stop_armed
+1:
+ jmp fs_stock_stop
+.section .ext1,"ax"
 fs_th_entry:
- FS_ARMED fs_th,d0
+ mov (SEC_READY),d0
+ and 32,d0
+ beq fs_th_entry_stock
+ jmp fs_th_entry_ready
+fs_th_entry_stock:
  mov a0,a3
  mov 2,d0
  call fs_th_check,[d2,a2,a3],16
  jmp fs_th_resume
+.section .ext13,"ax"
+fs_th_entry_ready:
+ mov (FS_ON),d0
+ cmp 1,d0
+ bne fs_th_entry_stock
+ jmp fs_th
+.section .ext1,"ax"
 fs_commit_image_entry:
  FS_ARMED fs_commit_image,d2
  mov (4,sp),a0
@@ -58,10 +95,21 @@ fs_commit_image_entry:
 1:
  jmp fs_native_skip
 fs_commit_level_entry:
- FS_ARMED fs_commit_level,d3
+ mov (SEC_READY),d3
+ and 32,d3
+ beq fs_commit_level_entry_stock
+ jmp fs_commit_level_entry_ready
+fs_commit_level_entry_stock:
  mov (4,a3),a0
  and d0,d2
  jmp fs_native_level
+.section .ext13,"ax"
+fs_commit_level_entry_ready:
+ mov (FS_ON),d3
+ cmp 1,d3
+ bne fs_commit_level_entry_stock
+ jmp fs_commit_level
+.section .ext1,"ax"
 .balign 4
 fs_on: .long 0                    /* reset with section one; fs_arm is the only writer */
 .section .ext13,"ax"
@@ -101,17 +149,15 @@ fs_stop:
  cmp 1,d0
  bne 1f
  FS_INC 8
-1:
- /* Test 33: keep IMG2 Cyber Card overlay latched across shutter/Rec View while still in 0x0801. */
- mov (FS_LV_CARD),d0
+ mov (CC_REVIEW),d0
  cmp 0,d0
- beq 2f
- movhu (LG_GUI),d0
- cmp 0x0801,d0
- beq 3f
-2:
+ beq 1f
+ call fs_gate,[],0
+ cmp 1,d0
+ beq fs_stop_native               /* histogram may stop after the review submit */
+1:
  call fs_clear,[d2,d3,a2,a3],24
-3:
+fs_stop_native:
  mov (4,sp),d0
  mov (8,sp),d1
  mov (12,sp),a0
@@ -291,8 +337,18 @@ fs_gate: /* leaf, no settings/getter calls from DISPLAY */
  cmp 2,d0
  bne fs_gate_mode
  movhu (LG_GUI),d0
+ mov (CC_REVIEW),d1
+ cmp 0,d1
+ beq 1f
+ add -1,d1
+ cmp d1,d0
+ beq fs_gate_ready
+ clr d1
+ mov d1,(CC_REVIEW)
+1:
  cmp 0x0801,d0
  bne fs_gate_gui
+fs_gate_ready:
  clr d0
  mov d0,(FS_D+16)
  mov 1,d0
@@ -324,6 +380,7 @@ fs_clear: /* epoch invalidates a tile being captured by another context */
 fs_clear_out:
  ret [d2,d3,a2,a3],24
 fs_release: /* caller holds LOCK; no source reads */
+ call fb_osd_restore,[d2,d3],12
  mov (FS_OWNER),d0
  cmp 0,d0
  beq fs_release_out
@@ -344,31 +401,8 @@ fs_tick:
  mov d0,(FS_D+20)
  call fs_gate,[],0
  cmp 1,d0
- bne fs_tick_clear
- /* Test 32: decide whether IMG2 displays semi-transparent Cyber Card preview (FS_LV_CARD=1)
-  * or Split-Image Focus (FS_LV_CARD=0). Cyber Card preview activates whenever 图卡 != 关,
-  * 图卡预览 == 开, and CARD<n>.BIN is loaded in RAM. */
- mov (FB_SLOT),d0
- cmp 0,d0
- beq 99f
- mov 2,d0
- bra 100f
-99:
- clr d0
- mov (MF_CFG_CARD),d1
- cmp 0,d1
- beq 100f
- mov (MF_CFG_PREV),d1
- cmp 0,d1
- beq 100f
- mov (CC_BUF_UC),d1
- cmp 0,d1
- beq 100f
- mov 1,d0
-100:
- mov d0,(FS_LV_CARD)
- /* Test 28: hold off IMG2 for a few ticks during/after shutter blackout in Split-Image mode.
-  * In Cyber Card preview mode (FS_LV_CARD == 1), skip blackout so Rec View stays visible! */
+ bne fs_leave_shooting
+ mov (CC_REVIEW),d0
  cmp 0,d0
  bne 1f
  mov (FS_BLACKOUT),d0
@@ -398,6 +432,33 @@ fs_channel:
  bne fs_busy_skip
  mov 1,d0
  mov d0,(FS_BUSY)
+ mov (FB_SLOT),d0
+ cmp 0,d0
+ beq 99f
+ mov 2,d0
+ bra 100f
+99:
+ clr d0
+ mov (MF_CFG_CARD),d1
+ cmp 0,d1
+ beq 100f
+ mov (MF_CFG_PREV),d1
+ cmp 0,d1
+ beq 100f
+ mov (CC_BUF_UC),d1
+ cmp 0,d1
+ beq 100f
+ mov 1,d0
+100:
+ mov (FS_LV_CARD),d1
+ cmp d1,d0
+ beq fs_mode_ready
+ mov d0,(FS_LV_CARD)
+ clr d1
+ mov d1,(FB_PAINTED)
+ mov d1,(CC_PAINTED)
+ call fs_release,[d2,d3,a2,a3],20
+fs_mode_ready:
  mov (4,sp),d0
  xor 3,d0
  mov d0,(FS_DEVICE)
@@ -425,6 +486,19 @@ fs_claimed:
  FS_INC 40
  mov (4,sp),d0
  call fs_diag_capture,[d2,d3,a2,a3],20
+ /* Wait for both panels to stop reading the picker before writing FS_SRC. */
+ mov (FS_LV_CARD),d0
+ cmp 2,d0
+ beq fs_capture_geometry
+ mov FS_SRC,d0
+ call fs_address_in_use,[],0
+ cmp 0,d0
+ bne fs_failed
+ mov FS_MAP,d0
+ call fs_address_in_use,[],0
+ cmp 0,d0
+ bne fs_failed
+fs_capture_geometry:
  mov (4,sp),d0
  mov FS_SRC,a0
  call capture_native,[d2,d3,a2,a3],160
@@ -434,17 +508,6 @@ fs_claimed:
  mov d1,(FS_D+32)
  cmp 0,d0
  beq fs_captured
- /* Test 33: in Cyber Card preview mode, hold previous IMG2 tile on any single missed capture -> zero flicker! */
- mov (FS_LV_CARD),d0
- cmp 0,d0
- beq 102f
- clr d0
- call LOCK,[d2],8
- mov d0,(20,sp)
- mov 1,d0
- mov d0,(28,sp)
- jmp fs_publish_skip
-102:
  mov (4,sp),d0
  cmp 1,d0
  bne fs_failed
@@ -498,20 +561,84 @@ fs_captured:
  inc d0
  mov d0,(FS_EV_LATCHED)
 fs_captured_tile:
- /* Test 32: if Cyber Card live-view preview is active (FS_LV_CARD == 1), blend the cached
-  * anime card at 50% semi-transparency onto FS_SRC -> FS_DST and publish directly on IMG2! */
  mov (FS_LV_CARD),d0
  cmp 1,d0
- bne 101f
- mov (16,sp),d0
- asl 15,d0
- add FS_DST,d0
+ beq fs_card_tile
+ cmp 2,d0
+ bne fs_small_buffers
+ mov FS_SRC,d0
  mov d0,(24,sp)
- mov d0,a1
- mov FS_SRC,a0
- call cc_lv_blend,[d2,d3,a2,a3],64
+ clr d0
+ mov d0,(16,sp)
+ mov (FB_SLOT),d2
+ cmp 1,d2
+ bcs fs_failed
+ cmp NF,d2
+ bhi fs_failed
+ mov (FB_PAINTED),d0
+ cmp d2,d0
+ beq fs_mapped
+ /* Keep the current picture visible while the large page is being retired. */
+ mov FS_SRC,d0
+ call fs_address_in_use,[],0
+ cmp 0,d0
+ bne fs_picker_hold
+ clr d0
+ call fs_tile_in_use,[],0
+ cmp 0,d0
+ bne fs_failed
+ mov 1,d0
+ call fs_tile_in_use,[],0
+ cmp 0,d0
+ bne fs_failed
+ mov FS_SRC,a1
+ mov d2,d0
+ call fb_draw,[d2,d3,a2,a3],32
+ mov d2,(FB_PAINTED)
  jmp fs_mapped
-101:
+fs_picker_hold:
+ mov FS_MAP,d0
+ call fs_address_in_use,[],0
+ cmp 0,d0
+ bne fs_wait_picker
+ mov (FB_PAINTED),d0
+ cmp 0,d0
+ beq fs_failed
+ /* Downsample the read-only front page into the idle split-focus map.
+  * Shape classes rebuild the entire map before its next focus use. */
+ mov 1,d0
+ mov d0,(fs_map_dirty+0x40000000)
+ mov FS_SRC,a0
+ mov FS_MAP,a1
+ clr d3
+fs_picker_row:
+ mov 64,d1
+fs_picker_pair:
+ mov (a0),d0
+ mov d0,(a1)
+ add 8,a0
+ inc4 a1
+ add -1,d1
+ bne fs_picker_pair
+ add 512,a0
+ inc d3
+ btst 3,d3
+ bne 1f
+ add 512,a0
+1:
+ cmp 64,d3
+ bcs fs_picker_row
+ mov FS_MAP,d0
+ mov d0,(24,sp)
+ mov 2,d0
+ mov d0,(16,sp)
+ jmp fs_mapped
+fs_wait_picker:
+ clr d0
+ call LOCK,[d2],8
+ mov d0,(20,sp)
+ jmp fs_hold_done
+fs_small_buffers:
  mov (FS_FLIP),d0
  cmp 0,d0
  beq fs_try_one
@@ -567,20 +694,30 @@ fs_hold_done:
  mov d0,(28,sp)
  jmp fs_publish_skip
 fs_buffer_ok:
- mov (FS_LV_CARD),d0
- cmp 2,d0
- bne fs_focus_tile
- mov (16,sp),d0
- asl 15,d0
- add FS_DST,d0
+ bra fs_focus_tile
+fs_card_tile:
+ mov FS_DST,d0
  mov d0,(24,sp)
- mov d0,a1
- mov (FB_SLOT),d0
- cmp 1,d0
- bcs fs_failed
- cmp NF,d0
- bhi fs_failed
- call fb_draw,[d2,d3,a2,a3],32
+ clr d0
+ mov d0,(16,sp)
+ mov (MF_CFG_CARD),d2
+ asl 2,d2
+ mov (MF_CFG_POS),d1
+ add d1,d2
+ mov (CC_PAINTED),d0
+ cmp d2,d0
+ beq fs_mapped
+ /* The ARGB surface spans both old 32 KiB focus tiles. */
+ clr d0
+ call fs_tile_in_use,[],0
+ cmp 0,d0
+ bne fs_failed
+ mov 1,d0
+ call fs_tile_in_use,[],0
+ cmp 0,d0
+ bne fs_failed
+ call cc_sprite,[d2,d3,a2,a3],84
+ mov d2,(CC_PAINTED)
  jmp fs_mapped
 fs_focus_tile:
  mov (PH_MODE),d0
@@ -637,38 +774,9 @@ fs_apply_shift:
  mov d0,(28,sp)
  jmp fs_failed
 10:
- /* Test 28: 16-sample YCbYCr sanity check on FS_SRC to reject post-shutter purple/black
-  * garbage tiles (dark luma Y<24 combined with extreme high chroma Cb>224 or Cr>224). */
- mov FS_SRC,a0
- clr d2                            /* bad_cnt */
- mov 16,d3
-11:
- mov (a0),d0
- mov d0,a1
- and 0xff,d0                       /* Y0 */
- cmp 24,d0
- bcc 13f
- mov a1,d0
- lsr 8,d0
- and 0xff,d0                       /* Cb */
- cmp 224,d0
- bhi 12f
- mov a1,d0
- lsr 24,d0                         /* Cr */
- cmp 224,d0
- bls 13f
-12:
- inc d2
-13:
- add 2048,a0
- add -1,d3
- bne 11b
- cmp 6,d2
- bcs 14f
- mov 7,d0
- mov d0,(28,sp)
- jmp fs_failed
-14:
+ call fs_blank_tile,[d2,d3],12
+ cmp 0,d0
+ bne fs_failed
  mov a2,d0                         /* restore signed shift d0 for fs_set_strength */
  call fs_set_strength,[d2,d3,a2,a3],32
  mov (16,sp),d0
@@ -735,28 +843,72 @@ fs_tile_area:
  cmp 0,d0
  beq fs_scale_done
  mov (FS_LV_W),d1
+ cmp 2,d0
+ bne fs_scale_small
+ mov 32,d3
+ mov (16,sp),d0
+ cmp 2,d0
+ bne 2f
+ mov 16,d3
+2:
+ mov d3,(FS_REQ+4)
+ mov d3,(FS_REQ+8)
+ bra fs_scaled
+fs_scale_small:
+ mov 32,d3
+ mov d3,(FS_REQ+4)
+ mov d3,(FS_REQ+8)
+ mov 3,d3
+ mov d3,(FS_REQ+12)
+ mov 0x1100,d3
+ mov d3,(FS_REQ+48)
  cmp 129,d1
  bcs fs_scale_done
+fs_scaled:
  mov 0x11,d0                      /* enable H-scale (bit 0) + V-scale (bit 4) */
  mov d0,(FS_REQ+24)
- mov 524288,d0                    /* (128 << 12) / dst_w */
+ /* Interpolate between texel centers 0 and 127. IMG2 uses Q12 on both panels. */
+ mov 520192,d0
+ mov (FS_LV_CARD),d3
+ cmp 2,d3
+ bne 1f
+ mov (16,sp),d3
+ cmp 2,d3
+ beq 1f
+ mov 255*4096,d0
+1:
+ add -1,d1
  clr d3
  mov d3,mdr
  divu d1,d0
  mov d0,(FS_REQ+28)
- /* V-scale unit is 8192 (13-bit) on TFT (ch==2) or EVF field mode (d2!=0), 4096 (12-bit) on progressive EVF. */
- mov 524288,d0                    /* 128 << 12 */
- mov (4,sp),d3                    /* channel */
+ mov (FS_REQ+20),d1
+ exthu d1
+ mov 520192,d0
+ cmp 0,d2
+ beq fs_vertical_step
+ mov 258048,d0                    /* 64 alternating source rows per field */
+fs_vertical_step:
+ mov (FS_LV_CARD),d3
  cmp 2,d3
- beq 103f
- cmp 0,d2                         /* field flag */
- beq 104f
-103:
- mov 1048576,d0                   /* 128 << 13 */
-104:
+ bne 1f
+ mov (16,sp),d3
+ cmp 2,d3
+ bne 2f
+ mov 63*4096,d0
+ cmp 0,d2
+ beq 1f
+ mov 31*4096,d0
+ bra 1f
+2:
+ mov 143*4096,d0
+ cmp 0,d2
+ beq 1f
+ mov 71*4096,d0
+1:
+ add -1,d1
  clr d3
  mov d3,mdr
- mov (FS_LV_H),d1
  divu d1,d0
  mov d0,(FS_REQ+36)
 fs_scale_done:
@@ -770,6 +922,17 @@ fs_scale_done:
  call fs_gate,[],0
  cmp 1,d0
  bne fs_cancel
+ mov (FS_LV_CARD),d0
+ cmp 2,d0
+ bne 1f
+ mov (16,sp),d0
+ cmp 2,d0
+ beq 1f
+ mov (FB_PAINTED),d0
+ mov (FB_SLOT),d1
+ cmp d1,d0
+ bne fs_cancel
+1:
  mov (4,sp),d0
  call cap_scan,[],0
  mov (12,sp),d1
@@ -799,6 +962,15 @@ fs_publish_result:
  mov d0,(28,sp)
  bra fs_publish_skip
 fs_published:
+ mov (FS_LV_CARD),d0
+ cmp 2,d0
+ bne 1f
+ mov (FB_SLOT),d0
+ cmp 0,d0
+ beq 1f
+ mov (4,sp),d0
+ call fb_osd_hide,[d2,d3],12
+1:
  clr d0
  mov d0,(28,sp)
  mov (16,sp),d0
@@ -846,34 +1018,73 @@ fs_failed:
  mov d0,(28,sp)
 fs_failure_traced:
  jmp fs_publish_skip
-fs_tick_clear:
+fs_leave_shooting:
  call fb_close,[d2,d3,a2,a3],24
+fs_tick_clear:
  call fs_clear,[d2,d3,a2,a3],24
 fs_tick_out:
  ret [d2,d3,a2,a3],48
 
 /* A panel can still scan the previous address after a new descriptor was
  * submitted. Avoid writing either a pending or a latched active tile. */
+fs_blank_tile:
+ mov FS_SRC,a0
+ clr d2                            /* bad_cnt */
+ mov 16,d3
+11:
+ mov (a0),d0
+ mov d0,a1
+ and 0xff,d0                       /* Y0 */
+ cmp 24,d0
+ bcc 13f
+ mov a1,d0
+ lsr 8,d0
+ and 0xff,d0                       /* Cb */
+ cmp 224,d0
+ bhi 12f
+ mov a1,d0
+ lsr 24,d0                         /* Cr */
+ cmp 224,d0
+ bls 13f
+12:
+ inc d2
+13:
+ add 2048,a0
+ add -1,d3
+ bne 11b
+ clr d0
+ cmp 6,d2
+ bcs 1f
+ mov 1,d0
+1:
+ ret [d2,d3],12
+
 fs_tile_in_use:
  asl 15,d0
  add FS_DST,d0
+fs_address_in_use:
  lsr 4,d0
  mov 0x9bb88000,a0
  mov 0x9bb90000,a1
+ .macro FS_TEST_DMA offset
+ mov (0x60+\offset,a0),d1
+ btst 16,d1
+ beq 2f
+ mov (0x394+\offset,a0),d1
+ cmp d1,d0
+ beq fs_tile_busy
+ /* The 64 KiB RGBA card also owns the second 32 KiB tile. */
+ add 2048,d1
+ cmp d1,d0
+ bne 2f
+ mov (0x404+\offset,a0),d1
+ cmp 3,d1
+ beq fs_tile_busy
+2:
+ .endm
 fs_tile_panel:
- mov (0x60,a0),d1
- and 16,d1
- beq fs_tile_latched
- mov (0x394,a0),d1
- cmp d1,d0
- beq fs_tile_busy
-fs_tile_latched:
- mov (0x2060,a0),d1
- and 16,d1
- beq fs_tile_next
- mov (0x2394,a0),d1
- cmp d1,d0
- beq fs_tile_busy
+ FS_TEST_DMA 0
+ FS_TEST_DMA 0x2000
 fs_tile_next:
  cmp a1,a0
  beq fs_tile_free
@@ -896,6 +1107,8 @@ fs_tile_free:
  .include "focus_overlay.inc"
  .include "focus_screen_diag.inc"
 .balign 4
+fb_painted: .long 0
+.set FB_PAINTED,fb_painted+0x40000000
 fs_path: .asciz "C:\\OM3MOD\\FOCUS.TXT"
 .balign 4
 fs_template:
@@ -929,8 +1142,10 @@ fs_req: .space 52,0
 .balign 128
 fs_src: .space 32768,0
 fs_dst: .space 65536,0
-fs_shape: .space 8192
+fs_shape: .space 4096
+fs_map_dirty: .long 0
 fs_strength: .long 4
+ .balign 128
 fs_map:
  .include "focus_screen_map.inc"
 .set FS_ON,fs_on+0x40000000

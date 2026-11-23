@@ -1,3 +1,4 @@
+/* Modified by SengokuCola for the Caduceus for OM-3 fork. */
 /* ---- Screen info (feature/screen-info, test build s1, 2026-11-14; research/NOTES.md "Screen info"). Owner's design:
  * show / hide single items on the photo Information displays, chosen on the camera's own Info Settings pages; INFO
  * cycles the displays as before. Build s1: the rear screen's photo Information 1 / 2 / 3 only (viewfinder, video and

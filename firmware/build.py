@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Modified by SengokuCola for the Caduceus for OM-3 fork.
 """Developer build of the OM-3 colour editor firmware (needs an MN10300 binutils build) from the official OM-3 1.1
 firmware file, plus a neutral BUNDLES.BIN. Users don't need this: patch.py applies the prebuilt patch.
 
@@ -31,7 +32,9 @@ class P:                                   # toolchain and stock identity (set f
     STOCK = None
 
 LAYOUT = HERE / 'vendor' / 'caduceus-bundles-layout.json'    # Caduceus (Apache-2.0) bundle-table layout
-HOOKS = {'.hook_fb_key': (0x610b9fdb, bytes.fromhex('43049f009e')),
+HOOKS = {'.hook_cc_recdisp': (0x60cbfa42, bytes.fromhex('dd055df4ff3018')),
+         '.hook_fb_osd': (0x6021111f, bytes.fromhex('5808cdded6c00c')),
+         '.hook_fb_key': (0x610b9fdb, bytes.fromhex('43049f009e')),
          '.hook_sb_done': (0x6054c30f, bytes.fromhex('f1ecf064803e')),
          '.hook_af_write': (0x609a0e4f, bytes.fromhex('fc83e4ab3ea3')),
          '.hook_zaf_lv': (0x609ed0d4, bytes.fromhex('dd5d6190ff0004')),
@@ -233,7 +236,9 @@ def db(b):
     return ''.join(' .byte ' + ','.join(f'0x{x:02x}' for x in b[i:i + 16]) + '\n' for i in range(0, len(b), 16))
 
 
-def build(defaults, testfile, out):
+def build(defaults, testfile, out, *, version=None, without_sunlit=False):
+    without_sunlit = without_sunlit or not (HERE / 'src' / 'sunlit.lut').is_file()
+    assembler_flags = ['--defsym', 'OM3_NO_SUNLIT=1'] if without_sunlit else []
     out = Path(out); out.mkdir(parents=True, exist_ok=False)
     lo, span = range_table()
     dflt, test = make_file(defaults), make_file(testfile)
@@ -280,7 +285,7 @@ def build(defaults, testfile, out):
     fwp, fwi, boxes, dw = mkicons.sp_parts()     # the quick menu's "FILM n" (fl_sp draws it)
     assert fwp.shape[0] == mkicons.SPH == 48 and boxes[0].shape[1] % 2 == 0
     # v0.27 debug log: the build's name (firmware/VERSION, one line), written into CADLOG.TXT
-    ver = (HERE / 'VERSION').read_text().strip().replace('"', "'")
+    ver = (version or (HERE / 'VERSION').read_text().strip()).replace('"', "'")
     assert ver.isprintable() and len(ver) < 60
     (out / 'lgver.inc').write_text(f'lg_ver:\n .asciz "{ver}"\n')
     # fwver 1: the version's short name (VERSION's first word) for the camera's Firmware Version screen (fwver.s)
@@ -346,14 +351,161 @@ def build(defaults, testfile, out):
                                    'fl_lvst:\n' + db(mkicons.pack4(lvst[0])) + f'.set LVSTB, {lvst[0].shape[1]}\n'
                                    f'.set LVSTI, {lvst[1]}\n.set LV_SGAP, {mkicons.LV_SGAP}\n .balign 2\n')
     from PIL import Image, ImageDraw, ImageFont
-    font = ImageFont.truetype('DejaVuSansMono.ttf', 10)
-    glyphs = bytearray()
-    for code in range(32, 127):
-        tile = Image.new('1', (8, 12))
-        ImageDraw.Draw(tile).text((0, 0), chr(code), fill=1, font=font)
-        glyphs.extend(tile.tobytes())
-    (out / 'fb_font.inc').write_text(db(bytes(glyphs)))
-    subprocess.run([P.AS, '-I', out, '-I', HERE / 'src', '-o', out / 'p.o', HERE / 'src' / 'editor.s'], check=True)
+    import zh_cn
+
+    def packed_text(size, text, face, xy=(0, 0), anchor=None):
+        # Hint outlines on the actual LCD pixel grid. Keep solid stems and
+        # reserve the two intermediate ink levels for narrow edge coverage.
+        mask = Image.new('L', size)
+        ImageDraw.Draw(mask).text(xy, text, font=face, fill=255, anchor=anchor)
+        levels = bytes((v >= 64) + (v >= 128) + (v >= 192) for v in mask.tobytes())
+        return bytes(a<<6 | b<<4 | c<<2 | d for a,b,c,d in
+                     zip(levels[::4], levels[1::4], levels[2::4], levels[3::4]))
+
+    face = ImageFont.truetype('DejaVuSansMono.ttf', 15)
+    letters = b''.join(packed_text((12, 18), chr(code), face, (1,14), 'ls') for code in range(32,127))
+    labels = b''.join(packed_text((132,21), label, ImageFont.truetype(zh_cn.FONT, px, index=2), anchor='lt')
+                      for label, px in [('胶卷盒',19), ('OK 应用',16)])
+    # Match the loaded bank by name, including reordered and renamed slots.
+    looks = [
+        ('', '自定义胶卷配方'), ('Portra 400', '暖调柔光，自然肤色'),
+        ('Portra 160', '细腻淡彩，柔和人像'), ('Portra 800', '暖色浓郁，适合人像'),
+        ('Gold 200', '金黄暖调，阳光日常'), ('ColorPlus 200', '淡金色，柔和低饱和'),
+        ('Ektar 100', '浓红净蓝，高饱和彩色'), ('Ektachrome E100', '中性反转片，蓝色清透'),
+        ('Kodachrome 64', '深红金黄，暗部浓厚'), ('CineStill 800T', '青蓝夜色，暖红灯光'),
+        ('Velvia 50', '浓绿深蓝，鲜艳风景'), ('Provia 100F', '清晰自然，天空通透'),
+        ('Pro 400H', '薄荷绿，明亮粉彩'), ('Pro 160S', '自然肤色，平滑柔和'),
+        ('NPS 160', '柔和肤色，冷绿阴影'), ('NHG II 800', '清绿冷蓝，自然肤色'),
+        ('Superia 400', '偏绿高反差，天空泛青'), ('Fuji C200', '清凉蓝绿，通透明亮'),
+        ('Fujifilm 200', '轻暖柔和，日常色彩'), ('Fujifilm 400', '暖色鲜明，红黄突出'),
+        ('Natura 1600', '微冷高感，暗部柔和'), ('Sunlit Foliage', '林间光影，限色颗粒'),
+    ]
+    alphabet = sorted(set(''.join(caption for _, caption in looks)))
+    # Use a common baseline from native glyph extents, including descenders.
+    # Keep one pixel clear on each side around the ink.
+    caption_face = ImageFont.truetype(zh_cn.FONT, 16, index=2)
+    boxes = [caption_face.getbbox(ch, anchor='ls') for ch in alphabet]
+    top = min(box[1] for box in boxes)
+    bottom = max(box[3] for box in boxes)
+    baseline = (20 - (bottom-top))//2 - top
+    caption_glyphs = bytearray()
+    for ch, (left, upper, right, lower) in zip(alphabet, boxes):
+        x = (20 - (right-left))//2 - left
+        assert 1 <= x+left and x+right <= 19
+        assert 1 <= baseline+upper and baseline+lower <= 19
+        caption_glyphs.extend(packed_text((20,20), ch, caption_face,
+                                          xy=(x,baseline), anchor='ls'))
+    captions = b''.join(bytes(alphabet.index(ch)+1 for ch in caption).ljust(12, b'\0')
+                        for _, caption in looks)
+    assert all(len(caption) <= 10 for _, caption in looks)
+    # One indexed master cartridge. Its two paper inks are selected by stock name.
+    # Ten metal levels are shared by every stock; the paper curves around the spool.
+    import math
+    can = Image.new('L', (76, 120), 3)
+    pen = ImageDraw.Draw(can)
+    pen.ellipse((8, 107, 67, 115), fill=1)
+    pen.polygon([(48,30),(72,25),(70,77),(64,80),(60,89),(48,92)], fill=5)
+    for y in range(34,76,9):
+        pen.rectangle((65,y,67,y+3), fill=3)
+    pen.rounded_rectangle((23,4,46,19), radius=3, fill=5)
+    for x in range(25,46,4):
+        pen.line((x,6,x,16), fill=9)
+    pen.ellipse((23,2,46,8), fill=11, outline=7)
+    pen.ellipse((29,4,41,6), fill=1)
+    for x in range(9,61):
+        u = (x-9)/51
+        bow = math.sin(math.pi*u)
+        shade = min(7, round(7*math.sin(math.pi*(u**0.72))))
+        lip = round(bow*4)
+        pen.line((x,17+lip,x,105+lip), fill=4+shade)
+        pen.line((x,27+lip,x,91+lip), fill=16+shade)
+        pen.line((x,62+lip,x,85+lip), fill=24+shade)
+        pen.line((x,88+lip,x,90+lip), fill=24+shade)
+        if 17<x<49 and x%7 in (0,2,3):
+            pen.line((x,94+lip,x,99+lip), fill=2)
+    # From above, the shell hides the bottom face. Only the rolled front lip
+    # projects below it. Its upper and lower edges follow the same ellipse.
+    for x in range(6,64):
+        u = (x - 34.5) / 28.5
+        front = 104 + round(5 * math.sqrt(max(0, 1 - u*u)))
+        pen.line((x,front-1,x,front+2), fill=5)
+        pen.point((x,front), fill=9 if 15 <= x <= 43 else 7)
+        pen.point((x,front+2), fill=2)
+    pen.ellipse((6,15,63,25), fill=2, outline=7)
+    pen.arc((7,15,62,23), 10,170, fill=11, width=2)
+    pen.ellipse((7,13,63,23), fill=6, outline=10)
+    pen.ellipse((23,14,47,20), fill=2, outline=8)
+    pen.rectangle((25,10,44,17), fill=5)
+    for x in range(27,45,4):
+        pen.line((x,10,x,16), fill=9)
+    inks = [
+        ('aaa69c','586c73'), ('edbb43','583c62'), ('ffc034','a72b53'),
+        ('ecc049','c54b32'), ('f4c344','28272c'), ('dbd4bd','365a87'),
+        ('d89851','883f32'), ('c8c8b9','944c36'), ('c6aa65','294965'),
+        ('d4dace','176958'), ('dce1bd','36804b'), ('cdd1b9','514c5e')]
+    # Same-family speeds share a wrapper. A renamed bank entry uses the neutral one.
+    families = [0,1,1,1,2,3,4,5,6,7,8,8,9,9,9,9,10,10,10,10,11,0]
+    assert len(families) == len(looks)
+    palettes = bytearray()
+    for paper, stripe in inks:
+        grays = [16,22,28,38,44,59,73,90,112,138,166,201,216,225,232,240]
+        colours = [(v,v,v) for v in grays]
+        for ink in (paper,stripe):
+            rgb = bytes.fromhex(ink)
+            colours.extend(tuple(round(c*(0.50+0.50*k/7)) for c in rgb) for k in range(8))
+        for rgb in colours:
+            y,cb,cr = Image.new('RGB',(1,1),rgb).convert('YCbCr').getpixel((0,0))
+            palettes.extend((y,cb,y,cr))
+    # Typeset a short series label directly on the cylindrical paper.
+    stamps = []
+    for name,_ in looks:
+        bits = Image.new('1',(48,12))
+        short = name.split()[0].upper()[:8] if name else '35 MM'
+        ImageDraw.Draw(bits).text((1,1), short, font=ImageFont.truetype('DejaVuSansCondensed-Bold.ttf',9),
+                                  fill=1,anchor='lt')
+        stamps.append(bits.tobytes())
+    # Literal packets carry 1..128 bytes. Match packets carry a 16-bit backwards
+    # distance and 3..130 bytes. Only this build-generated stream is decoded.
+    from collections import defaultdict, deque
+    atlas = letters + labels + caption_glyphs + can.tobytes()
+    assert len(atlas) <= 3*32768 - 256*144*2
+    positions = defaultdict(lambda: deque(maxlen=24))
+    stream, pending = bytearray(), bytearray()
+    def flush_literals():
+        if pending:
+            stream.append(len(pending)-1)
+            stream.extend(pending)
+            pending.clear()
+    i = 0
+    while i < len(atlas):
+        count, distance = 1, 0
+        for previous in reversed(positions[atlas[i:i+3]]):
+            n = 3
+            while n < min(130, len(atlas)-i) and atlas[i+n] == atlas[previous+n]:
+                n += 1
+            if n > count:
+                count, distance = n, i-previous
+        if distance:
+            flush_literals()
+            stream.extend(struct.pack('<BH', 128+count-3, distance))
+        else:
+            pending.append(atlas[i])
+            if len(pending) == 128:
+                flush_literals()
+        for pos in range(i, i+count):
+            if pos+3 <= len(atlas):
+                positions[atlas[pos:pos+3]].append(pos)
+        i += count
+    flush_literals()
+    definitions = [f'.set FB_COMMA, {alphabet.index(chr(0xff0c))+1}', '.set fb_font, FS_SRC+73728',
+                   f'.set fb_panel, fb_font+{len(letters)}',
+                   f'.set fb_caption_glyphs, fb_panel+{len(labels)}',
+                   f'.set fb_can, fb_caption_glyphs+{len(caption_glyphs)}']
+    (out / 'fb_art.inc').write_text('\n'.join(definitions)+'\nfb_atlas:\n'+db(stream)+
+        'fb_atlas_end:\nfb_families:\n'+db(bytes(families))+'fb_stamps:\n'+db(b''.join(stamps))+
+        ' .balign 4\nfb_palettes:\n'+db(palettes)+'fb_names:\n'+db(b''.join(name.encode().ljust(16,b'\0') for name,_ in looks))+
+        'fb_captions:\n'+db(captions)+f'.set FB_LOOK_COUNT, {len(looks)}\n')
+    subprocess.run([P.AS, *assembler_flags, '-I', out, '-I', HERE / 'src', '-o', out / 'p.o', HERE / 'src' / 'editor.s'], check=True)
     subprocess.run([P.LD, '-T', HERE / 'src' / 'editor.ld', '-o', out / 'p.elf', out / 'p.o'], check=True)
     blobs = {}
     for s in list(HOOKS) + ['.ext1', '.ext4', '.ext10', '.ext6', '.ext5', '.ext3', '.ext8', '.ext9', '.ext2', '.ext7', '.ext11', '.ext12', '.ext13']:
@@ -463,6 +615,7 @@ def build(defaults, testfile, out):
     offsets = {0:0, 4:1, -4:2, 132:3, -132:4}
     shape = bytes(5 if v == 65535 else 6 if v == 65534 else offsets[v-i]
                   for i,v in enumerate(struct.unpack_from('<8192H', m, start)))
+    shape = bytes(lo | hi << 4 for lo, hi in zip(shape[::2], shape[1::2]))
     start = o(sy['fs_shape'])
     assert m[start:start+len(shape)] == bytes(len(shape))
     m[start:start+len(shape)] = shape
@@ -630,15 +783,15 @@ def build(defaults, testfile, out):
             labs.setdefault(u32(L + 12 * k)[0], bytes(m[o(L) + 12 * k:o(L) + 12 * k + 12]))
     fb_label = struct.pack('<3I', sy['FB_CODE'], sy['FB_TITLE'] << 16 | 4, 0x61570e04)
     labs[sy['FB_CODE']] = fb_label
-    for key in (4, 5, 7, 8):
+    for key in (4, 7, 8, 10):   # up, right, down and left picker variants
         variant = 0x61571ba0 + 24 * (key + 1)
         picker = u32(variant, 6)
         assert picker[0] & 0xffff == key and picker[1:5] == (55, 0x61570e08, 0x61571288, 0x61571708)
         for i, name in enumerate(('fb_titles', 'fb_icons', 'fb_help')):
             dst = sy[name]
+            assert dst % 4 == 0
             table = bytes(m[o(picker[i+2]):o(picker[i+2]) + 55 * 12])
-            entry = fb_label if i != 1 else struct.pack('<3I', sy['FB_CODE'], (0x7fec << 16) | 12, 0x61570e04)
-            m[o(dst):o(dst) + 56 * 12] = table + entry
+            m[o(dst):o(dst) + 56 * 12] = table + fb_label
             struct.pack_into('<I', m, o(variant) + 8 + 4 * i, dst)
         struct.pack_into('<I', m, o(variant) + 4, 56)
     lab = b''.join(labs[c] for c in codes)
@@ -1036,7 +1189,7 @@ def build(defaults, testfile, out):
     assert m[o(tr):o(tr) + 2] == b'\xfc\xc8' and struct.unpack_from('<I', m, o(tr) + 2)[0] == 0x58000000
     xtag = 0x58000000 | int.from_bytes(hashlib.sha256(bytes(m)).digest()[:3], 'little')
     struct.pack_into('<I', m, o(tr) + 2, xtag)
-    xblock = make_xblock(out, sy, xtag)
+    xblock = make_xblock(out, sy, xtag, assembler_flags)
     g = bytearray((out / 'pictures.bin').read_bytes()); assert g[:4] == b'OM3G' and len(g) % 4 == 0
     g += xblock
     struct.pack_into('<I', g, 4, len(g)); struct.pack_into('<I', g, 8, zlib.crc32(bytes(g[12:])) & 0xffffffff)
@@ -1091,18 +1244,20 @@ def build(defaults, testfile, out):
     return syms
 
 
-def make_xblock(out, sy, xtag):
+def make_xblock(out, sy, xtag, assembler_flags):
     """Assemble the code block, link it at two bases, find the 32-bit fields that move (+delta absolute, -delta
     PC-relative to the firmware), check that relocating the first link gives the second, and pack the block."""
     ext = dict(getter=0x60063380, facade=0x60b8696a, fopen=sy['fopen'], fread=sy['fread'], fclose=sy['fclose'], malloc=0x60024068, sd_crc=sy['sd_crc'], gd_mode=sy['gd_mode'], VDESC=0xa4cf688c, VSTOCK_P=0xa4cf6210, VSTOCK_S=1660, AXIS=684, EDK=687, WL_BLK=sy['wl_blk'], fx_tail=sy['fx_tail'], fx_back=sy['fx_back'], lv_skip=sy['lv_skip'], c11_ret=0x60504edb,
                STATE=sy['STATE'], HMAX=sy['HMAX'], POOL=sy['POOL'], MAGIC=sy['MAGIC'], BUFIDX=0x604afdf9, SF_ENT=0x604be2aa, LOCK=0x60075f73, UNLOCK=0x60075fbc, WINMAP=0x60071018, FLUSH=0x60070e69, free=0x6002409a,
                SEL=0x6052cf39, fwrite=0x608d4da9, PF_CAPTO=sy['pf_capto'], PF_CAP=sy['pf_cap'], E_LK=sy['e_lk'], E_RET=sy['e_ret'], E_RST=sy['e_rst'], REFRESH=0x611b20ea, XT_TAB=sy['xt_tab'], EMARK=680, EMAGIC=0x45334d4f,
                FL_HAS=sy['fl_has'], FACADE=0x60b8696a, AGET=0x603f039d, TXGET=0x604cd921, TXATT=0x604bc0cf, TXPF=0x604b77fb, TWO=sy['TWO'], TW_LEN=sy['TW_LEN'], FV0=sy['FV0'],
-               WB_V=sy['wb_v'], wb_wtk=sy['wb_wtk'], wb_wem=sy['wb_wem'], HL_RUN=sy['hl_run'], BD_RUN=sy['bd_run'], SUN_RUN=sy['sunlit_run'], TYPEMAP=0x60555b58,
+               WB_V=sy['wb_v'], wb_wtk=sy['wb_wtk'], wb_wem=sy['wb_wem'], HL_RUN=sy['hl_run'], BD_RUN=sy['bd_run'], TYPEMAP=0x60555b58,
                TG_OWN=sy['tg_own'], TG_BAD=sy['tg_bad'], GS_EFF=sy['gs_eff'],
                VG_RUN=sy['vg_run'], VG_LVL=sy['vg_lvl'], VG_NT=sy['vg_nt'], VG_ND=sy['vg_nd'],
                CC_RUN=sy['cc_run'], CC_CARD=sy['MF_CFG_CARD'],
                PT_N=sy['pt_n'], PT_US=sy['pt_us'], PT_MX=sy['pt_mx'])    # glow-shots-1: our passes' timing (log)
+    if 'sunlit_run' in sy:
+        ext['SUN_RUN'] = sy['sunlit_run']
     sys.path.insert(0, str(ROOT / 'firmware'))
     import mkicons                                # v0.25 WB grid row: the left cell's glyphs (xblock xb_wbc)
     inc = ''.join(f'.set {k}, {getattr(mkicons, k)}\n' for k in ('WBC_IX', 'WBC_IY', 'WBC_TY', 'WBC_GH'))
@@ -1110,7 +1265,7 @@ def make_xblock(out, sy, xtag):
     inc += f'.set XL_FILE, {(out / "LABELS.BIN").stat().st_size}\n'      # v0.25: LABELS.BIN v3 (+ the WB cell glyphs)
     inc += f'.set WBC_N, {len(mkicons.WBC_CHARS)}\n'           # v0.28: + '+', '-', '/' for the Blacks / Whites cell
     (out / 'wbglyph.inc').write_text(inc)
-    subprocess.run([P.AS, '-I', out, '-o', out / 'xb.o', XB_SRC], check=True)
+    subprocess.run([P.AS, *assembler_flags, '-I', out, '-o', out / 'xb.o', XB_SRC], check=True)
     imgs, xs = [], None
     for L in (XB_L1, XB_L2):
         d = {**ext, 'XB_LINK': L}
@@ -1159,7 +1314,9 @@ if __name__ == '__main__':
     ap.add_argument('--stock', required=True, help='official OM-3 1.1 firmware file (OLY_E_147_1100_0000_0000_3.BIN)')
     ap.add_argument('--toolchain', required=True, help='binutils build directory for mn10300-elf')
     ap.add_argument('--out', required=True, help='new output directory')
+    ap.add_argument('--version', help='override the firmware version string for the build')
+    ap.add_argument('--without-sunlit', action='store_true', help='build without the experimental Sunlit Foliage lookup')
     a = ap.parse_args()
     P.TC = Path(a.toolchain); P.AS, P.LD, P.OBJCOPY = P.TC / 'gas/as-new', P.TC / 'ld/ld-new', P.TC / 'binutils/objcopy'
     P.STOCK = a.stock
-    build({}, {}, a.out)       # neutral built-in defaults and a neutral card file
+    build({}, {}, a.out, version=a.version, without_sunlit=a.without_sunlit)

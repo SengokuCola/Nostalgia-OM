@@ -31,7 +31,12 @@ fs_commit_channel_ok:
  bne fs_native_skip_jump
  movhu (LG_GUI),d2
  cmp 0x0801,d2
+ beq 1f
+ inc d2
+ mov (CC_REVIEW),d3
+ cmp d3,d2
  bne fs_native_skip_jump
+1:
  mov d1,d2
  and 32,d2
  beq fs_native_skip_jump
@@ -62,6 +67,9 @@ fs_native_skip_jump:
  .macro FS_CHECK base
  mov (\base+0x60),d2
  and 16,d2
+ bne 1f
+ mov (CC_REVIEW),d2
+ cmp 0,d2
  bne 1f
  jmp fs_native_skip
 1:

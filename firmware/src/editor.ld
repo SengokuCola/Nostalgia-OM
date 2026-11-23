@@ -1,4 +1,11 @@
+/* Modified by SengokuCola for the Caduceus for OM-3 fork. */
+fb_stock_dma = 0x6020e7ff;
+cc_stock_recdisp = 0x60c05747;
 SECTIONS {
+  .hook_cc_recdisp 0x60cbfa42 : { *(.hook_cc_recdisp) }
+  .hook_fb_osd 0x6021111f : { *(.hook_fb_osd) }
+
+  .hook_fb_key 0x610b9fdb : { *(.hook_fb_key) }
   .hook_sb_done 0x6054c30f : { *(.hook_sb_done) }
   .hook_af_write 0x609a0e4f : { *(.hook_af_write) }
   .hook_zaf_lv 0x609ed0d4 : { *(.hook_zaf_lv) }
@@ -273,6 +280,8 @@ sdl_ext_tsk      = 0x60031808;
 scw_set       = 0x6128abe0;
 stw_set       = 0x6128ab86;
 stw_back      = 0x6128b2c6;
+fb_dial_delta = 0x61084332;         /* native main/sub dial signed displacement */
+fb_setting    = 0x603f0111;         /* stock setting read, without entering the Picture Mode facade */
 ar_getv       = 0x61085dbb;         /* v0.27: the key dispatcher's plain setting getter (GetValue) */
 ar_setv       = 0x61085d05;         /* v0.27: its setter pair (SetValue through the facade, as the dial handler) */
 ar_vget       = 0x610834b1;         /* v0.27: the dispatcher's value read, assigned value: mov d2,d0; call getter; ret */

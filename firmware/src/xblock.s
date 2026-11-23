@@ -1,3 +1,4 @@
+/* Modified by SengokuCola for the Caduceus for OM-3 fork. */
 /* v0.24 film test 7 (owner): the Extras page is hidden and its Glow / Clarity and Art Effect read 0 wherever they act
  * (XB_FX 0); the code stays: set XB_FX 1 to bring them back. */
  .set XB_ART, 0                   /* v0.25 (owner): no Art Effect at all (Frame caused too many issues); 1 = Frame */
@@ -121,6 +122,7 @@ xb_art:
 /* Test bank opts in by name AND slot. Other FILM 20 recipes keep their behaviour.
  * Leaf: a1 = selected COLOR slot, preserves d1 and a1 (capture flags and slot). */
 xb_sunlit:
+ .ifndef OM3_NO_SUNLIT
  mov (xb_pp),a0
  cmp 0,a0
  beq 9f
@@ -150,6 +152,7 @@ xb_sunlit:
  mov 1,d0
  retf [],0
 9:
+ .endif
  clr d0
  retf [],0
 
@@ -840,7 +843,9 @@ xb_gs:                           /* `calls` (0,sp) = return, a0 = job */
  beq 19f
  mov a1,a0
  mov (28,sp),d0
+ .ifndef OM3_NO_SUNLIT
  call SUN_RUN,[d2,d3,a2,a3],88
+ .endif
 19:
  .if XB_BD
  mov (20,sp),d0                   /* borders: last, so no glow, halo or grain on the border */

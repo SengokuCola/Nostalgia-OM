@@ -37,6 +37,7 @@ cc_sync:
  /* Mark unloaded before reading new slot. */
  clr d0
  mov d0,(CC_BUF_UC)
+ mov d0,(CC_PAINTED)
  mov d0,(CC_SLOT_UC)
 
  mov (4,sp),d0                    /* want_slot */
@@ -410,7 +411,7 @@ cc_dst_row:
  beq cc_row_unlock
  mov a0,(84,sp)                   /* CPU ptr */
  mov sp,a1                        /* pass parent frame */
- call cc_blend_span,[d2,d3,a2,a3],48
+ call cc_blend_span,[d2,d3,a2,a3],64
  mov (84,sp),a0
  mov (76,sp),d1
  asl2 d1
@@ -638,24 +639,13 @@ cc_pair_next:
  bra cc_pair_loop
 
 cc_blend_done:
- ret [d2,d3,a2,a3],48
+ ret [d2,d3,a2,a3],64
 
-/* cc_lv_blend: `call cc_lv_blend,[d2,d3,a2,a3],64` from focus_screen.inc (FS_LV_CARD == 1).
- * Blends cached OM3P card (CC_BUF_UC) at 50% semi-transparent alpha onto captured 128x128
- * YCbYCr 4:2:2 live-view tile (a0 = FS_SRC, a1 = FS_DST_tile).
- * Preserves aspect ratio, anchored at bottom-center of the 128x128 tile; transparent pixels
- * pass live-view background through untouched (no dark box).
- * Locals (64 B):
- *   (4)  src_tile, (8) dst_tile, (12) cc_buf, (16) src_w, (20) src_h,
- *   (24) fit_w (even), (28) fit_h, (32) ox (even), (36) oy, (40) step_x (16.16),
- *   (44) dy, (48) row_ptr, (52) pair_idx, (56) fx (16.16), (60) bg_word. */
-.global cc_lv_blend
-cc_lv_blend:
- mov a0,(4,sp)
- mov a1,(8,sp)
+/* 128x128 R8G8B8a8 sprite, matching the colour-wheel IMG2 format. */
+cc_sprite:
  mov (CC_BUF_UC),a2
  cmp 0,a2
- beq cc_lv_copy_all
+ beq cc_sprite_ret
  mov a2,(12,sp)
  movhu (6,a2),d0                  /* src_w */
  mov d0,(16,sp)
@@ -674,14 +664,6 @@ cc_lv_blend:
  mov d1,mdr
  divu d2,d0
  and 0xfffffffe,d0
- cmp 2,d0
- bcc 2f
- mov 2,d0
-2:
- cmp 128,d0
- bls 3f
- mov 128,d0
-3:
  mov d0,(24,sp)                   /* fit_w */
  /* ox anchored by MF_CFG_POS: 0=左下 -> 0, 1=居中 -> (128-fit_w)/2, 2=右下 -> 128-fit_w. */
  mov (MF_CFG_POS),d3
@@ -704,14 +686,6 @@ cc_lv_blend:
  clr d1
  mov d1,mdr
  divu d2,d0
- cmp 2,d0
- bcc 4f
- mov 2,d0
-4:
- cmp 128,d0
- bls 5f
- mov 128,d0
-5:
  mov d0,(28,sp)                   /* fit_h */
  /* oy = 128 - fit_h (flush bottom) */
  mov 128,d1
@@ -726,259 +700,118 @@ cc_lv_blend:
  divu d1,d0
  mov d0,(40,sp)                   /* step_x */
 
- clr d0
- mov d0,(44,sp)                   /* dy = 0 */
-cc_lv_row:
- mov (44,sp),d0
- cmp 128,d0
- bcc cc_lv_ret
- /* a0 = src_tile + dy*256, a1 = dst_tile + dy*256 */
- mov d0,d1
- asl 8,d1
- mov (4,sp),a0
- add d1,a0
- mov (8,sp),a1
- add d1,a1
- /* If dy < oy: copy whole 64-pair row verbatim. */
- mov (36,sp),d2                   /* oy */
- cmp d2,d0
- bcc cc_lv_row_active
- mov 64,d3
-cc_lv_cp0:
- mov (a0),d0
- mov d0,(a1)
- add 4,a0
- add 4,a1
- add -1,d3
- bne cc_lv_cp0
- bra cc_lv_next_row
-
-cc_lv_row_active:
- /* Compute sy = ((dy - oy) * src_h) / fit_h, clamped < src_h. */
- sub d2,d0                        /* dy - oy */
- mov (20,sp),d1                   /* src_h */
+ mov FS_DST,a3
+ clr d3
+cc_sprite_row:
+ mov d3,d0
+ mov (36,sp),d1
+ sub d1,d0
+ bcs cc_sprite_blank_row
+ mov (20,sp),d1
  mulu d1,d0
  clr d1
  mov d1,mdr
- mov (28,sp),d1                   /* fit_h */
- divu d1,d0                       /* sy */
- mov (20,sp),d1
- cmp d1,d0
- bcs 1f
- mov d1,d0
- add -1,d0
-1:
- /* row_ptr = cc_buf + 16 + sy * (src_w * 4). */
+ mov (28,sp),d1
+ divu d1,d0
  mov (16,sp),d1
- asl2 d1
  mulu d1,d0
- add 16,d0
+ asl2 d0
  mov (12,sp),a2
+ add 16,a2
  add d0,a2
- mov a2,(48,sp)                   /* row_ptr */
-
- /* Left transparent margin: ox/2 pairs copied verbatim. */
- mov (32,sp),d3
- lsr 1,d3
- cmp 0,d3
- beq cc_lv_mid
-cc_lv_cpl:
- mov (a0),d0
- mov d0,(a1)
- add 4,a0
- add 4,a1
- add -1,d3
- bne cc_lv_cpl
-
-cc_lv_mid:
- /* Active span: fit_w / 2 pairs blended at 50% alpha (A >> 1). */
- mov (24,sp),d0
- lsr 1,d0
- mov d0,(52,sp)                   /* rem_pairs */
- clr d0
- mov d0,(56,sp)                   /* fx = 0 */
-
-cc_lv_pair:
- mov (52,sp),d0
- cmp 0,d0
- beq cc_lv_right
- /* Sample fg0 at fx >> 16, advance fx += step_x. */
- mov (56,sp),d0
- mov d0,d1
- lsr 16,d1                        /* sx0 */
- mov (40,sp),d2
- add d2,d0                        /* fx1 */
- mov d0,d3
- lsr 16,d3                        /* sx1 */
- add d2,d0                        /* fx_next */
- mov d0,(56,sp)
- mov (16,sp),d2
- cmp d2,d1
- bcs 1f
- mov d2,d1
- add -1,d1
-1:
- cmp d2,d3
- bcs 2f
- mov d2,d3
- add -1,d3
-2:
- asl2 d1
- asl2 d3
- mov (48,sp),a2
- mov a2,a3
- add d1,a2                        /* a2 = fg0 */
- add d3,a3                        /* a3 = fg1 */
-
- /* Semi-transparent preview alpha: A0 = fg0.A >> 1, A1 = fg1.A >> 1 (max 127 = 50%). */
- movbu (3,a2),d0
- lsr 1,d0                         /* A0 */
- movbu (3,a3),d1
- lsr 1,d1                         /* A1 */
- mov d0,d2
- or d1,d2
- bne cc_lv_blend_px
- /* Both transparent -> copy live-view background verbatim! */
- mov (a0),d0
- mov d0,(a1)
- bra cc_lv_pair_next
-
-cc_lv_blend_px:
- mov (a0),d2
- mov d2,(60,sp)                   /* bg_word = [Y0, Cb, Y1, Cr] */
- /* Blend Y0: (bg_Y0*(255-A0) + fg_Y0*A0 + 128) >> 8 */
- mov d0,d3                        /* A0 */
- mov 255,d2
- sub d3,d2
- mov (60,sp),d0
- and 0xff,d0
- mulu d2,d0
- movbu (0,a2),d2
- mulu d3,d2
- add d2,d0
- add 128,d0
- lsr 8,d0
- push_y0_lv:
- mov d0,d3                        /* save out_Y0 in d3? No, use (52,sp)? Keep out in d3 -> need free reg! */
- /* Use a0/a1 on stack? Wait: a0/a1 are src/dst! Save a0/a1? No, we have d0..d3, a2, a3!
-  * Let's compute Y0 into (60,sp) wait we still need bg_word! Let's pack directly!
-  * Register plan: d0=scratch, d1=A1, d2=scratch, d3=A0 -> save out_Y0 into a0? NO!
-  * Let's compute Ac, Cb, Cr, Y1 cleanly using a2=fg0, a3=fg1! */
- mov (60,sp),d2                   /* bg_word */
- /* Save out_Y0 by replacing low byte of d2? Wait: d2 is bg_word, we don't need bg_Y0 anymore! */
- and 0xffffff00,d2
- or d0,d2
- mov d2,(60,sp)                   /* (60,sp) now has [out_Y0, bg_Cb, bg_Y1, bg_Cr] */
-
- /* Blend Y1 (d1 = A1) */
- mov d1,d3                        /* A1 */
- mov 255,d2
- sub d3,d2
- mov (60,sp),d0
- lsr 16,d0
- and 0xff,d0                      /* bg_Y1 */
- mulu d2,d0
- movbu (0,a3),d2                  /* fg_Y1 */
- mulu d3,d2
- add d2,d0
- add 128,d0
- lsr 8,d0
- asl 16,d0
- mov (60,sp),d2
- and 0xff00ffff,d2
- or d0,d2
- mov d2,(60,sp)                   /* (60,sp) now has [out_Y0, bg_Cb, out_Y1, bg_Cr] */
-
- /* Chroma alpha Ac = (A0 + A1 + 1) >> 1; pick stronger pixel between a2 and a3. */
- movbu (3,a2),d0
- movbu (3,a3),d1
+ clr d2
+cc_sprite_pixel:
+ mov d2,d0
+ mov (32,sp),d1
+ sub d1,d0
+ bcs cc_sprite_empty
+ mov (24,sp),d1
  cmp d1,d0
- bcc 3f
- mov a3,a2                        /* a2 = stronger fg pixel */
-3:
- lsr 1,d0
- lsr 1,d1
- add d1,d0
- inc d0
- lsr 1,d0                         /* Ac in d0 */
- mov d0,d3                        /* d3 = Ac */
- mov 255,d2
- sub d3,d2                        /* d2 = invAc */
-
- /* Blend Cb */
- mov (60,sp),d0
- lsr 8,d0
- and 0xff,d0
- mulu d2,d0
- movbu (1,a2),d1
- mulu d3,d1
- add d1,d0
- add 128,d0
- lsr 8,d0
- asl 8,d0
- mov (60,sp),d1
- and 0xffff00ff,d1
- or d0,d1
- mov d1,(60,sp)                   /* (60,sp) now has [out_Y0, out_Cb, out_Y1, bg_Cr] */
-
- /* Blend Cr (d2 = invAc, d3 = Ac) */
- mov (60,sp),d0
- lsr 24,d0
- mulu d2,d0
- movbu (2,a2),d1
- mulu d3,d1
- add d1,d0
- add 128,d0
- lsr 8,d0
- asl 24,d0
- mov (60,sp),d1
- and 0x00ffffff,d1
- or d0,d1
- mov d1,(a1)
-
-cc_lv_pair_next:
- add 4,a0
- add 4,a1
- mov (52,sp),d0
- add -1,d0
- mov d0,(52,sp)
- bra cc_lv_pair
-
-cc_lv_right:
- /* Right transparent margin: (128 - ox - fit_w) / 2 pairs copied verbatim. */
- mov 128,d3
- mov (32,sp),d0
- sub d0,d3
- mov (24,sp),d0
- sub d0,d3
- lsr 1,d3
- cmp 0,d3
- ble cc_lv_next_row
-cc_lv_cpr:
- mov (a0),d0
- mov d0,(a1)
- add 4,a0
- add 4,a1
- add -1,d3
- bne cc_lv_cpr
-
-cc_lv_next_row:
- mov (44,sp),d0
- inc d0
+ bcc cc_sprite_empty
+ mov (40,sp),d1
+ mulu d1,d0
+ lsr 16,d0
+ asl2 d0
+ mov a2,a0
+ add d0,a0
+ movbu (3,a0),d0
+ cmp 0,d0
+ beq cc_sprite_store
  mov d0,(44,sp)
- bra cc_lv_row
-
-cc_lv_copy_all:
- mov 8192,d3
+ movbu (a0),d0
+ mov d0,(48,sp)
+ movbu (1,a0),d0
+ add -128,d0
+ mov d0,(52,sp)
+ movbu (2,a0),d0
+ add -128,d0
+ mov d0,(56,sp)
+ mov 359,d1
+ mul d1,d0
+ call cc_rgb_channel,[],0
+ asl 24,d0
+ mov (44,sp),d1
+ or d0,d1
+ mov d1,(44,sp)
+ mov (52,sp),d0
+ mov -88,d1
+ mul d1,d0
+ mov d0,(60,sp)
+ mov (56,sp),d0
+ mov -183,d1
+ mul d1,d0
+ mov (60,sp),d1
+ add d1,d0
+ call cc_rgb_channel,[],0
+ asl 16,d0
+ mov (44,sp),d1
+ or d0,d1
+ mov d1,(44,sp)
+ mov (52,sp),d0
+ mov 454,d1
+ mul d1,d0
+ call cc_rgb_channel,[],0
+ asl 8,d0
+ mov (44,sp),d1
+ or d1,d0
+ bra cc_sprite_store
+cc_sprite_empty:
+ clr d0
+cc_sprite_store:
+ mov d0,(a3)
+ inc4 a3
+ inc d2
+ cmp 128,d2
+ bcs cc_sprite_pixel
+ bra cc_sprite_next
+cc_sprite_blank_row:
+ clr d0
+ mov 128,d2
 1:
- mov (a0),d0
- mov d0,(a1)
- add 4,a0
- add 4,a1
- add -1,d3
+ mov d0,(a3)
+ inc4 a3
+ add -1,d2
  bne 1b
-cc_lv_ret:
- ret [d2,d3,a2,a3],64
+cc_sprite_next:
+ inc d3
+ cmp 128,d3
+ bcs cc_sprite_row
+ bra cc_sprite_ret
+cc_rgb_channel:
+ add 128,d0
+ asr 8,d0
+ mov (48,sp),d1
+ add d1,d0
+ bge 1f
+ clr d0
+1:
+ cmp 255,d0
+ bls 2f
+ mov 255,d0
+2:
+ ret [],0
+cc_sprite_ret:
+ ret [d2,d3,a2,a3],84
 
  .balign 4
 cc_path: .asciz "C:\\OM3MOD\\CARD1.BIN"
@@ -987,8 +820,119 @@ cc_hdr:  .space 16, 0
  .balign 64                       /* isolate uncached CC_*_UC from cached cc_hdr */
 cc_buf_uc:  .long 0
 cc_slot_uc: .long 0
+cc_painted: .long 0
+cc_review_gui: .long 0
+.set CC_PAINTED,cc_painted+0x40000000
+.set CC_REVIEW,cc_review_gui+0x40000000
  .balign 64
  .set CC_BUF_UC,  cc_buf_uc  + 0x40000000
  .set CC_SLOT_UC, cc_slot_uc + 0x40000000
  .balign 16
 cc_buf:  .space 16 + CC_MAX_PIX, 0
+
+/* Native capture-review submit. With card debug enabled record the concrete
+ * handle type and live/latched sources across the stock call. Its argument
+ * is a polymorphic handle, never a CPU pixel address. */
+.section .hook_cc_recdisp,"ax"
+ call cc_recdisp,[a2,a3],24
+.section .ext13,"ax"
+cc_recdisp:
+ mov (CC_BUF_UC),d0
+ cmp 0,d0
+ beq cc_recdisp_native
+ cmp 0,a1
+ beq cc_recdisp_native
+ mov a0,(4,sp)
+ mov a1,(8,sp)
+ movbu (lg_on),d0
+ cmp 1,d0
+ bne 1f
+ mov cc_rec_sample+0x40000000,a2
+ mov (a2),d0
+ inc d0
+ mov d0,(a2)
+ mov (a1),d0
+ mov d0,(4,a2)
+ add 8,a2
+ call cc_rec_banks,[d2,d3,a3],16
+1:
+ mov (8,sp),a1
+ mov (a1),d0
+ cmp 0x60f147f8,d0                /* handle observed at native automatic review */
+ mov 0,a3
+ bne 2f
+ mov 1,a3
+2:
+ mov (4,sp),a0
+ call cc_stock_recdisp,[a2,a3],24
+ mov d0,(4,sp)
+ mov a0,(8,sp)
+ movbu (lg_on),d0
+ cmp 1,d0
+ bne 3f
+ mov cc_rec_sample+128+0x40000000,a2
+ call cc_rec_banks,[d2,d3,a3],16
+3:
+ cmp 0,a3
+ beq 8f
+ mov (MF_CFG_PREV),d0
+ cmp 0,d0
+ beq 8f
+ mov (MF_CFG_CARD),d0
+ cmp 0,d0
+ beq 8f
+ movbu (UI_PSW),d0
+ cmp 2,d0
+ bne 8f
+ mov (FB_SLOT),d0
+ cmp 0,d0
+ bne 8f
+ /* Queue the transparent layer on the active output as the native review
+  * is submitted, even when histogram callbacks have stopped for the shot. */
+ mov (0x9bb90060),d0
+ btst 32,d0
+ beq 4f
+ mov 1,d0
+ bra 5f
+4:
+ mov (0x9bb88060),d0
+ btst 32,d0
+ beq 8f
+ mov 2,d0
+5:
+ movhu (LG_GUI),d1
+ inc d1
+ mov d1,(CC_REVIEW)
+ call fs_tick,[d2,d3,a2,a3],48
+8:
+ mov (4,sp),d0
+ mov (8,sp),a0
+ ret [a2,a3],24
+cc_recdisp_native:
+ jmp cc_stock_recdisp
+cc_rec_banks:
+ mov 0x9bb88000,a0
+ mov 2,d2
+1:
+ mov cc_rec_regs,a3
+ mov 15,d3
+2:
+ movhu (a3),d0
+ mov a0,a1
+ add d0,a1
+ mov (a1),d1
+ mov d1,(a2)
+ inc4 a2
+ add 2,a3
+ add -1,d3
+ bne 2b
+ add 0x8000,a0
+ add -1,d2
+ bne 1b
+ ret [d2,d3,a3],16
+.balign 2
+cc_rec_regs:
+ .short 0x60,0x390,0x3a8,0x400,0x42c,0x430,0x2060,0x2390
+ .short 0x39c,0x3a0,0x3a4,0x62c,0x630,0x634,0x4e0
+.balign 4
+cc_rec_sample: .space 248,0

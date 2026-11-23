@@ -516,7 +516,8 @@ def write_hooks(build, stock):
     hooks, problems = hooks_of(build)
     if problems:
         sys.exit('\n'.join(problems))
-    data = {'hooks': {k: {'addr': hx(a), 'len': n} for k, (a, n) in sorted(hooks.items())},
+    data = {'_notice': 'Modified by SengokuCola for the Caduceus for OM-3 fork.',
+            'hooks': {k: {'addr': hx(a), 'len': n} for k, (a, n) in sorted(hooks.items())},
             'patch_sites': site_runs(build, stock)}
     HOOKS_FILE.write_text(json.dumps(data, indent=1) + '\n')
     print(f'wrote {HOOKS_FILE}: {len(hooks)} hooks, {len(data["patch_sites"])} patch sites')

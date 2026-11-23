@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Modified by SengokuCola for the Caduceus for OM-3 fork.
 """Emulator regression tests: each test boots a build in om-emu one or more times and checks the debug log.
 
     python3 tools/test/emu_test.py BUILD_DIR [--only NAME ...] [--jobs N] [--out DIR] [--repeat N] [--without BUILD_DIR]
@@ -36,6 +37,7 @@ HALATION_CASES = ['fade3', 'odd2', 'small5', 'min5', 'w68', 'odd131', 'clamp5', 
 HALATION_CHECK = REPO / 'research/halation/emu_check.py'
 # borders (2026-11-16): the border pass (editor.s bd_run) called directly on test frames must give every byte of
 # research/border/model.py (research/border/emu_check.py). Small frames, a few seconds.
+SUNLIT = 'sunlit-film20-still'
 BORDER = 'border-matches-the-model'
 BORDER_CHECK = REPO / 'research/border/emu_check.py'
 # gentler Shading s1 (#22, 2026-11-18): the vignette pass (shading.s vg_run) called directly on test frames must give
@@ -754,7 +756,20 @@ def ck_line(mem, card, matches, on_builtin, with_values):
             '^Curves / mix on COLOR 1-4: ' + re.escape(', '.join(words)) + '$']
 
 
+# Button Function > arrow-pad Direct Function > Up > Film Box. Use physical
+# inputs from the shooting screen, including shutter release after cancelling.
+FILM_BOX_BIND = ('s1 menu left left left left left ok ok '
+                 'down down down down down ok right right ok down ok'
+                 + ' down' * 9 + ' right ok expect:val:50=4201 s1')
+
 TESTS = {
+    'film-box-dial-apply-and-cancel': [Boot(
+        FILM_BOX_BIND + ' up expect:mem:{FB_SLOT}=01000000 '
+        'main+1 expect:mem:{FB_SLOT}=02000000 main-1 expect:mem:{FB_SLOT}=01000000 '
+        'sub+1 expect:mem:{FB_SLOT}=14000000 sub-1 expect:mem:{FB_SLOT}=01000000 '
+        'main+1 s1 expect:mem:{FB_SLOT}=00000000 expect:p:712=00000000 '
+        'up main+1 ok expect:mem:{FB_SLOT}=00000000 expect:p:712=02000000 '
+        'up expect:mem:{FB_SLOT}=02000000 s1 poweroff')],
     'focus-probe-log': [Boot('expect:mem:{cf_latest}=00000000 s1 wait wait poweroff', expect=[
         r'^FOCUS PROBE 2 - raw lens state, NOT focus accuracy',
         r'^FP \d+ valid=\d+ status=\d+ inhibit=\d+ dir=\d+ record=[01] pos=-?\d+ lo=-?\d+ hi=-?\d+$',
@@ -2457,6 +2472,18 @@ def run_hl(emu, build, out, card0):
         spec.append({'name': name, 'pc': f'{sym["hl_pp_cb"]:#x}', 'stop': [hex(sym['color_resume'])],
                      'max': 200000, 'mem': mem, 'regs': {'a2': 'B+0x200'}, 'read': [[f'B+0x1000+{HL_REC}', span]],
                      'count': [sym['getter']]})
+    # Compare the same colour-stage output with the picker on two live routes and on a still.
+    for name, kind, sat in [('picker-lv', 0x30, 4), ('picker-lv-zero', 0x30, 0),
+                            ('picker-lv-alt', 0x130, 4), ('picker-still', 0x1000, 4)]:
+        mem = [['B+0x204', '=B+0x400'], ['B+0x20c', '=B+0x1000'],
+               ['B+0x40e', struct.pack('<H', kind).hex()],
+               [hex(sym['FB_SLOT']), '=2'], [hex(sym['FB_PREVIEW']), '=B+0xc00'],
+               ['B+0xc00', (look + bytes([sat] * 12)).hex()],
+               [f'B+0x1000+{HL_REC}', f'{HL_FILL:02x}' * span]]
+        mem.extend([f'P+{32 + 64*k + 31}', '00'] for k in range(4))
+        spec.append({'name': name, 'pc': hex(sym['hl_pp_cb']), 'stop': [hex(sym['color_resume'])],
+                     'max': 200000, 'mem': mem, 'regs': {'a2': 'B+0x200'},
+                     'read': [[f'B+0x1000+{HL_REC}', span]], 'count': [sym['color_builder']]})
     res = run_ncall(emu, build, d, card0, 's1 wait wait ncall', spec)
     if isinstance(res, str):
         return HL, [res]
@@ -2478,6 +2505,24 @@ def run_hl(emu, build, out, card0):
         calls = res[name]['count'][0]
         if calls != (slot is not None):
             errors.append(f'{name}: hl_pp calls the getter {calls} times, want {int(slot is not None)} (out.json)')
+    for name in ('picker-lv', 'picker-lv-zero', 'picker-lv-alt', 'picker-still'):
+        output = bytes.fromhex(res[name]['mem'][0])
+        live = name != 'picker-still'
+        if res[name]['regs']['pc'] != f"{sym['color_resume']:x}" or res[name]['count'][0] != int(live):
+            errors.append(f'{name}: native colour builder routing')
+        if live:
+            for r, sector in enumerate(HL_PERM):
+                hue, _, light = struct.unpack_from('<hhh', output, r * HL_REC_STEP)
+                if (hue, light) != (HL_HUE[HL_LOOK[sector]+7], HL_LIGHT[HL_LOOK[12+sector]+7]):
+                    errors.append(f'{name}: candidate sector {sector}')
+                    break
+        elif output != bytes([HL_FILL]) * span:
+            errors.append('picker preview modified a still job')
+    def saturations(name):
+        data = bytes.fromhex(res[name]['mem'][0])
+        return [struct.unpack_from('<h', data, r*HL_REC_STEP+2)[0] for r in range(12)]
+    if saturations('picker-lv') == saturations('picker-lv-zero'):
+        errors.append('candidate saturation did not reach the native colour builder')
     return HL, errors
 
 
@@ -2750,7 +2795,7 @@ def newest_looks():
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('build', type=pathlib.Path)
-    ap.add_argument('--only', nargs='+', choices=sorted([*TESTS, AUDIT, STACKING, HALATION, BORDER, SHADING, SHTAKE, ENGINE, DIAL, VIDEO, GRAINMIX, CROPHIST, CROPPL, CROPQ, GATES, GRAINTILE, FOCUS, CONTRAST, SCREEN, CAMERA, XPAN, *DIRECT, *STATIC]))
+    ap.add_argument('--only', nargs='+', choices=sorted([*TESTS, AUDIT, STACKING, HALATION, SUNLIT, BORDER, SHADING, SHTAKE, ENGINE, DIAL, VIDEO, GRAINMIX, CROPHIST, CROPPL, CROPQ, GATES, GRAINTILE, FOCUS, CONTRAST, SCREEN, CAMERA, XPAN, *DIRECT, *STATIC]))
     ap.add_argument('--jobs', type=lambda v: max(1, int(v)), default=DEFAULT_JOBS)
     ap.add_argument('--out', type=pathlib.Path)
     ap.add_argument('--looks', type=pathlib.Path)
@@ -2773,7 +2818,7 @@ def main():
     looks = (a.looks or newest_looks()).resolve()
     make_card(emu, build, looks, card0)
     fixtures = make_fixtures(out, looks)
-    names = a.only or sorted([*TESTS, AUDIT, STACKING, HALATION, BORDER, SHADING, SHTAKE, ENGINE, DIAL, VIDEO, GRAINMIX, CROPHIST, CROPPL, CROPQ, GATES, GRAINTILE, FOCUS, CONTRAST, SCREEN, CAMERA, XPAN, *DIRECT, *STATIC])
+    names = a.only or sorted([*TESTS, AUDIT, STACKING, HALATION, SUNLIT, BORDER, SHADING, SHTAKE, ENGINE, DIAL, VIDEO, GRAINMIX, CROPHIST, CROPPL, CROPQ, GATES, GRAINTILE, FOCUS, CONTRAST, SCREEN, CAMERA, XPAN, *DIRECT, *STATIC])
     stock = static_check.find_stock(a.stock) if any(n in STATIC for n in names) else None
     runs = [(n, k) for n in names for k in range(1, a.repeat + 1)]
     print(f'{len(names)} tests{f" x {a.repeat}" if a.repeat > 1 else ""} on {build}, results in {out}')
@@ -2798,6 +2843,11 @@ def main():
                 return run_stacking(emu, build, d, card0)
             if n == HALATION:
                 return run_halation(emu, build, d, card0)
+            if n == SUNLIT:
+                path = REPO / 'research/sunlit-foliage'
+                sys.path.insert(0, str(path))
+                import sunlit_emu
+                return n, sunlit_emu.run(emu, build, d / n, looks)
             if n == BORDER:
                 return run_border(emu, build, d, card0)
             if n == SHADING:
