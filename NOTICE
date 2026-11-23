@@ -35,3 +35,18 @@ own licence.
 "OM SYSTEM", "Olympus" and "OM-3" are trademarks of their owners, as are the film names used for the starter looks
 (Fujifilm, Kodak and others). The looks are interpretations, not the manufacturers' own. Not affiliated with OM Digital
 Solutions, Fujifilm or Kodak.
+
+Nostalgia (怀旧), the SengokuCola fork (https://github.com/SengokuCola/nostalgia)
+Based on Caduceus for OM-3 v0.40.2 by androidfanman
+(https://github.com/androidfanman/caduceus-om3), under Apache-2.0.
+Fork modifications include Simplified Chinese menus and LookLab localisation, manual-focus assistance,
+Cyber Card and Film Box overlays, development and test tools, and the fork release build and documentation.
+The fork's source changes are distributed under Apache-2.0.
+
+Sample-photo exception: paijanne.jpg, “Päijänne and päijätsalo,” by Joonas Lyytinen, is CC BY 2.0.
+The copy has been resized and re-encoded as JPEG. See webapp/public/samples/CREDITS.md and
+looklab/samples/CREDITS.md for the source, attribution and licence link.
+
+Fork releases distribute a patch and project-generated card files. The complete firmware is reconstructed
+locally from a user-supplied or OM-hosted original. The fork's Apache licence covers the project's code and
+modifications and does not grant redistribution rights for OM Digital Solutions firmware.

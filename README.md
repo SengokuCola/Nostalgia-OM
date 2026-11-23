@@ -1,87 +1,32 @@
-<h1 align="center">Caduceus for OM-3</h1>
+# Nostalgia 怀旧
 
+**Nostalgia 怀旧** 为 **OM SYSTEM OM-3（原厂固件 1.1）** 提供 20 个胶片槽、机内色彩编辑和配方导入。拍摄时可以用 Film Box 在取景画面里切换胶片，用分像辅助手动对焦，也可以预览 Cyber Card 图卡并叠加到 JPEG 照片上。部分机内菜单和 LookLab 提供简体中文界面。
 
-<p align="center"><strong>Film looks and a colour editor, built into the OM SYSTEM OM-3.</strong></p>
+[下载 Nostalgia](https://github.com/SengokuCola/nostalgia/releases) · [使用指南](docs/USING.md) · [报告问题](https://github.com/SengokuCola/nostalgia/issues)
 
-<p align="center">
-  <a href="https://github.com/androidfanman/caduceus-om3/releases/latest"><b>Download</b></a> &nbsp;·&nbsp;
-  <a href="https://androidfanman.github.io/caduceus-om3/"><b>Tour</b></a> &nbsp;·&nbsp;
-  <a href="https://androidfanman.github.io/caduceus-om3/pages/changelog/"><b>Changelog</b></a> &nbsp;·&nbsp;
-  <a href="https://androidfanman.github.io/caduceus-om3/pages/install/"><b>Install</b></a> &nbsp;·&nbsp;
-  <a href="https://androidfanman.github.io/caduceus-om3/pages/using/"><b>Using it</b></a> &nbsp;·&nbsp;
-  <a href="https://androidfanman.github.io/caduceus-om3/looklab/"><b>LookLab</b></a> &nbsp;·&nbsp;
-  <a href="https://androidfanman.github.io/caduceus-om3/pages/faq/"><b>FAQ</b></a> &nbsp;·&nbsp;
-  <a href="https://androidfanman.github.io/caduceus-om3/pages/roadmap/"><b>Roadmap</b></a> &nbsp;·&nbsp;
-  <a href="https://github.com/androidfanman/caduceus-om3/tree/main/devkit/photo-code"><b>Developers</b></a> &nbsp;·&nbsp;
-  <a href="https://discord.gg/fKpcKGsNPY"><b>Discord</b></a>
-</p>
+可以在线调整胶片配方，或从源码在本地运行中文版。[在线 LookLab](https://androidfanman.github.io/caduceus-om3/looklab/) · [LookLab 源码](webapp/README.md)
 
-<p align="center">
-  Latest: <b>v0.40.2</b> (2026-11-19)
-</p>
+## 安装
 
-## What it does
+支持 **OM SYSTEM OM-3 原厂固件 1.1**。更新前请给相机电池充满电。
 
-**[Take the tour](https://androidfanman.github.io/caduceus-om3/)**: the films and every setting on the camera's own screens, with before / after photos.
+1. 在 Releases 下载 `nostalgia-<版本>.zip` 和 `SHA256SUMS`，核对 ZIP 的 SHA-256 后解压。
+2. 运行 `Make SD card files (Windows).bat` 或 `Make SD card files (Mac).command`，需要 Python 3。启动器从 OM 获取原厂固件并在本地打补丁。已有原厂 1.1 文件时也可以运行 `python3 firmware/patch.py --stock 原厂文件路径`。
+3. 将生成的 `DCOLYMP` 文件夹复制到 SD 卡根目录。若安装包生成了 `OM3MOD`，请合并其中的文件并保留已有配方。选装的 `LOOKS.BIN`、`CURVES.BIN` 和 `DEBUG.TXT` 位于包内 `releases/<版本>/`。
+4. 关闭相机，按住 **OK** 开机。指示灯常亮时正在写入，可能持续约 5 分钟。常亮后转为闪烁再关机。如果开机后立刻闪烁，按下方指南排查文件和 SD 卡。
+5. 保存生成的 `restore/E1479999.BIN`。需要恢复原厂 1.1 时，用它替换卡上 `DCOLYMP` 中的同名文件，再按相同方式更新。
 
-- **Your films in Picture Mode:** FILM 1–20 appear after COLOR 1–4, each with its own name. 20 film sims come with it.
-- **A colour editor on the camera:** Color Mix, RGB curves, hue, saturation and brightness for 12 colours, split
-  toning, Blacks and Whites, WB shift, Sharpness, Noise Filter, Shading, Glow / Clarity, Halation and Color Grain.
-- **Make films on your computer** in the [LookLab](https://androidfanman.github.io/caduceus-om3/looklab/), with a preview, then copy one file (`LOOKS.BIN`) to the card: the camera takes films it never had.
-- **Your films live in the camera:** the films, your changes to them and the Extras settings are kept in the camera's
-  own memory (from v0.29), so any SD card works, even a blank one, or none at all (v0.29.1).
-- **Your buttons and Creative Dial:** all four arrow keys in Button Function, and each Creative Dial position set to
-  CRT, ART, COLOR or MONO, with its own film.
-- **The film in every photo:** its name and recipe in the JPEG's EXIF, so LookLab (or a recipe site, with the
-  [developer kit](devkit/photo-code/)) can open the film from the photo.
+[上游安装和故障排查指南](https://androidfanman.github.io/caduceus-om3/pages/install/)
 
-Open-source firmware patches for the OM-3 on firmware 1.1, part of the
-[Caduceus](https://github.com/cakelesscoder/caduceus-ep7) family.
+## 构建与发布
 
-> [!CAUTION]
-> ### ⚠️ Experimental firmware: use at your own risk
-> This is an **unofficial change to your camera's firmware**. It can **crash or freeze the camera**, and **no
-> responsibility is accepted for any damage or data loss**. It may affect your warranty with OM Digital Solutions.
->
-> You can always go back to the camera's own firmware. Read [Safety](#safety) before you install.
+Nostalgia 从 **`v0.1.0`** 独立编号，对应 Git 标签 **`fork-v0.1.0`**。
 
-## Install
+- 手动验证时，在 GitHub Actions 运行 **Nostalgia Release**，输入 `v0.1.0`，从运行结果下载补丁包。
+- 推送 `fork-v0.1.0` 格式的 Git 标签后，工作流会编译标签源码、逐字节验证补丁重建，并将 ZIP 和 `SHA256SUMS` 附到预发布版。
+- 本地构建时，在 Linux 或 WSL 中设置 `OM3_STOCK`（原厂 1.1 文件）和 `OM3_TOOLCHAIN`（MN10300 binutils 构建目录），执行 `bash tools/release-build.sh v0.1.0 out-release`。[构建说明](releases/README.md#fork-release-builds)
 
-About 15 minutes. **[Step-by-step install guide](https://androidfanman.github.io/caduceus-om3/pages/install/)**. In short:
-
-1. **Check** the camera is an OM-3 on firmware **1.1** (*Setup › Firmware*), with a fully charged battery.
-2. **Download** this project (**Code › Download ZIP**) and unzip it.
-3. **Make the update file:** double-click `Make SD card files (Mac).command` or `Make SD card files (Windows).bat`.
-   It gets OM's official firmware from OM's server and adds Caduceus to it.
-4. **Copy** the `DCOLYMP` folder to the top of the SD card. For the film sims, put `LOOKS.BIN` (from the
-   [latest release](https://github.com/androidfanman/caduceus-om3/releases/latest)) in a folder `OM3MOD` on the card;
-   updating from an earlier version, keep your `OM3MOD` files: the camera copies them into its memory once.
-5. **Update the camera:** camera off, **hold OK** and switch on. Steady light = writing (about two minutes, don't touch
-   anything); blinking = done.
-
-To undo: [go back to the camera's own firmware](https://androidfanman.github.io/caduceus-om3/pages/install/#going-back-to-the-cameras-own-firmware). Problems:
-[if something goes wrong](https://androidfanman.github.io/caduceus-om3/pages/install/#if-something-goes-wrong).
-
-**Reporting a problem?** Send a debug log: put [`DEBUG.TXT`](https://github.com/androidfanman/caduceus-om3/releases/latest/download/DEBUG.TXT) in the card's `OM3MOD` folder, use the camera
-until the problem happens, and attach the `OM3MOD/CADLOG.TXT` it writes. [How, step by step](debug-log/).
-
-## Using it
-
-**[How to use it on the camera](https://androidfanman.github.io/caduceus-om3/pages/using/)**. In short:
-
-- Switch on and half-press once (that loads your films). Turn the creative dial to **COLOR** and open **Picture Mode**:
-  after COLOR 1–4 you'll find your films, **FILM 1–20**.
-- The rows below change the film at once: the colour wheel (HSL, with split toning), Contrast, Highlight & Shadow,
-  Blacks / Whites, WB shift, Sharpness, Noise Filter, Vignette Correction, Shading, Glow and Film Grain.
-- Your changes stay with each film, also over power off. **Hold OK** on a film to put it back as built.
-- Caduceus works on COLOR 1–4 and the films. The Monochrome profiles keep the camera's own settings.
-
-## LookLab
-
-The **[LookLab](https://androidfanman.github.io/caduceus-om3/looklab/)** is a web page for making and changing your films, with a preview on sample photos or
-your own. It starts with the 20 film sims and has 62 film looks to choose from. Save your films as `LOOKS.BIN` and copy
-it to the card's `OM3MOD` folder. Nothing is uploaded: your work stays in your browser.
-**[How to use LookLab](docs/CONTROL_PANEL.md)**.
+补丁包包含启动器、补丁、配套卡文件、`LICENSE` 和 `NOTICE`。启动器使用原厂 1.1 文件在本地生成更新文件和恢复文件。
 
 ## The 20 film sims
 
@@ -113,110 +58,17 @@ products or presets. These are LookLab's standard 20 (since 2026-11-13: 18 colou
 | 19 | Fujifilm 400 | Warm and punchy, bright reds, golden yellows |
 | 20 | Natura 1600 | Fast, clean and slightly cool, lively reds, soft blacks |
 
-## What's in it
+## 授权与署名
 
-Everything here is camera-tested on a real OM-3 unless it says otherwise.
+Nostalgia 由 SengokuCola 基于 androidfanman 的 Caduceus for OM-3 v0.40.2 开发。Caduceus for OM-3 源自 cakelesscoder 的 Caduceus for PEN E-P7。[OM-3 上游](https://github.com/androidfanman/caduceus-om3) · [PEN E-P7 项目](https://github.com/cakelesscoder/caduceus-ep7)
 
-| Feature | Since |
-|---|---|
-| Films FILM 1–20 in the Picture Mode list, with their names on the title, quick menu, shooting screen and viewfinder | v0.24.1 |
-| Changes kept per film and per COLOR, over power off; **hold OK** to reset; `*` marks what's changed | v0.25 |
-| Hue and Luminance for each of the 12 colours, next to the camera's Saturation | v0.11 |
-| Picture Mode rows: Blacks / Whites, WB shift grid, Sharpness (−5 Off..+2), Noise Filter (incl. High), Vignette Correction, Shading, Glow / Clarity, Film Grain | v0.25 |
-| Blacks / Whites as one grid row, −7..+7 | v0.28 |
-| Film grain in colour, from the camera's image processor: as fast as a photo without grain | v0.25 |
-| Split toning: Shadows and Highlights pages, 12 colours, also in live view (0..10 and a Tone Balance row from v0.28) | v0.26 |
-| WB shift up to ±7 per film | v0.26.1 |
-| The super control panel's dials step through the films | v0.26.2 |
-| All four arrow keys in Button Function; Creative Dial positions set to CRT / ART / COLOR / MONO, each COLOR with its own film | v0.27 |
-| The film's name and recipe in each JPEG's EXIF; LookLab opens a film from a photo | v0.27 |
-| Optional [debug log](debug-log/) (`DEBUG.TXT` → `OM3MOD/CADLOG.TXT`) for bug reports | v0.27 |
-| Films load at the first half-press after switching on (the automatic load at power-on of v0.26.2 and v0.27 was taken out: it could rarely freeze the camera at start-up) | v0.27.1 |
-| Halation: a red glow around bright lights, its own Picture Mode row (0..5) | v0.28 |
-| Films, on-camera changes and Extras settings kept in the camera's own memory, so any card works; a card brings in only films the camera never had | v0.29 |
-| The films load with no card in the camera too | v0.29.1 |
-| Each film and COLOR remembers its white balance (mode and Kelvin) | v0.28 |
-| The photo's code records the film as set when the photo is taken (on-camera changes, Halation, Tone Balance, WB) | v0.28 |
+项目采用 Apache License 2.0。[许可证](LICENSE) · [修改与第三方署名](NOTICE)
 
-Coming next: see the [roadmap](https://androidfanman.github.io/caduceus-om3/pages/roadmap/).
+OM SYSTEM、Olympus 和 OM-3 为其各自权利人的商标。
 
-## Safety
+## 相较上游的详细改动
 
-- Only the OM-3 on firmware **1.1** is supported. The launcher refuses any other firmware file, and checks its result
-  against the expected checksum before writing it.
-- Every change is tested in an emulator of the camera before it goes on a camera. The camera's SD update (hold
-  **OK** while switching on) is proven on the OM-3, for Caduceus and for going back to the official firmware.
-- Use a full battery and don't interrupt the update. A failed write can leave the camera unable to start.
-- Keep the restore file the launcher makes (`restore/E1479999.BIN`): flashing it puts the camera back to stock 1.1.
-- If something misbehaves, copy the card's `OM3MOD` folder to your computer, delete it from the card and try again (from
-  v0.29 your films are in the camera, so this doesn't lose them). If that doesn't help, flash the restore file.
-
-## Other cameras
-
-Caduceus for OM-3 works only on the **OM-3 with firmware 1.1**. I get asked about other cameras a lot, so here is
-why that's hard, and why it isn't something I can do.
-
-- **Every camera and every firmware version is different inside.** Caduceus changes the OM-3's firmware at several
-  hundred exact places: where the menus are drawn, where the colour settings are read, where the photo is developed.
-  None of those places are the same on another model, or even on another firmware version of the OM-3. A port to
-  another camera means finding all of them again, from scratch.
-- **It starts from OM's own firmware update.** The launcher takes the official update file that OM SYSTEM
-  publishes, adds Caduceus's changes and makes a new update for the card. A camera that has never had a firmware
-  update has no such file to start from.
-- **It has to be tested on the real camera.** Every change runs in an emulator of the OM-3 first, but nothing is
-  released until it has worked on a real OM-3. A firmware change that goes wrong can freeze a camera or stop it
-  starting. I only own an OM-3, so I can't test, or safely release, anything for other cameras.
-- **It's a lot of work.** The OM-3 version took many rounds of test builds on the camera for each feature, and every
-  model would need the same again.
-
-**The new OM SYSTEM PEN (2026):** it has the same name and look as the PEN line, but inside it is a different camera
-from both the OM-3 and the older PEN E-P7 (a different image processor, TruePic IX instead of the OM-3's TruePic X).
-As far as we know, OM SYSTEM hasn't published a firmware update for it yet, so there is no firmware file to start a
-port from. Even when one comes out, it would be a new port, done by someone who owns the camera.
-
-**Other options:**
-- **PEN E-P7:** there's a sister project, [Caduceus for the E-P7](https://github.com/cakelesscoder/caduceus-ep7), by
-  cakelesscoder. Caduceus for OM-3 grew out of it.
-- **Want to port it yourself?** If you own another OM SYSTEM or Olympus camera and are comfortable with low-level
-  work, the research notes ([`research/NOTES.md`](research/NOTES.md)), the tools and the emulator set-up here are a
-  good starting point. Say hello on [Discord](https://discord.gg/fKpcKGsNPY) or in a GitHub issue.
-
-Please don't flash an OM-3 file on any other camera: the launcher refuses other firmware files, and a wrong file can
-stop a camera from starting.
-
-## For developers
-
-- `firmware/src/editor.s`, `editor.ld`: the patch source (MN10300 / AM33 assembly). `firmware/src/xblock.s`: the
-  Extras code block (relocatable, appended to `GUIDES.BIN`; from v0.29 `GUIDES.BIN`, `LABELS.BIN` and `TONES.BIN` are built into
-  the firmware, and the films live in the camera's settings memory: `docs/FORMATS.md`).
-- `firmware/frames.py`: the white Frame layers (our own JPEGs, written into the resource component).
-- `firmware/build.py`: builds the update file from source (needs binutils built for `--target=mn10300-elf`):
-  `python3 firmware/build.py --stock OLY_E_147_1100_0000_0000_3.BIN --toolchain BINUTILS_BUILD --out NEW_DIR`.
-- `firmware/patch.py` + `releases/vX/patch.json`: the user-side patcher (pure Python) and each release's prebuilt patch (only
-  the bytes this project writes).
-- `card/`: generators for `GUIDES.BIN` (page labels), `LABELS.BIN` (Extras labels) and `LOOKS.BIN`.
-- `tools/mkpatch.py`: makes a release's `patch.json` from a build.
-- `webapp/`: the Caduceus LookLab source (TypeScript + Vite, started from cakelesscoder/caduceus-ep7's tool;
-  OM-3 only since 2026-11-09; see [webapp/README.md](webapp/README.md)). `looklab/` is its build, served by GitHub Pages
-  (`VITE_DEFAULT_CAMERA=om3 npm run build`, then copy `dist/` to `looklab/`).
-- `tools/emulator/`: test harness for [om-emu](https://github.com/flatpanda/om-emu) (E147 model).
-- [docs/DEVELOPER_NOTES.md](docs/DEVELOPER_NOTES.md): addresses, hooks and the test history.
-- [research/](research/README.md): the full lab notebook (`research/NOTES.md`: every address, test and dead end),
-  firmware and emulator tools, and archived experiments.
-- [docs/FILM_SIMULATION_ROADMAP.md](docs/FILM_SIMULATION_ROADMAP.md) and [ROADMAP.md](ROADMAP.md) (shown as the [roadmap page](https://androidfanman.github.io/caduceus-om3/pages/roadmap/)): plans and status.
-- `pages/`: the guide pages on GitHub Pages (install, using, faq, roadmap, changelog; shared style in `pages/site/`); they show `docs/INSTALL.md`, `docs/USING.md`, `docs/FAQ.md`, `ROADMAP.md` and `CHANGELOG.md`, so edit those files.
-- [CLAUDE.md](CLAUDE.md): working rules for AI-assisted sessions on this repo (useful for any contributor).
-
-## Credits
-
-Built on **[Caduceus](https://github.com/cakelesscoder/caduceus-ep7)** by cakelesscoder (Apache-2.0), firmware patches
-for the Olympus PEN E-P7: the on-camera editor design, the bundle-table layout, the Caduceus LookLab this tool started from, its tone
-model and the starter film looks. The fix for bad bytes in `EDITS.BIN` (and, in v0.26.2–v0.27, loading the films at power-on) came from **[fernandezk26](https://github.com/fernandezk26/camera-stuff)**'s fork (v0.26.2). Sample photos are public domain (CC0), except the sunset by Joonas Lyytinen (CC BY 2.0); see [webapp/public/samples/CREDITS.md](webapp/public/samples/CREDITS.md). Camera emulation by
-[om-emu](https://github.com/flatpanda/om-emu).
-
-"OM SYSTEM", "Olympus" and "OM-3" are trademarks of their owners, as are the film names used for the starter looks.
-Not affiliated with OM Digital Solutions, Fujifilm or Kodak.
-
-## License
-
-[Apache License 2.0](LICENSE). See [NOTICE](NOTICE).
+- **简体中文界面**覆盖部分机内菜单、胶片控制和 LookLab。
+- **手动对焦辅助**在 MF 辅助菜单中提供分像对焦和合焦微调。[对焦实现和诊断记录](research/focus-assist/README.md)
+- **Cyber Card（图卡）**为静态 JPEG 添加图卡叠图，支持位置切换和实时取景预览。
+- **Film Box** 可以分配到方向键。在实时取景中打开后，转动拨盘浏览胶片，按 **OK** 应用。[Film Box 操作](docs/USING.md#choosing-a-film)

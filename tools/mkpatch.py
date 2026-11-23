@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Modified by SengokuCola for the Caduceus for OM-3 fork.
 """Make releases/vX/patch.json from a developer build (firmware/build.py --out DIR): the changed bytes of the decoded
 main block as runs (our code, hooks and tables only), the white Frame layers (rebuilt by patch.py from their window
 sizes, frames.py), and the expected checksums. Writes no OM bytes.
@@ -14,6 +15,7 @@ import frames
 ap = argparse.ArgumentParser()
 for k in ('stock', 'build', 'version', 'description', 'out'):
     ap.add_argument('--' + k, required=True)
+ap.add_argument('--name', default='Caduceus for OM-3', help='project name shown by the patch launcher')
 a = ap.parse_args()
 raw = Path(a.stock).read_bytes()
 b = Path(a.build)
@@ -22,25 +24,20 @@ pkg = (b / 'E1479999.BIN').read_bytes()
 comps = P.parse(raw)
 stock_main = P.decode(comps[0]['enc'])
 assert len(stock_main) == len(main)
-runs, i, GAP = [], 0, 16
+main_base = 0x60021020
+runs, i = [], 0
 while i < len(main):
     if main[i] == stock_main[i]:
         i += 1; continue
-    j = i
-    while True:
-        k = j
-        while k < len(main) and main[k] != stock_main[k]: k += 1
-        nxt = k
-        while nxt < len(main) and nxt - k <= GAP and main[nxt] == stock_main[nxt]: nxt += 1
-        if nxt < len(main) and nxt - k <= GAP:
-            j = nxt; continue
-        break
-    runs.append([hex(0x60021020 + i), main[i:k].hex()]); i = k
-out = dict(format='om3-patch-2', name='Caduceus for OM-3', version=a.version, description=a.description,
+    start = i
+    while i < len(main) and main[i] != stock_main[i]:
+        i += 1
+    runs.append([hex(main_base + start), main[start:i].hex()])
+out = dict(format='om3-patch-2', name=a.name, version=a.version, description=a.description,
            stock_file=P.STOCK_NAME, stock_sha256=hashlib.sha256(raw).hexdigest(), stock_size=len(raw),
            main_sha256_before=hashlib.sha256(stock_main).hexdigest(), main_sha256_after=hashlib.sha256(main).hexdigest(),
-           result_sha256=hashlib.sha256(pkg).hexdigest(), main_base='0x60021020',
-           changed_bytes=sum(x != y for x, y in zip(main, stock_main)),
+           result_sha256=hashlib.sha256(pkg).hexdigest(), main_base=hex(main_base),
+           changed_bytes=sum(len(data) // 2 for _, data in runs),
            frames=dict(component=2, base=hex(frames.BASE), layers=[list(x) for x in frames.LAYERS],
                        note='white Frame layers: rebuilt by patch.py (frames.py), window edges measured from the stock masks'),
            card_files=[n for n in ('GUIDES.BIN', 'LABELS.BIN', 'TONES.BIN') if (Path(a.build) / n).is_file()],   # TONES.BIN: v0.26

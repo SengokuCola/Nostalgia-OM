@@ -1,36 +1,103 @@
-# Publishes every folder in releases/ as a GitHub release (tag + notes + files), once; files added to a folder later
-# are attached to its release. Optional extras (v0.27 on): DEBUG.TXT (the debug log switch) and *.zip (the photo code
-# kit for developers).
-# A folder may hold COMMIT (a commit SHA) to tag an earlier commit; otherwise the release tags this push.
-name: Releases
+# Fork changes by SengokuCola. Builds and publishes fork-specific patch kits.
+name: Nostalgia Release
+
 on:
   push:
-    branches: [main]
-    paths: ['releases/**']
+    tags: ['fork-v*']
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Fork version to build (e.g. v0.1.0)'
+        required: true
+        type: string
+
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: fork-release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  publish:
-    runs-on: ubuntu-latest
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      VERSION_OR_TAG: ${{ inputs.version || github.ref_name }}
     steps:
-      - uses: actions/checkout@v4
-      - name: Create missing releases
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Check release inputs
+        run: |
+          VERSION="$VERSION_OR_TAG"
+          if [[ $GITHUB_EVENT_NAME == push ]]; then
+            VERSION=${VERSION#fork-}
+          fi
+          if [[ ! $VERSION =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ || ${#VERSION} -gt 10 ]]; then
+            echo "::error::Use a version such as v0.1.0 or a tag such as fork-v0.1.0."
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          if [[ -n $(git ls-files -- firmware/src/sunlit.lut research/sunlit-foliage/sunlit.npz) ]]; then
+            echo "::error::The release source must exclude the Sunlit Foliage calibration and lookup data."
+            exit 1
+          fi
+          for notice in LICENSE NOTICE; do
+            cmp "$notice" "webapp/public/$notice"
+            cmp "$notice" "looklab/$notice"
+          done
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential bison flex fonts-dejavu-extra fonts-noto-cjk \
+            python3-pil python3-numpy python3-scipy
+      - name: Build MN10300 toolchain
+        working-directory: ${{ runner.temp }}
+        run: |
+          OM3_TOOLCHAIN="$RUNNER_TEMP/binutils/build"
+          mkdir -p "$OM3_TOOLCHAIN"
+          curl --fail --silent --show-error --location --retry 3 \
+            -o binutils-2.42.tar.xz https://archive.ubuntu.com/ubuntu/pool/main/b/binutils/binutils_2.42.orig.tar.xz
+          echo 'f6e4d41fd5fc778b06b7891457b3620da5ecea1006c6a4a41ae998109f85a800  binutils-2.42.tar.xz' | sha256sum -c
+          tar -xJf binutils-2.42.tar.xz -C "$(dirname "$OM3_TOOLCHAIN")"
+          cd "$OM3_TOOLCHAIN"
+          ../binutils-2.42/configure --target=mn10300-elf --disable-nls --disable-werror \
+            --disable-gdb --disable-sim --disable-gprof --disable-gold --disable-libctf \
+            --disable-gprofng --disable-shared
+          make -j"$(nproc)" MAKEINFO=true all-gas all-ld all-binutils
+      - name: Build and verify patch kit
+        env:
+          OM3_TOOLCHAIN: ${{ runner.temp }}/binutils/build
+        run: bash tools/release-build.sh "$VERSION" "$RUNNER_TEMP/dist"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: fork-patch-kit
+          path: ${{ runner.temp }}/dist/
+          if-no-files-found: error
+
+  publish:
+    if: github.event_name == 'push' && github.repository == 'SengokuCola/nostalgia'
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: fork-patch-kit
+      - name: Publish fork prerelease
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
         run: |
-          for d in releases/v*/; do
-            v=$(basename "$d")
-            files=$(ls "$d"patch.json "$d"GUIDES.BIN "$d"LABELS.BIN "$d"TONES.BIN "$d"LOOKS.BIN "$d"DEBUG.TXT "$d"*.zip "$d"SHA256SUMS 2>/dev/null || true)
-            if gh release view "$v" >/dev/null 2>&1; then
-              # already published: only add files that are missing from it (never replaces one)
-              have=$(gh release view "$v" --json assets -q '.assets[].name')
-              for f in $files; do
-                if ! echo "$have" | grep -qx "$(basename "$f")"; then gh release upload "$v" "$f"; echo "$v: added $(basename "$f")"; fi
-              done
-              continue
-            fi
-            target=$(cat "$d/COMMIT" 2>/dev/null || echo "$GITHUB_SHA")
-            gh release create "$v" --target "$target" --title "Caduceus for OM-3 $v" --notes-file "$d/NOTES.md" $files
-            echo "published $v at $target"
-          done
+          VERSION=${TAG#fork-}
+          sha256sum -c SHA256SUMS
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $VERSION already exists."
+            exit 0
+          fi
+          gh release create "$TAG" "nostalgia-$VERSION.zip" SHA256SUMS \
+            --verify-tag --prerelease --title "Nostalgia 怀旧 $VERSION" \
+            --notes "Firmware patch kit for OM SYSTEM OM-3 firmware 1.1. Includes the Windows and macOS launchers, matching SD card files, and the release checksum. The launchers build the update locally from OM firmware 1.1."

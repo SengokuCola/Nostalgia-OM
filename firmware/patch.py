@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Modified by SengokuCola for Nostalgia.
 """Make the OM-3 colour editor SD-card update file from OM's official OM-3 firmware 1.1.
 
 The repository holds no OM Digital Solutions firmware. You supply the official file (or let this script ask OM's
@@ -246,7 +247,7 @@ def main():
     (out / 'restore' / 'E1479999.BIN').write_bytes(raw)
     for name in cards:
         shutil.copyfile(rdir / name, out / 'OM3MOD' / name)
-    (out / 'VERSION.txt').write_text(f'{patch["name"]} {patch["version"]}\n')
+    (out / 'VERSION.txt').write_text(f'{patch["name"]} {patch["version"]}\n', encoding='utf-8')
     print(f'Done ({patch["version"]}): {out}')
     if cards:
         print('  Copy DCOLYMP and OM3MOD to the top of the SD card, then hold OK while turning the camera on.')

@@ -1,5 +1,21 @@
 # Releases
 
+This file was updated by SengokuCola for the fork.
+
+## Fork release builds
+
+Nostalgia starts at `v0.1.0`, with the Git tag `fork-v0.1.0`. The **Nostalgia Release** workflow uses GNU binutils 2.42 for `mn10300-elf` on Ubuntu 24.04. A manual run uploads `nostalgia-<version>.zip` and its checksum as an Actions artifact. Pushing the corresponding tag publishes a prerelease in `SengokuCola/nostalgia`. The firmware version screen allows at most nine characters after the leading `v`.
+
+For a local build, install `python3-pil`, `python3-numpy`, `python3-scipy`, `fonts-dejavu-extra` and `fonts-noto-cjk`. Set `OM3_TOOLCHAIN` to the binutils build directory and `OM3_STOCK` to the official OM-3 1.1 firmware file. Then run:
+
+```sh
+bash tools/release-build.sh v0.1.0 out-release
+```
+
+The script uses `OM3_STOCK` when set and otherwise downloads firmware 1.1 from OM and verifies its SHA-256. The workflow compares the reconstructed firmware and generated card files byte for byte with the build. The ZIP contains the launchers, patch, matching card files, and the Apache `LICENSE` and `NOTICE`. Release builds omit the Sunlit Foliage effect and its calibration data.
+
+## Upstream release history
+
 Each folder is one version: the patch (`patch.json`, only the bytes Caduceus for OM-3 adds to OM's firmware), the
 card files it needs, the expected checksums, and short notes. No OM firmware is stored here.
 
@@ -52,10 +68,8 @@ Always copy the version's own `GUIDES.BIN` (from v0.20 it carries code made for 
 
 **Going back to stock:** flash `SD card files/restore/E1479999.BIN`, the official firmware the patcher saved.
 
-Each version is also published on the repo's **Releases** page (tag `v0.16` … `v0.27.1`) with the whole project as
-it was at that version: a GitHub Action (`.github/workflows/releases.yml`) publishes every folder here once, so a
-new version only needs its folder. Optional extras in a folder (`DEBUG.TXT`, `*.zip`, from v0.27) are attached too (`CURVES.BIN`, from v0.30, by hand);
-the launchers never copy them to the card.
+Historical versions and their optional assets are available from the [upstream Releases page](https://github.com/androidfanman/caduceus-om3/releases).
+Optional extras in those releases include `DEBUG.TXT`, the photo-code kit, and `CURVES.BIN`.
 **v0.28-alpha** is a test version: it is published by hand as a GitHub pre-release from `feature/v0.28-halation`
 (not from `main`), and the launchers in its download make it by default. **v0.29-beta** is published the same way from
 `feature/films-in-camera`; it has no card files (they are built into the firmware). **v0.30.4-alpha** likewise from

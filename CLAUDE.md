@@ -1,5 +1,7 @@
 # Working on Caduceus for OM-3 (for Claude sessions)
 
+Modified by SengokuCola for the Caduceus for OM-3 fork.
+
 Read this first, every session. Everything that matters about this project lives in this repository: do not rely on
 memory of earlier chats, and say so when something is not written down here.
 
@@ -16,7 +18,7 @@ commands, and keep replies short.
 | `webapp/` | LookLab, the web app (Vite / TypeScript; called the Control Panel until 2026-11-13, the name the E-P7 project uses). The live site is `looklab/` on `main` (GitHub Pages). |
 | `debug-log/` | `DEBUG.TXT` and how to send a debug log (users are linked here and to `releases/latest/download/DEBUG.TXT`, so every release folder carries `DEBUG.TXT`). |
 | `devkit/photo-code/` | The om3.1 photo code kit for other developers (reader, examples, demo). |
-| `releases/vX/` | Each release: `patch.json`, card files, `SHA256SUMS`, `NOTES.md`. Pushing a new folder to `main` publishes a GitHub release. |
+| `releases/vX/` | Upstream patch history. Nostalgia patch kits are built from source and verified by the [release workflow](releases/README.md#fork-release-builds). |
 | `docs/` | User docs, `DEVELOPER_NOTES.md` (per-release technical summary), `FILM_SIMULATION_ROADMAP.md`, `PHOTO_TO_LOOK.md`. |
 | `research/` | `NOTES.md` = the lab notebook (every address, test and dead end), tools, emulator scripts, archived experiments. See `research/README.md`. |
 | `CHANGELOG.md`, `ROADMAP.md` | Released changes; planned features. |
