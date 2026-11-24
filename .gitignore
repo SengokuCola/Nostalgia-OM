@@ -16,6 +16,8 @@ __pycache__/
 !releases/*/TONES.BIN
 !releases/*/LOOKS.BIN
 !releases/*/LABELS.BIN
+!card/standard/LOOKS.BIN
+!card/standard/CURVES.BIN
 
 # web app (build output is published as looklab/)
 webapp/node_modules/

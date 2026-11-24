@@ -1209,6 +1209,8 @@ def build(defaults, testfile, out, *, version=None, without_sunlit=False, highli
     assert all(again[i]['dec'] == comps[i]['dec'] for i in range(1, len(comps)) if i != 2)
     (out / 'comp2.sha').write_text(hashlib.sha256(c2['dec']).hexdigest() + ' ' + hashlib.sha256(d2).hexdigest() + '\n')
     (out / 'main.bin').write_bytes(bytes(m)); (out / 'E1479999.BIN').write_bytes(pkg)
+    for name in ('LOOKS.BIN', 'CURVES.BIN'):
+        (out / name).write_bytes((ROOT / 'card' / 'standard' / name).read_bytes())
     nm = subprocess.run([P.TC / 'binutils/nm-new', out / 'p.elf'], capture_output=True, text=True).stdout
     syms = {l.split()[2]: int(l.split()[0], 16) for l in nm.splitlines() if len(l.split()) == 3}
     rep = dict(source_sha256=source_digest(ROOT), package_sha256=hashlib.sha256(pkg).hexdigest(), main_sha256=hashlib.sha256(bytes(m)).hexdigest(),

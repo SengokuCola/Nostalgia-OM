@@ -4,6 +4,11 @@ What changed in each version of Caduceus for OM-3, newest first. To install or u
 [install guide](docs/INSTALL.md). When you update, always copy the new `GUIDES.BIN` with the firmware, and keep your
 `LOOKS.BIN`, `EDITS.BIN` and `BUNDLES.BIN` (from v0.29 only the firmware: the rest is built in or kept in the camera).
 
+## Nostalgia-OM v0.2.1 · 2026-11-25
+
+- 合并 0.1.1-SL 的按卷 Sunlit 重着色，保留旧胶片库通过第 20 卷名称启用效果的方式。
+- 合并 13R5 的换库修复。拨盘静止时会更新受影响的 COLOR 槽，半按快门会等更新完成再保存拍摄设置。
+
 ## Nostalgia-OM v0.2.0 · 2026-11-24
 
 - **走片窗胶卷盒**：左边滚动选卷，右边实时查看完整构图。拨轮和方向键都能切换，选到即应用；按住 OK 可开关滤镜，对照当前画面。

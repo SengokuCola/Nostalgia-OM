@@ -240,16 +240,25 @@ def main():
         print('Stopped:', e)
         return 1
     out = Path(a.out)
+    template = ROOT / 'card' / 'standard'
+    # Source checkout: current defaults. Standalone or historical release: its bundled defaults.
+    if rel != rels[-1] or not template.is_dir() or not (rdir / 'CURVES.BIN').is_file():
+        template = rdir
+    film_files = [name for name in ('CURVES.BIN', 'LOOKS.BIN') if (template / name).is_file()]
+    if any((out / 'OM3MOD' / name).exists() for name in ('LOOKS.BIN', 'CURVES.BIN', 'PROFILES.BIN')):
+        film_files = []
     cards = [n for n in ('GUIDES.BIN', 'LABELS.BIN', 'TONES.BIN') if (rdir / n).is_file()]   # page labels + Extras code (v0.20), Extras dial labels (v0.20), split toning guides (v0.26); none from v0.29 (built into the firmware)
-    for sub in ('DCOLYMP', 'restore') + (('OM3MOD',) if cards else ()):
+    for sub in ('DCOLYMP', 'restore') + (('OM3MOD',) if cards or film_files else ()):
         (out / sub).mkdir(parents=True, exist_ok=True)
     (out / 'DCOLYMP' / 'E1479999.BIN').write_bytes(pkg)
     (out / 'restore' / 'E1479999.BIN').write_bytes(raw)
     for name in cards:
         shutil.copyfile(rdir / name, out / 'OM3MOD' / name)
+    for name in film_files:
+        shutil.copyfile(template / name, out / 'OM3MOD' / name)
     (out / 'VERSION.txt').write_text(f'{patch["name"]} {patch["version"]}\n', encoding='utf-8')
     print(f'Done ({patch["version"]}): {out}')
-    if cards:
+    if cards or film_files:
         print('  Copy DCOLYMP and OM3MOD to the top of the SD card, then hold OK while turning the camera on.')
     else:
         print('  Copy DCOLYMP to the top of the SD card (this version needs no OM3MOD files), then hold OK while turning the camera on.')

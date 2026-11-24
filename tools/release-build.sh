@@ -37,7 +37,7 @@ bundle="$work/$name"
 release="$bundle/releases/$version"
 mkdir -p "$release" "$bundle/firmware"
 python3 firmware/build.py --stock "$stock" --toolchain "${OM3_TOOLCHAIN:?set OM3_TOOLCHAIN to the binutils build directory}" \
-    --out "$build" --version "$version" --without-sunlit --highlight-trial
+    --out "$build" --version "$version" --highlight-trial
 python3 tools/mkpatch.py --stock "$stock" --build "$build" --version "$version" \
     --name "Nostalgia 怀旧" --description "Firmware patch for OM SYSTEM OM-3 firmware 1.1" --out "$release/patch.json"
 
@@ -45,13 +45,14 @@ cp -p LICENSE NOTICE README.md 'Make SD card files (Mac).command' 'Make SD card 
 cp CHANGELOG.md "$bundle/"
 cp firmware/{patch,frames}.py "$bundle/firmware/"
 cp "$build/"{GUIDES,LABELS,TONES}.BIN "$release/"
-cp releases/v0.40.2/{LOOKS.BIN,CURVES.BIN,DEBUG.TXT} "$release/"
+cp "$build/"{LOOKS.BIN,CURVES.BIN} "$release/"
+cp releases/v0.40.2/DEBUG.TXT "$release/"
 
 # Test through the same launcher entry point and compare against the developer build.
 reconstructed="$work/reconstructed"
 python3 -B "$bundle/firmware/patch.py" --release "$version" --stock "$stock" --out "$reconstructed"
 cmp "$build/E1479999.BIN" "$reconstructed/DCOLYMP/E1479999.BIN"
-for card_file in GUIDES.BIN LABELS.BIN TONES.BIN; do
+for card_file in GUIDES.BIN LABELS.BIN TONES.BIN LOOKS.BIN CURVES.BIN; do
     cmp "$build/$card_file" "$reconstructed/OM3MOD/$card_file"
 done
 

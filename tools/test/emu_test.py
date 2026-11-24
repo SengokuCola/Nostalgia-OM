@@ -1371,6 +1371,9 @@ def make_card(emu, build, looks, path):
     for local, name in [(build / 'GUIDES.BIN', 'GUIDES.BIN'), (build / 'LABELS.BIN', 'LABELS.BIN'),
                         (looks, 'LOOKS.BIN'), (DEBUG_TXT, 'DEBUG.TXT')]:
         card_tool(emu, 'put', path, local, f'OM3MOD/{name}')
+    curves = looks.with_name('CURVES.BIN')
+    if curves.is_file():
+        card_tool(emu, 'put', path, curves, 'OM3MOD/CURVES.BIN')
 
 
 def read_log(emu, card, dest):
@@ -2852,11 +2855,8 @@ DIRECT = {WB: run_wb, HL: run_hl, CROPEL: run_cropel, LIVE: run_livelook, CROPSA
 
 
 def newest_looks():
-    def key(d):
-        n, _, pre = d.name.lstrip('v').partition('-')
-        return [int(x) for x in n.split('.')], pre == '', pre
-    rel = max((d for d in (REPO / 'releases').iterdir() if d.name.startswith('v') and (d / 'LOOKS.BIN').exists()), key=key)
-    return rel / 'LOOKS.BIN'
+    """Default film bank used by the current firmware installer and emulator."""
+    return REPO / 'card/standard/LOOKS.BIN'
 
 
 def main():
