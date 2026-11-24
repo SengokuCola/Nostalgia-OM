@@ -20359,9 +20359,25 @@ rc_go:                            /* `call rc_go,[d2,d3,a2,a3],24` from sx_set's
  cmp 0,d0
  beq 03f                          /* the first look: the dial stands for the code still 0 after a power-on */
  call cm_gnow,[],0
+ mov d0,d2
  movbu (cm_code),d0
  cmp 0xc0,d0
  bcs 03f
+ /* A bank import also requests rc_go. The native mode code can stay at 0
+  * for the entire shoot. If the dial and active set still match our last
+  * completed look, there is no mode change to wait for. */
+ movbu (nf_pend),d0
+ cmp 0,d0
+ beq 04f
+ movbu (UI_DIAL),d0
+ inc d0
+ movbu (nf_dial),d1
+ cmp d1,d0
+ bne 04f
+ movbu (ss_cur),d0
+ cmp d2,d0
+ beq 03f
+04:
  mov 1,d0                         /* a live dial turn: the dial has moved and the camera's code has not. The camera
                                    * still holds the old mode's settings, so wait for the real code (gx_map, #54) */
  movbu d0,(rc_pend)
@@ -21979,6 +21995,9 @@ ss_post:
 /* ss_hp: `call ss_hp,[d2,d3,a2,a3],20` from cm_hp (a set that holds, its films just kept), d2 = the set, a2 = P:
  * photo, the slots belong to it and it is trusted -> its slots and looks kept (written when changed). */
 ss_hp:
+ movbu (nf_pend),d0               /* keep the marks in M until nf_post has rebuilt the changed films' slots */
+ cmp 0,d0
+ bne 9f
  call ss_photo,[],0
  cmp 0,d0
  beq 9f

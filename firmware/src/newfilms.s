@@ -242,6 +242,9 @@ nf_mark:
 /* nf_post: rc_go's `call nf_post,[d2,d3,a2,a3],28` in place of `call ss_post`, a2 = P (photo, films in): ss_post, then
  * the COLORs to make from the new films (above). Locals (4) the COLORs (bit k), (8) ss_cur before. */
 nf_post:
+ movbu (UI_DIAL),d0               /* last accepted dial position + 1; zero means no look yet */
+ inc d0
+ movbu d0,(nf_dial)
  movbu (ss_cur),d0
  mov d0,(8,sp)
  call ss_post,[d2,d3,a2,a3],24
@@ -433,5 +436,7 @@ nf_nr:
 nf_nm:
  .long 0
 nf_pend:
+ .byte 0
+nf_dial:
  .byte 0
  .balign 2

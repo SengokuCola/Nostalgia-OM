@@ -423,7 +423,8 @@ def other_set(looks, names, order, prefix=''):
         b[32 + 64 * j:96 + 64 * j] = looks[32 + 64 * src:96 + 64 * src]
         name = (prefix + names[src]).encode('latin1')[:15]
         b[1312 + 16 * j:1328 + 16 * j] = name + bytes(16 - len(name))
-    struct.pack_into('<I', b, 8, zlib.crc32(bytes(b[12:])))
+    # The film table has its own checksum, even when the card file has an extension.
+    struct.pack_into('<I', b, 8, zlib.crc32(b[12:1632]))
     return bytes(b)
 
 
@@ -882,6 +883,18 @@ TESTS = {
         Boot('wait wait s1 wait wait s1 wait wait poweroff', expect=[P_FILM_LINE, NO_FILM_CHANGES, NEW_SET_LINE(20)],
              card={'LOOKS.BIN': 'LOOKS_B'}),
         Boot('wait wait s1 wait wait poweroff', expect=[P_FILM_LINE, NO_FILM_CHANGES]),
+    ],
+    # Real camera: after the first look in A, mode code 0 can persist with the
+    # dial stationary. Defer the card check one shutter event to exercise that
+    # ordering. An old build marks the kept slots but rebuilds none of them.
+    'new-film-set-after-first-look-on-stationary-dial': [
+        Boot(FILM_BOX_BIND + ' up left' + ' left' * 11 + ' s1 expect:p:713=04 poweroff',
+             env=(('MODE0', ''), ('PSET0', ''))),
+        Boot('wait wait poke:{el_cd}=00 s1 wait wait expect:mem:{cm_init}=01 '
+             'expect:mem:{nf_nt}=00000000 poke:{rc_in}+18*=00 poke:{el_cd}=01 '
+             's1 wait wait s1 wait wait expect:mem:{nf_pend}=00 poweroff',
+             mode_dial=1, card={'LOOKS.BIN': 'LOOKS_B'}, expect=[NEW_SET_LINE(20)]),
+        Boot('s1 wait wait expect:p:713=04 poweroff', mode_dial=1),
     ],
     # #86: set B taken in video, then off before any photo look: the marks are in the camera's memory already, so the
     # next power-on in P and the turn to C1 make their films from set B (no '*').
