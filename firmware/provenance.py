@@ -3,6 +3,7 @@ from pathlib import Path
 
 # Keep in sync with the repo dirs firmware/build.py reads.
 SOURCE_DIRS = ('firmware', 'card')
+SOURCE_FILES = ('research/sunlit-foliage/make_tables.py', 'research/sunlit-foliage/measure-ramp.mjs')
 SKIP_DIR_NAMES = {'__pycache__'}
 SKIP_SUFFIXES = {'.pyc'}
 
@@ -11,7 +12,7 @@ def git_files(repo: Path):
     """Tracked and untracked files, gitignored ones left out, so build outputs under firmware/ do not count.
     None outside a git checkout."""
     try:
-        r = subprocess.run(['git', 'ls-files', '-z', '-co', '--exclude-standard', '--', *SOURCE_DIRS],
+        r = subprocess.run(['git', 'ls-files', '-z', '-co', '--exclude-standard', '--', *SOURCE_DIRS, *SOURCE_FILES],
                            cwd=repo, capture_output=True)
     except OSError:
         return None
@@ -25,6 +26,7 @@ def source_files(repo: Path):
     files = git_files(repo)
     if files is None:
         files = [p for d in SOURCE_DIRS for p in (repo / d).rglob('*') if p.is_file()]
+        files.extend(repo / name for name in SOURCE_FILES if (repo / name).is_file())
     files = [p for p in files
              if not SKIP_DIR_NAMES & set(p.relative_to(repo).parts) and p.suffix not in SKIP_SUFFIXES]
     return sorted(files, key=lambda p: p.relative_to(repo).as_posix())

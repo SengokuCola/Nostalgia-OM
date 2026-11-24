@@ -207,9 +207,13 @@ fb_record_snapshot:
  cmp 0,d0
  beq 5f
  movbu (976,a1),d3
- cmp 31,d3
+ cmp 63,d3
  bhi 8f
+ .ifdef OM3_NO_SUNLIT
  and 30,d3
+ .else
+ and 62,d3
+ .endif
  beq 9f
  mov (4,sp),d0
  asl 8,d0

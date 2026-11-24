@@ -1,6 +1,7 @@
 """Boot the camera UI, pick FILM 20, and run both still hooks on synthetic jobs."""
 import json
 import struct
+import zlib
 from pathlib import Path
 
 import numpy as np
@@ -9,8 +10,7 @@ from PIL import Image
 from bank import sunlit_bank
 
 
-def reference(frame, width):
-    table = np.frombuffer((Path(__file__).parents[2] / 'firmware/src/sunlit.lut').read_bytes(), np.uint8)
+def reference(frame, width, table):
     light = table[:16384].reshape(16,16,64)
     palette = table[16384:].reshape(64,256,4)
     pairs = width // 2
@@ -41,10 +41,17 @@ def run(emu, build, out, looks):
     from emu_test import FILM_BOX_BIND, elf_symbols, make_card, run_ncall
     out.mkdir(parents=True, exist_ok=True)
     bank = out / 'LOOKS.BIN'
-    bank.write_bytes(sunlit_bank(looks.read_bytes()))
+    # Exercise selection by the legacy name alone, without per-roll effect bits.
+    base = bytearray(sunlit_bank(looks.read_bytes()[:1632]))
+    # A personal library can have FILM 1 disabled. Give the picker a known
+    # starting roll so that a single step left wraps to FILM 20.
+    base[1312:1328] = b'Start'.ljust(16, b'\0')
+    struct.pack_into('<I', base, 8, zlib.crc32(base[12:]))
+    bank.write_bytes(base)
     card = out / 'sunlit.omsd'
     make_card(emu, build, bank, card)
     sy = elf_symbols(build / 'p.elf')
+    table = np.fromfile(build / 'sunlit.lut', np.uint8)
     xb = elf_symbols(build / 'xb10000000.elf')
     def target(label):
         return f"W(P+{sy['XPTR']})+{xb[label]-0x10000000}"
@@ -68,7 +75,7 @@ def run(emu, build, out, looks):
     frames = {}
     def gs(name,key,w,h,enabled):
         frame = make_frame(w,h)
-        frames[name] = reference(frame,w) if enabled else frame
+        frames[name] = reference(frame,w,table) if enabled else frame
         pitch = frame.shape[1]
         rec = struct.pack('<4I4H',buf,0,0,0,0x0c02,pitch//2,w,h)
         # Stub stock blend and buffer-index lookup; the real wrappers, name check, heap,

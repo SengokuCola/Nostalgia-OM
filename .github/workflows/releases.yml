@@ -42,7 +42,7 @@ jobs:
             exit 1
           fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-          if [[ -n $(git ls-files -- firmware/src/sunlit.lut research/sunlit-foliage/sunlit.npz) ]]; then
+          if [[ -n $(git ls-files -- firmware/src/sunlit.lut webapp/src/data/sunlit.lut research/sunlit-foliage/sunlit.npz) ]]; then
             echo "::error::The release source must exclude the Sunlit Foliage calibration and lookup data."
             exit 1
           fi
@@ -50,6 +50,9 @@ jobs:
             cmp "$notice" "webapp/public/$notice"
             cmp "$notice" "looklab/$notice"
           done
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
       - name: Install build dependencies
         run: |
           sudo apt-get update

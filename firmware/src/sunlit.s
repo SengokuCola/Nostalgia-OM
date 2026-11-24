@@ -89,6 +89,7 @@ sun_blend_pair:
 
 /* Parent locals (frame 88): (4..56,sp) core state, (60,sp) sharp (-5..+2),
  * (64,sp) groups_cap, (68,sp) right colour. Saved [d2,d3,a2,a3] at (72..84,sp). */
+ .balign 4
 sun_groups_tbl:
  .long 489,960,320,192
 

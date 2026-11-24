@@ -280,11 +280,19 @@ def arrange_shooting_readouts(main):
 
 
 def build(defaults, testfile, out, *, version=None, without_sunlit=False, highlight_trial=False):
-    without_sunlit = without_sunlit or not (HERE / 'src' / 'sunlit.lut').is_file()
     assembler_flags = ['--defsym', 'OM3_NO_SUNLIT=1'] if without_sunlit else []
     if highlight_trial:
         assembler_flags += ['--defsym', 'OM3_HIGHLIGHT_TRIAL=1']
     out = Path(out); out.mkdir(parents=True, exist_ok=False)
+    if not without_sunlit:
+        lookup = ROOT / 'webapp/src/data/sunlit.lut'
+        if lookup.is_file():
+            (out / 'sunlit.lut').write_bytes(lookup.read_bytes())
+        else:
+            subprocess.run([sys.executable, str(ROOT / 'research/sunlit-foliage/make_tables.py'),
+                            '--out', str(out / 'sunlit.lut')], check=True)
+        if hashlib.sha256((out / 'sunlit.lut').read_bytes()).hexdigest() != '263d71c77495beafe2078d3b59e427ad956ed201bd2c2f7cf7d4c503c1ac7702':
+            raise ValueError('Sunlit lookup does not match 0.1.1-SL')
     lo, span = range_table()
     dflt, test = make_file(defaults), make_file(testfile)
     assert table_ok(dflt, lo, span) and table_ok(test, lo, span)

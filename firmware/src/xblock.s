@@ -697,9 +697,13 @@ xb_gs:                           /* `calls` (0,sp) = return, a0 = job */
  call STYLE_SLOT,[d2,d3,a2,a3],28
  mov d0,(32,sp)
 82:
+ mov (32,sp),d0
+ btst 32,d0
+ bne 821f
  call xb_sunlit,[],0
  cmp 0,d0
  beq 81f
+821:
  mov (4,sp),a0
  mov (10276,a0),a0
  cmp 0,a0
@@ -865,7 +869,7 @@ xb_gs:                           /* `calls` (0,sp) = return, a0 = job */
  .endif
 19:
  mov (32,sp),d0
- cmp 0,d0
+ btst 30,d0
  beq 192f
  mov (4,sp),a0
  call xb_rec,[d2,d3],12

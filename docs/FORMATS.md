@@ -66,7 +66,7 @@ Each 1024-byte record follows its recipe's slot. Reserved bytes are zero.
 | 96 | 16 | Four palette entries, each Y/Cb/Y/Cr |
 | 112 | 576 | 48 × 48 label, 2 bits per pixel, high bits first |
 | 688 | 288 | 144 × 16 caption mask, one bit per pixel, high bit first |
-| 976 | 1 | Effect bits in the experimental still-effects build. Bits 1–4 enable false-colour infrared, colour screen print, film leader burn and back light leak. Bit 0 reserves the three-exposure colour separation request. Zero disables all five. |
+| 976 | 1 | Per-roll JPEG processing. Bits 1–4 enable false-colour infrared, colour screen print, film leader burn and back light leak. Bit 5 enables Sunlit Foliage recolouring in any slot. Bit 0 reserves three-exposure colour separation. Zero selects the recipe's normal processing, including the legacy named FILM 20 in firmware that supports it. |
 
 LookLab keeps the editable fields and generates both bitmaps when exporting.
 The firmware reads the optional data with the card's recipe bank, checks its

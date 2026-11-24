@@ -13,9 +13,13 @@ The lookup was calibrated on synthetic gray ramps independently of the sample. R
 
 Against the lossless browser reference, decoded JPEG RGB mean absolute error (0..255) was 15.49, or 2.71 after a Gaussian blur (sigma 3 pixels on both RGB images). These numbers compare one image and the two complete pipelines.
 
-## OM-3 firmware integration (emulator)
+## OM-3 firmware integration
 
-The development build recognizes FILM 20 only when its 16-byte bank name is the zero-padded ASCII string `Sunlit Foliage`. To make an emulator bank, run `python research/sunlit-foliage/bank.py releases/v0.40.2/LOOKS.BIN path/to/new/LOOKS.BIN`. The tool requires a new output file and copies the other 19 records and their names. FILM 20 starts with a neutral record. The supplied bank is for a separate emulator card.
+The build reproduces the SL lookup from a synthetic grey ramp using a pinned upstream source archive, NumPy and Node 24. For an offline build, run `python research/sunlit-foliage/make_tables.py --archive path/to/ZATO-photo-b38582e175208989cdf3b93f777408d689ff086f.zip` beforehand. Both the downloaded archive and the resulting lookup are checked by SHA-256.
+
+LookLab includes a Sunlit Foliage preset under the special-effects category. The Sunlit switch can also be enabled on other colour recipes. The matching firmware reads bit 5 from each LOOKS.BIN effect record and uses the same recolouring pass for any selected slot. The preview uses the firmware lookup tables with desktop RGB sampling.
+
+For compatibility, the firmware also recognizes FILM 20 with the zero-padded ASCII name `Sunlit Foliage`. To make a legacy test bank, run `python research/sunlit-foliage/bank.py releases/v0.40.2/LOOKS.BIN path/to/new/LOOKS.BIN`. The tool requires a new output path and keeps the other 19 records.
 
 The capture converter requests the sharp-input Soft Focus path. The existing review-job gate still applies. In xb_gs the finished COLOR frame passes through sunlit_run after shading and before the border. Each invocation allocates one row (2 x image width in bytes); 1024-byte transfers bound each lock. Input is sampled on a grid up to 978 pixels wide, with representative samples within each pair of grid cells. The desktop prototype used Lanczos resampling; this firmware pass uses point samples, an integer lightness lookup, 64 precomputed dither/noise variants and shared pair chroma. The full frame retains its original dimensions.
 

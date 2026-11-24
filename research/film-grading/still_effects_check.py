@@ -12,9 +12,14 @@ def run(emu, build, out, looks):
     from emu_test import FILM_BOX_BIND, elf_symbols, make_card, run_ncall
 
     out.mkdir(parents=True, exist_ok=True)
-    base = looks.read_bytes()[:1632]
+    base = bytearray(looks.read_bytes()[:1632])
+    # The synthetic job should measure just the requested effect, regardless of
+    # the first recipe's grain, halation or border in the supplied library.
+    base[32:96] = bytes(64)
+    base[1312:1328] = b'Effects test'.ljust(16, b'\0')
+    struct.pack_into('<I', base, 8, zlib.crc32(base[12:]))
     records = bytearray(20 * 1024)
-    records[976] = 30
+    records[976] = 62
     bank = out / 'LOOKS.BIN'
     bank.write_bytes(base + struct.pack('<4sIII', b'OM3L', 16 + len(records),
                                        zlib.crc32(records), zlib.crc32(base[32:])) + records)
@@ -37,7 +42,10 @@ def run(emu, build, out, looks):
     cases = []
     checks = [('combined', None, 11), ('original', 0, 11), ('infrared', 2, 11),
               ('screenprint', 4, 11), ('leader', 8, 11), ('back leak', 16, 11),
-              ('raw', 30, 2), ('reserved', 1, 11), ('invalid', 0xff, 11)]
+              ('sunlit', 32, 11), ('raw', 62, 2), ('reserved', 1, 11), ('invalid', 0xff, 11)]
+    sunlit = sy.get('sunlit_run')
+    if not sunlit:
+        checks = [case for case in checks if case[0] != 'sunlit']
     for name, mask, job in checks:
         memory = [['SP', '=B+0x20'], ['B+0x100+10276', '=B+0x3000'],
                   ['B+0x3000', descriptor.hex()], ['B+0x3000+5352', struct.pack('<I', job).hex()],
@@ -49,7 +57,8 @@ def run(emu, build, out, looks):
             memory.append([sy['style_rolls'] + 0x40000000, struct.pack('<II', 0x53646789, 0).hex()])
         cases.append(dict(name=name, pc=target, stop=['B+0x20'], max=9000000,
                           regs=dict(a0='B+0x100', **saved), mem=memory,
-                          read=[[bus, frame.size+16]], count=[sy['film_style_run']]))
+                          read=[[bus, frame.size+16]],
+                          count=[sy['film_style_run']] + ([sunlit] if sunlit else [])))
     results = run_ncall(emu, build, out, card, FILM_BOX_BIND +
                         ' up right left s1 expect:p:712=01 ncall', cases)
     if isinstance(results, str):
@@ -76,7 +85,10 @@ def run(emu, build, out, looks):
             reference = ir if name == 'infrared' else printed
             if not np.array_equal(actual[:, :w*2].reshape(pairs.shape), reference):
                 errors.append(f'{name}: firmware pixels differ from reference')
-        if (changed != expected or result['count'] != [int(expected)] or
+        calls = [int(expected and name != 'sunlit')]
+        if sunlit:
+            calls.append(int(name in ('combined', 'sunlit')))
+        if (changed != expected or result['count'] != calls or
                 result['regs']['sp'] != sp or result['steps'] >= cases[i]['max'] or
                 any(int(result['regs'][reg], 16) != val for reg, val in saved.items()) or
                 np.any(actual[:, w*2:] != 0xa5) or data[frame.size:] != bytes([0x91])*16):
