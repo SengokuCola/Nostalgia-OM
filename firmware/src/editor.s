@@ -16919,6 +16919,20 @@ ex_live:
  mov 111,d0
  call sget,[],4                   /* the picture mode (sget does not keep a2) */
  mov (16,sp),a2
+ cmp 11,d0                        /* Creative Dial reports the COLOR family; ex_fill resolves it the same way */
+ bne 10f
+ mov 63153,d0
+ clr d1
+ mov 0,a0
+ call getter,[d2,d3],12
+ mov (16,sp),a2
+ extbu d0
+ add -1,d0
+ cmp 4,d0
+ bcc 9f
+ mov d0,d2
+ bra 2f
+10:
  mov fl_cvt,a0
  clr d2
 1:
