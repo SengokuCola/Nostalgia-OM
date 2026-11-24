@@ -11,7 +11,7 @@ const v7 = (x: number) => Math.max(-7, Math.min(7, x | 0));
 
 /** CURVES.BIN for `bank` (COLOR k, look v at 5k + v, as LOOKS.BIN), checked against `looksBin` (the LOOKS.BIN written with it). */
 export function curvesBin(looksBin: Uint8Array, bank: Bank): Uint8Array {
-  if (looksBin.length !== 1632 || String.fromCharCode(...looksBin.subarray(0, 4)) !== 'OM3P') throw new Error('CURVES.BIN needs a v1 LOOKS.BIN');
+  if (looksBin.length < 1632 || String.fromCharCode(...looksBin.subarray(0, 4)) !== 'OM3P') throw new Error('CURVES.BIN needs a v1 LOOKS.BIN');
   const out = new Uint8Array(CURVES_LEN), dv = new DataView(out.buffer);
   out.set([0x4f, 0x4d, 0x33, 0x4b]);                       // 'OM3K'
   dv.setUint16(4, 1, true); dv.setUint16(6, CURVES_LEN, true); dv.setUint16(12, CURVES_COUNT, true);

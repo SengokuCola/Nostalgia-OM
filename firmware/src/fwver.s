@@ -99,7 +99,7 @@ fv_lbl:                           /* a label as the camera's (0x615959d8 "Body":
  .short 4, ST_FWV
  .long 0
  .balign 2
-fv_str:                           /* "Caduceus" */
- .short 67, 97, 100, 117, 99, 101, 117, 115, 0
+fv_str:                           /* Nostalgia-OM, native UTF-16 menu label */
+ .short 'N','o','s','t','a','l','g','i','a','-','O','M',0
  .include "fvver.inc"             /* fv_ver: firmware/VERSION's first word, UTF-16 (build.py) */
  .balign 4

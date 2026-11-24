@@ -64,6 +64,19 @@ sb_arm:
  bne sb_arm_out
  mov 1,d0
  mov d0,(sb_checked)
+ .ifdef OM3_HIGHLIGHT_TRIAL
+ mov 1,d0
+ mov d0,(hilat_checked+0x40000000)
+ mov hilat_path,a0
+ mov lg_mr,a1
+ call fopen,[],4
+ cmp 0,a0
+ beq 91f
+ call fclose,[d2,a2,a3],16
+ mov 1,d0
+ mov d0,(hilat_enabled+0x40000000)
+91:
+ .endif
  mov sb_path,a0
  mov lg_mr,a1
  call fopen,[],4
@@ -180,3 +193,6 @@ sb_diag: .space 20
 .set SB_CONSUMED,SB_JOBS+16
 .balign 16
 sb_stack: .space 8192
+ .ifdef OM3_HIGHLIGHT_TRIAL
+ .include "hilat_trial.inc"
+ .endif

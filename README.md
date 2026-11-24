@@ -4,7 +4,7 @@
 
 [下载 Nostalgia](https://github.com/SengokuCola/Nostalgia-OM/releases) · [使用指南](docs/USING.md) · [报告问题](https://github.com/SengokuCola/Nostalgia-OM/issues)
 
-可以在线调整胶片配方，或从源码在本地运行中文版。[在线 LookLab](https://androidfanman.github.io/caduceus-om3/looklab/) · [LookLab 源码](webapp/README.md)
+本仓库的 LookLab 默认打开暗房工作台。可在 Releases 下载 Windows 版，或按[本地运行说明](webapp/README.md)启动。另有[上游在线版](https://androidfanman.github.io/caduceus-om3/looklab/)。
 
 ## 安装
 
@@ -20,11 +20,11 @@
 
 ## 构建与发布
 
-Nostalgia 从 **`v0.1.0`** 独立编号，对应 Git 标签 **`fork-v0.1.0`**。
+当前版本为 **v0.2.0**。[查看本版更新](CHANGELOG.md#nostalgia-om-v020--2026-11-24)。
 
-- 手动验证时，在 GitHub Actions 运行 **Nostalgia Release**，输入 `v0.1.0`，从运行结果下载补丁包。
-- 推送 `fork-v0.1.0` 格式的 Git 标签后，工作流会编译标签源码、逐字节验证补丁重建，并将 ZIP 和 `SHA256SUMS` 附到预发布版。
-- 本地构建时，在 Linux 或 WSL 中设置 `OM3_STOCK`（原厂 1.1 文件）和 `OM3_TOOLCHAIN`（MN10300 binutils 构建目录），执行 `bash tools/release-build.sh v0.1.0 out-release`。[构建说明](releases/README.md#fork-release-builds)
+- 手动验证时，在 GitHub Actions 运行 **Nostalgia Release**，输入 `v0.2.0`，从运行结果下载补丁包。
+- 推送 `fork-v0.2.0` 格式的 Git 标签后，工作流会编译标签源码、逐字节验证补丁重建，并将 ZIP 和 `SHA256SUMS` 附到预发布版。
+- 本地构建时，在 Linux 或 WSL 中设置 `OM3_STOCK`（原厂 1.1 文件）和 `OM3_TOOLCHAIN`（MN10300 binutils 构建目录），执行 `bash tools/release-build.sh v0.2.0 out-release`。[构建说明](releases/README.md#fork-release-builds)
 
 补丁包包含启动器、补丁、配套卡文件、`LICENSE` 和 `NOTICE`。启动器使用原厂 1.1 文件在本地生成更新文件和恢复文件。
 

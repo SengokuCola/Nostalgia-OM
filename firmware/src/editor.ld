@@ -1,10 +1,16 @@
 /* Modified by SengokuCola for the Caduceus for OM-3 fork. */
-fb_stock_dma = 0x6020e7ff;
 cc_stock_recdisp = 0x60c05747;
+fb_gui_message = 0x610fd345;
+fb_gui_resume = 0x610fd061;
+fb_mm_alloc = 0x60541c42;
+fb_mm_address = 0x60542165;
+fb_mm_free = 0x60541dda;
 SECTIONS {
+  .fb_runtime 0x6031f000 : { *(.fb_runtime) }
+  .hook_fb_clock 0x610fd05c : { *(.hook_fb_clock) }
   .hook_cc_recdisp 0x60cbfa42 : { *(.hook_cc_recdisp) }
-  .hook_fb_osd 0x6021111f : { *(.hook_fb_osd) }
 
+  .hook_fb_touch 0x611998f1 : { *(.hook_fb_touch) }
   .hook_fb_key 0x610b9fdb : { *(.hook_fb_key) }
   .hook_sb_done 0x6054c30f : { *(.hook_sb_done) }
   .hook_af_write 0x609a0e4f : { *(.hook_af_write) }
@@ -75,6 +81,7 @@ SECTIONS {
   .hook_rev     0x611b21e8 : { *(.hook_rev) }
   .hook_stp     0x611b201b : { *(.hook_stp) }
   .hook_ic      0x610f5611 : { *(.hook_ic) }
+  .hook_fb_osd 0x6021111f : { *(.hook_fb_osd) }
   .hook_gx      0x610f6016 : { *(.hook_gx) }
   .hook_pme     0x6125becc : { *(.hook_pme) }
   .hook_sc      0x610cdf05 : { *(.hook_sc) }
@@ -280,6 +287,9 @@ sdl_ext_tsk      = 0x60031808;
 scw_set       = 0x6128abe0;
 stw_set       = 0x6128ab86;
 stw_back      = 0x6128b2c6;
+fb_gui_send = 0x611998ec;           /* native sendEvent(a0, message), CALLS entry */
+fb_stock_dma = 0x6020e7ff;
+fb_switch_service = 0x610c86ae;     /* service used by the stock creative dial position reader */
 fb_dial_delta = 0x61084332;         /* native main/sub dial signed displacement */
 fb_setting    = 0x603f0111;         /* stock setting read, without entering the Picture Mode facade */
 ar_getv       = 0x61085dbb;         /* v0.27: the key dispatcher's plain setting getter (GetValue) */
@@ -349,3 +359,7 @@ zaf_cap_resume = 0x6094e4e5;
 zaf_disp_resume = 0x60950143;
 zaf_lpos_resume = 0x609901bc;
 zaf_lut_resume = 0x609525ea;
+
+
+
+fb_touch_stock = 0x611998f8;

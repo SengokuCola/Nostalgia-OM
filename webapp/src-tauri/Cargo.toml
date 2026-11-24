@@ -1,0 +1,16 @@
+[package]
+name = "looklab"
+version = "0.2.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "OM-3 darkroom workbench"
+authors = ["Nostalgia-OM contributors"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+
+[profile.release]
+strip = true

@@ -108,6 +108,7 @@ fs_commit_evf:
  mov (0x9bb88440),d3
  cmp d2,d3
  bne fs_native_skip_jump
+fs_commit_evf_check:
  FS_CHECK 0x9bb88000
  bra fs_commit_keep
 fs_commit_tft:

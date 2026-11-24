@@ -37,11 +37,12 @@ bundle="$work/$name"
 release="$bundle/releases/$version"
 mkdir -p "$release" "$bundle/firmware"
 python3 firmware/build.py --stock "$stock" --toolchain "${OM3_TOOLCHAIN:?set OM3_TOOLCHAIN to the binutils build directory}" \
-    --out "$build" --version "$version" --without-sunlit
+    --out "$build" --version "$version" --without-sunlit --highlight-trial
 python3 tools/mkpatch.py --stock "$stock" --build "$build" --version "$version" \
     --name "Nostalgia 怀旧" --description "Firmware patch for OM SYSTEM OM-3 firmware 1.1" --out "$release/patch.json"
 
 cp -p LICENSE NOTICE README.md 'Make SD card files (Mac).command' 'Make SD card files (Windows).bat' "$bundle/"
+cp CHANGELOG.md "$bundle/"
 cp firmware/{patch,frames}.py "$bundle/firmware/"
 cp "$build/"{GUIDES,LABELS,TONES}.BIN "$release/"
 cp releases/v0.40.2/{LOOKS.BIN,CURVES.BIN,DEBUG.TXT} "$release/"

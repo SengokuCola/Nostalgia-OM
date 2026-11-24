@@ -837,6 +837,27 @@ cc_buf:  .space 16 + CC_MAX_PIX, 0
  call cc_recdisp,[a2,a3],24
 .section .ext13,"ax"
 cc_recdisp:
+ /* REC_DISP may submit a still before another DISPLAY tick. Withdraw
+  * a live picker before stock stages the review, including card-off mode. */
+ mov (FB_SLOT),d0
+ cmp 0,d0
+ beq 9f
+ cmp 0,a1
+ beq 9f
+ mov (a1),d0
+ cmp 0x60f147f8,d0
+ bne 9f
+ mov a0,(4,sp)
+ mov a1,(8,sp)
+ call fb_close,[d2,d3,a2,a3],24
+ mov (4,sp),a0
+ mov (8,sp),a1
+ mov (CC_BUF_UC),d0
+ cmp 0,d0
+ bne 7f
+ call cc_stock_recdisp,[a2,a3],24
+ ret [a2,a3],24
+9:
  mov (CC_BUF_UC),d0
  cmp 0,d0
  beq cc_recdisp_native
@@ -844,6 +865,7 @@ cc_recdisp:
  beq cc_recdisp_native
  mov a0,(4,sp)
  mov a1,(8,sp)
+7:
  movbu (lg_on),d0
  cmp 1,d0
  bne 1f

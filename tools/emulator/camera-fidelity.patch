@@ -200,3 +200,37 @@ index ec0e4c8..bf2d469 100644
  };
  export const STAND_INS_M8 = {
    "H-TIMER": "the software-timer boot step 0x50058959 (called at 0x5002cd82) runs natively; the hardware-timer init 0x500642dd (0x5002cd7b) does not, guarded by 0xa32ca47c = 0 and the low-RAM u16 at 6 * ch + 2 = 0 (ch 16..31): 0x50064323/0x50064352/0x5006437d return 0x5201/0x5202/0, returns no caller uses (h_timer: function, channel, return)",
+diff --git a/emu/src/lab/play.mjs b/emu/src/lab/play.mjs
+index 812c62d..73abdb1 100644
+--- a/emu/src/lab/play.mjs
++++ b/emu/src/lab/play.mjs
+@@ -597,7 +597,12 @@ export class PlayLab extends N.NavLab {
+     this.heap_owner = new Map();                       // block -> [malloc's caller (disassembly), task id]
+     this.heap_free = new Map();
+     this.heap_stats = new Tally();
+-    this.hook(HLE.MALLOC, (h, r) => this._s_malloc(h, r), 'S-HEAP malloc');
++    this.hook(HLE.MALLOC, (h, r) => {
++      // E147 0x60023fe6 returns NULL above the largest fixed block, including
++      // calls via the SDL wrapper. Direct RTOS pool requests use their own hook.
++      if (MODEL === 'E147' && (r.d0 >>> 0) > 16448) return h.finish(r, { a0: 0 });
++      this._s_malloc(h, r);
++    }, 'S-HEAP malloc');
+     this.hook(HLE.FREE, (h, r) => this._s_free(h, r), 'S-HEAP free');
+     // the heap's block get and release of one pool, which code calls without malloc (Level Adjust's sampling loop,
+     // MODEL_INFO.heap_pool): from S-HEAP as well, since the pool's memory is S-HEAP's (X: natively the get hands out the
+diff --git a/emu/src/lab/menu.mjs b/emu/src/lab/menu.mjs
+--- a/emu/src/lab/menu.mjs
++++ b/emu/src/lab/menu.mjs
+@@ -29,7 +29,11 @@
+ 
+ export const GUI_CREATOR = A(0x5108BC37), GUI_TASK = A(0x5115BA0C), GENIFA_TIMER_TASK = A(0x510C1D01), EMPTY_TASK = A(0x50023A0C);
+ export const EYEFI_TASK = A(0x50ABA579), CHANGE_TASK = D.CHANGE_LOOP;
+-export const SEND_EVENT = A(0x5115B286), MENU_EVENT = 0x87, EV_MAP = A(0x614B5A14), SET_EVENT = A(0x510BA2C2), DISPATCH = A(0x510C2A2E);
++export const SEND_EVENT = A(0x5115B286), MENU_EVENT = 0x87, EV_MAP = A(0x614B5A14), SET_EVENT = A(0x510BA2C2);
++// The message and pending-event observers both read sp+396. On E147
++// observe its load at 0x610fd058, before the patchable callback call.
++const dispatchCall = A(0x510C2A2E);
++export const DISPATCH = dispatchCall === 0x510dc03c ? dispatchCall - 4 : dispatchCall;
+ export const STATE_LOG = A(0x5124BA59), GUICALLER = A(0x60368B88), STATE_TABLE = A(0x61596FB8);
+ // the state table's parents, as many as the firmware's name lookup searches (src/fw/facts.mjs stateTableBound: E143's
+ // 12, D; read when the names are first built)

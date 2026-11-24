@@ -25,6 +25,10 @@ inventing autofocus/peaking or manual-lens models.
 
 ## Model changes
 
+The E147 play-session malloc hook returns NULL above 16,448 bytes, as the stock allocator at 0x60023fe6 does. The picker uses the stock image buffer manager to acquire one resize buffer for its two 900 × 600 YC422 pages. Each row occupies 1,920 bytes including DMA padding. The TFT pipeline test checks direct scanout with the resizer disabled and buffer release after closing the picker.
+
+On E147 the GUI task loads the message number from its stack at 0x610fd058. The emulator observes that load for both message logging and pending-event tracking. The firmware executes the following callback at 0x610fd05c, including the picker's hold deadline. The key test advances the virtual clock with OK held and checks the applied recipe before key-up.
+
 VSC compositor and independent reference accept a 128-byte-aligned IMG YC422 base
 with an independent even SPOS under128 bytes. Existing matching-low-bits form stays
 valid. OSD and face formats keep their old rules; odd offsets, inconsistent nonzero

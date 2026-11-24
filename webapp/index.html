@@ -7,13 +7,86 @@
   <meta name="referrer" content="no-referrer">
 
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Caduceus LookLab</title>
+  <title>LookLab · OM-3 暗房工作台</title>
   <meta name="description" content="Caduceus LookLab: make, preview and share film looks for the OM SYSTEM OM-3 (OM3MOD/LOOKS.BIN), in your browser.">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23f08a3c'/%3E%3Cpath d='M16 5v22M11 10c5 0 10 3 10 6s-10 3-10 6 5 4 10 4M21 10c-5 0-10 3-10 6s10 3 10 6-5 4-10 4' stroke='%23141414' stroke-width='2' fill='none'/%3E%3C/svg%3E">
 </head>
 <body>
-  <div id="app"></div>
+  <header class="mast">
+    <div class="box-strip">
+      <label for="box-select">胶片盒</label><select id="box-select"></select>
+      <button id="choose" class="symbol-button" aria-haspopup="dialog" aria-label="管理胶片盒" title="管理胶片盒">☷ <span id="box-count"></span></button>
+    </div>
+    <nav class="work-tools" aria-label="配方工具">
+      <button id="undo" title="撤销（Ctrl+Z）" aria-label="撤销">↶</button>
+      <button id="redo" title="重做（Ctrl+Shift+Z）" aria-label="重做">↷</button>
+      <details id="tools-menu"><summary>配方工具</summary><div class="tool-items">
+        <button data-command="openFile">打开配方或相机照片…</button>
+        <button id="import-grade">从 LUT 或 Lightroom 预设创建…</button>
+        <button data-command="films">胶片模拟库</button>
+        <button data-command="paste">粘贴分享链接…</button>
+        <button data-command="share">分享胶片组</button>
+        <button data-command="newEmpty">清空当前胶片盒</button>
+        <button data-command="newDefaults">装入默认 20 卷</button>
+        <button data-command="install">安装固件说明</button>
+      </div></details>
+      <button id="export">导出此盒 ↗</button>
+    </nav>
+  </header>
+  <main>
+    <aside class="roll-library" aria-label="胶卷库">
+      <header><h2>胶卷库 <span id="roll-count"></span></h2><button id="new-roll">＋ 新增</button></header>
+      <div id="roll-shelf"></div>
+      <footer><button id="delete-roll">删除所选胶卷</button></footer>
+    </aside>
+    <section class="viewer" aria-label="样片预览">
+      <div class="viewer-head"><span id="frame-name"></span>
+        <div class="view-switch" aria-label="预览工具">
+          <button id="zoom" type="button" aria-pressed="false" title="放大查看细节（双击照片）">放大</button>
+          <button data-view="original" aria-pressed="false">原图</button>
+          <button data-view="split" aria-pressed="false">对比</button>
+          <button data-view="graded" aria-pressed="true">调色</button>
+        </div>
+      </div>
+      <div id="preview" data-view="graded"></div>
+      <nav class="reference-links" aria-label="使用帮助">
+        <a href="../index.html">功能介绍</a><a href="../pages/install/index.html">安装</a>
+        <a href="../pages/faq/index.html">常见问题</a><a href="./samples/CREDITS.md">样片来源</a>
+      </nav>
+    </section>
+    <aside class="deck" aria-label="胶片与色调">
+      <div class="stock" id="stock">
+        <div class="stock-top"><span id="film-id"></span><span id="film-type"></span></div>
+        <div class="stock-face">
+          <button id="stock-label-button" type="button" aria-haspopup="dialog" aria-label="编辑盒签" title="编辑盒签" hidden><canvas id="stock-label" width="48" height="48" aria-hidden="true"></canvas></button>
+          <div><h2 id="film-name"></h2><p id="stock-caption" hidden></p></div>
+        </div>
+        <button id="edit-label" type="button" aria-haspopup="dialog">编辑盒签与描述</button>
+      </div>
+      <div class="tone-head"><h3>色调</h3><button id="reset">重置色调</button></div>
+      <div class="chart"><canvas id="curve" role="img" aria-label="色调变化示意"></canvas></div>
+      <div class="dial-bank">
+        <div class="controls" id="controls" aria-label="选择拨轮参数"></div>
+        <div class="wheel-wrap">
+          <div id="wheel" class="wheel" tabindex="0" role="slider" aria-valuemin="-7" aria-valuemax="7" aria-describedby="wheel-tip">
+            <div class="dial-face"><i aria-hidden="true"></i></div>
+          </div>
+          <div class="wheel-step"><button id="down" aria-label="减少一档">−</button><button id="up" aria-label="增加一档">＋</button></div>
+        </div>
+      </div>
+      <p id="wheel-tip">选参数后转动拨轮，或用方向键微调。</p>
+      <section id="editor" aria-label="胶卷参数"></section>
+    </aside>
+  </main>
+  <dialog id="film-dialog" aria-labelledby="bank-title">
+    <header><h2 id="bank-title">胶片盒</h2><form method="dialog"><button class="symbol-button" title="关闭" aria-label="关闭">×</button></form></header>
+    <div id="list"></div>
+  </dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <input type="file" id="file" accept=".json,.bin,.jpg,.jpeg,.cube,.xmp,.lrtemplate" hidden>
+  <input type="file" id="photo" accept="image/*" hidden>
+  <input type="file" id="grade" accept=".cube,.xmp,.lrtemplate" hidden>
   <noscript>请启用 JavaScript 以打开编辑器。</noscript>
-  <script type="module" src="./src/main.ts"></script>
+  <script type="module" src="./src/start.ts"></script>
 </body>
 </html>

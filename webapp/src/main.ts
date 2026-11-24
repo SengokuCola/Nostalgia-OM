@@ -1,3 +1,5 @@
+import { drawRollLabel, parseLabel, styles, type BoxLabel } from './boxlabel';
+import { filmEffects, effectNames } from './film-effects';
 // Modified by SengokuCola for the Caduceus for OM-3 fork.
 import './style.css';
 import './theme.css';
@@ -8,6 +10,7 @@ import {
   parsePack, toneLimit, type FilmWb, type Look, type Pack, type Tone,
 } from './pack';
 import { History } from './history';
+import { RollCabinet } from './cabinet';
 import { fromLibrary, libraryOrigin, resetLook } from './reset';
 import { ASPECTS, cropRect, lastHalation, renderLook } from './preview';
 import { makeZip } from './zip';
@@ -37,6 +40,14 @@ for (const look of LIBRARY.looks) look.notes = localizeDescription(look.notes);
 // night light and sunset.
 /** Bump when a sample photo file changes, so browsers fetch the new one instead of their cached copy. */
 const SAMPLE_REV = '2';
+interface LookLabView {
+  sampleUrl?: (id: string) => string;
+  labelFont?: string;
+  sync?: () => void;
+  photoChanged?: (name: string, source: ImageData, custom: boolean) => void;
+}
+let view: LookLabView = {};
+const sampleUrl = (id: string) => view.sampleUrl?.(id) ?? `${import.meta.env.BASE_URL}samples/${id}.jpg?v=${SAMPLE_REV}`;
 const OM3_SAMPLES = [
   { id: 'frames', label: '彩色窗框' }, { id: 'portrait', label: '人像' }, { id: 'headwrap', label: '头巾人像' },
   { id: 'taxi', label: '黄色出租车' }, { id: 'meadow', label: '山地草甸' }, { id: 'forest', label: '林间日出' }, { id: 'ocean', label: '海洋' },
@@ -71,7 +82,7 @@ const LISTS: Lists = (() => {
     const raw = localStorage.getItem(STORE_LISTS);
     if (raw) {
       const j = JSON.parse(raw) as { current?: unknown; lists?: Record<string, unknown> };
-      const lists: Record<string, Bank> = {};
+      const lists: Record<string, Bank> = Object.create(null);
       for (const [n, b] of Object.entries(j.lists ?? {})) {
         try { lists[n] = parseBank({ schema: BANK_SCHEMA, name: n, bank: b }, parseLook).bank; } catch { /* skip a damaged list */ }
       }
@@ -82,7 +93,7 @@ const LISTS: Lists = (() => {
       }
     }
   } catch { /* storage blocked or damaged: start from the looks you have */ }
-  return { current: 'Default', lists: { Default: O.bank } };
+  return { current: 'Default', lists: Object.assign(Object.create(null), { Default: O.bank }) };
 })();
 // v0.22 (once): film sims added before they had a Sharp value get their film's, unless you set one yourself.
 (() => {
@@ -99,10 +110,23 @@ const LISTS: Lists = (() => {
   } catch { /* private mode */ }
   if (n) libNotice = (libNotice ? libNotice + ' ' : '') + `Film sims now set Sharp (firmware v0.22): ${n} of your film looks got their film's value.`;
 })();
+const STORE_CABINET = 'caduceus.om3.cabinet.v1';
+let cabinet = new RollCabinet();
+let looseRoll: Look | undefined;
+function restoreCabinet(raw: string) {
+  const restored = RollCabinet.decode(raw);
+  cabinet = restored.cabinet;
+  LISTS.lists = restored.lists;
+  LISTS.current = restored.current;
+}
+try {
+  const stored = localStorage.getItem(STORE_CABINET);
+  if (stored) restoreCabinet(stored);
+} catch { /* keep legacy lists available when storage is unavailable */ }
 O.bank = LISTS.lists[LISTS.current]; O.name = LISTS.current;
-function storeLists() {
+function snapshot() {
   LISTS.lists[LISTS.current] = O.bank;
-  localStorage.setItem(STORE_LISTS, JSON.stringify({ current: LISTS.current, lists: LISTS.lists }));
+  return cabinet.encode(LISTS.current, LISTS.lists);
 }
 const listNames = () => Object.keys(LISTS.lists).sort((a, b) => (a === 'Default' ? -1 : b === 'Default' ? 1 : a.localeCompare(b)));
 function startBank(): Bank {
@@ -120,11 +144,11 @@ let saveTimer = 0;
 function flush() {
   clearTimeout(saveTimer);
   try {
-    storeLists();
+    localStorage.setItem(STORE_CABINET, snapshot());
   } catch {
     return false;
   }
-  // Older versions read this backup; this version restores from STORE_LISTS first.
+  // Keep a single-box backup for older builds.
   try { localStorage.setItem(STORE_OM3, bankSnapshot()); } catch { /* best effort */ }
   return true;
 }
@@ -134,10 +158,9 @@ window.addEventListener('pagehide', flush);
 // ---------------------------------------------------------------- undo / redo
 // Every edit calls save(). Continuous edits (slider drags, typing) run inside draft(): they are saved but only become
 // an undo step at the end of the gesture (the input's change event: pointer-up, blur or Enter) via checkpoint().
-const snapshot = () => bankSnapshot();
 let hist = new History(snapshot(), 200);
 let drafting = false;
-function save() { persist(); if (!drafting) checkpoint(); }
+function save() { persist(); if (!drafting) checkpoint(); view.sync?.(); }
 function draft(f: () => void) { drafting = true; try { f(); } finally { drafting = false; } }
 function checkpoint() { hist.commit(snapshot()); undoUi(); }
 function undoUi() {
@@ -149,7 +172,10 @@ function step(dir: 'undo' | 'redo') {
   checkpoint();
   const s = dir === 'undo' ? hist.undo() : hist.redo();
   if (s === null) return;
-  O.bank = parseBank(JSON.parse(s), parseLook).bank;
+  const selectedId = looseRoll && cabinet.rolls.get(looseRoll);
+  restoreCabinet(s);
+  looseRoll = selectedId ? [...cabinet.rolls].find(([, id]) => id === selectedId)?.[0] : undefined;
+  O.name = LISTS.current; O.bank = LISTS.lists[O.name];
   persist(); renderAll(); undoUi();
 }
 const isTextField = (t: EventTarget | null) => t instanceof HTMLTextAreaElement || (t instanceof HTMLElement && t.isContentEditable) ||
@@ -162,7 +188,11 @@ document.addEventListener('keydown', (e) => {
   else return;
   e.preventDefault();
 });
-const cur = (): Look | undefined => O.bank[O.k][O.v] ?? undefined;
+const cur = (): Look | undefined => looseRoll ?? O.bank[O.k][O.v] ?? undefined;
+function selectSlot(k: number, v: number) {
+  looseRoll = undefined;
+  O.k = k; O.v = v;
+}
 
 // ---------------------------------------------------------------- DOM helpers
 type Attrs = Record<string, unknown>;
@@ -214,55 +244,8 @@ async function copy(text: string, what = 'Copied') {
   try { await navigator.clipboard.writeText(text); toast(what); } catch { toast('Copy failed: select the text and copy it by hand', 'err'); }
 }
 
-const shareBase = () => location.origin + location.pathname;
-
-// ---------------------------------------------------------------- layout
-function shell() {
-  const app = $('#app');
-  app.replaceChildren(
-    h('header', { class: 'top' },
-      h('div', { class: 'brand' }, h('span', { class: 'mark', 'aria-hidden': 'true' }, '☤'), h('span', { class: 'word' }, 'LookLab'),
-        h('span', { class: 'sub' }, 'Caduceus for OM-3')),
-      h('nav', { class: 'actions' },
-        h('span', { class: 'undo-btns' },
-          h('button', { id: 'undo', class: 'icon', title: '撤销（Ctrl+Z）', 'aria-label': '撤销', disabled: true, onclick: () => step('undo') }, '↶'),
-          h('button', { id: 'redo', class: 'icon', title: '重做（Ctrl+Shift+Z）', 'aria-label': '重做', disabled: true, onclick: () => step('redo') }, '↷')),
-        menu('新建', [
-          ['恢复默认胶片组', () => newBank('library')],
-          ['新建空白胶片组', () => newBank('empty')],
-        ]),
-        h('button', { onclick: openFile, title: '打开卡内的 OM3MOD/LOOKS.BIN 或 LookLab 配方文件' }, '打开…'),
-        h('button', { onclick: () => om3FilmPicker(), title: '从模拟库添加胶片' }, '胶片模拟'),
-        h('button', { onclick: () => $<HTMLInputElement>('#grade').click(), title: '导入 .cube LUT 或 Lightroom 预设（.xmp、.lrtemplate）并拟合为机身配方' }, '从 LUT 或预设创建…'),
-        h('button', { onclick: pasteDialog, title: '打开已分享的胶片或胶片组链接' }, '粘贴链接'),
-        h('button', { onclick: om3Share }, '分享胶片组'),
-        h('button', { onclick: om3InstallDialog }, '安装固件'),
-        h('button', { class: 'primary', onclick: om3ExportDialog }, '导出'))),
-    h('main', { class: 'layout' },
-      h('aside', { class: 'pane list-pane', id: 'list' }),
-      h('section', { class: 'pane preview-pane', id: 'preview' }),
-      h('section', { class: 'pane editor-pane', id: 'editor' })),
-    h('footer', { class: 'foot' },
-      h('span', {}, 'Caduceus 是社区开发的 OM-3 固件扩展。此工具编辑 COLOR 彩色配方，文件均在浏览器内生成。'),
-      h('span', { class: 'links' },
-        h('a', { href: '../' }, '功能介绍'), h('a', { href: '../pages/install/' }, '安装'), h('a', { href: '../pages/faq/' }, '常见问题'),
-        h('a', { href: './samples/CREDITS.md', target: '_blank', rel: 'noopener' }, '样片来源'))),
-    h('div', { id: 'toast', class: 'toast', role: 'status', 'aria-live': 'polite' }),
-    h('input', { type: 'file', id: 'file', accept: '.json,application/json,.bin,.BIN,.jpg,.JPG,.jpeg,image/jpeg,.cube,.CUBE,.xmp,.XMP,.lrtemplate', hidden: true, onchange: om3OnFile }),
-    h('input', { type: 'file', id: 'photo', accept: 'image/*', hidden: true, onchange: onPhoto }),
-    h('input', { type: 'file', id: 'grade', accept: '.cube,.CUBE,.xmp,.XMP,.lrtemplate', hidden: true, onchange: om3OnGradeFile }));
-  buildPreview();
-  // owner 2026-11-13: the film list is as tall as the preview and scrolls on its own
-  const listPane = $<HTMLElement>('#list'), pvPane = $<HTMLElement>('#preview');
-  new ResizeObserver(() => listPane.style.setProperty('--pv-h', `${pvPane.offsetHeight}px`)).observe(pvPane);
-}
-
-function menu(label: string, items: [string, () => void][]): HTMLElement {
-  const d = h('details', { class: 'menu' }, h('summary', {}, label),
-    h('div', { class: 'menu-items' }, ...items.map(([t, f]) => h('button', { onclick: () => { d.open = false; f(); } }, t))));
-  document.addEventListener('click', (e) => { if (!d.contains(e.target as Node)) d.open = false; });
-  return d;
-}
+const shareBase = () => location.protocol === 'file:' || location.hostname === 'tauri.localhost' || location.protocol === 'tauri:'
+  ? 'https://androidfanman.github.io/caduceus-om3/looklab/' : location.origin + location.pathname;
 
 function renderAll() {
   renderList();
@@ -273,15 +256,17 @@ function renderAll() {
 // ---------------------------------------------------------------- look list
 function renderList() {
   renderBank();
+  renderBoxSelector();
+  view.sync?.();
 }
 
-function enterCommits(e: KeyboardEvent) { if (e.key === 'Enter') checkpoint(); }
 function focusSel() { ($('#list li.sel') as HTMLElement | null)?.focus(); }
 
 // ---------------------------------------------------------------- editor
 function renderEditor() {
   const el = $('#editor');
   const l = cur();
+  afterPreview = null;
   if (!l) { el.replaceChildren(emptySlotPanel()); return; }
   renderOm3Editor(l);
 }
@@ -295,8 +280,8 @@ function steps(inp: HTMLInputElement): HTMLElement {
     inp.dispatchEvent(new Event('input', { bubbles: true })); inp.dispatchEvent(new Event('change', { bubbles: true }));
   };
   return h('div', { class: 'cam-bar' },
-    h('button', { class: 'cam-step', 'aria-label': 'Less', tabindex: -1, onclick: () => bump(-1) }, '−'), inp,
-    h('button', { class: 'cam-step', 'aria-label': 'More', tabindex: -1, onclick: () => bump(1) }, '+'));
+    h('button', { class: 'cam-step', 'aria-label': '减少', tabindex: -1, onclick: () => bump(-1) }, '−'), inp,
+    h('button', { class: 'cam-step', 'aria-label': '增加', tabindex: -1, onclick: () => bump(1) }, '+'));
 }
 /** A Picture Mode row: the camera's name, a slider and the value. */
 function crow(label: string, lim: number, get: () => number, set: (x: number) => void, help: HelpBody): HTMLElement {
@@ -316,7 +301,7 @@ const helpOpen = new Set<string>();
 function helpParts(key: string, body: HelpBody): { q: HTMLElement; box: HTMLElement } {
   const id = `help-${key.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-')}`, open = helpOpen.has(key);
   const box = h('div', { class: 'help-box', id, hidden: !open }, ...body.map((b) => (typeof b === 'string' ? h('p', {}, b) : b)));
-  const q = h('button', { type: 'button', class: open ? 'help-q on' : 'help-q', 'aria-expanded': String(open), 'aria-controls': id, 'aria-label': `About ${key}`, title: 'What this does and how to use it' }, '?');
+  const q = h('button', { type: 'button', class: open ? 'help-q on' : 'help-q', 'aria-expanded': String(open), 'aria-controls': id, 'aria-label': `关于${key}`, title: '参数说明' }, '?');
   q.addEventListener('click', (e) => {
     e.preventDefault(); e.stopPropagation();
     const show = box.hidden;
@@ -482,7 +467,7 @@ function hslPanel(l: Look, changed: () => void): HTMLElement {
   const hubVal = svgEl('text', { x: 14, y: 44, class: 'hw-hub-val' });
   svg.append(hubName, hubVal);
 
-  const { inp, out } = slider(split ? 0 : -lim, lim, valueOf(S.sector), (v) => { setValue(S.sector, v); draw(false); }, split ? camTxt : undefined, `${TAB_NAME[tab]} value`);
+  const { inp, out } = slider(split ? 0 : -lim, lim, valueOf(S.sector), (v) => { setValue(S.sector, v); draw(false); }, split ? camTxt : undefined, `${TAB_NAME[tab]}数值`);
   const selName = h('span', { class: 'hw-sel' });
   const move = (d: number) => { S.sector = (S.sector + d + 12) % 12; if (split) setValue(S.sector, cur()); draw(); };
   function draw(syncSlider = true) {
@@ -543,14 +528,14 @@ function hslPanel(l: Look, changed: () => void): HTMLElement {
   draw();
 
   const help = split
-    ? `${tab === 'sh' ? 'Tints the shadows' : 'Tints the highlights'} toward one colour: pick it, then set the strength 0–10 (as the camera from v0.28; 10 = v0.26's +5). One colour at a time. Needs firmware v0.26; the odd steps (1, 3 … 9) need v0.28 and are rounded up for older firmware. Tone Balance (below) moves where the two tints meet.`
-    : tab === 'hue' ? 'Turns a colour toward its clockwise neighbour (+: Yellow → Orange).'
-      : tab === 'light' ? 'Darker or brighter, per colour.' : 'Saturation, per colour.';
-  const hp = helpParts('Color wheel (HSL)', [
-    'Changes the 12 colours of the wheel one at a time, as the camera\'s colour wheel: Sat (how strong a colour is), Hue (turns it toward its neighbour), Light (darker or brighter). Shadows and Highlights tint the dark or the light parts of the photo toward one colour (split toning).',
-    `This page: ${help}`,
-    'How to use: pick a tab, then drag a colour\'s corner out (+) or in (−), or pick a colour with ‹ › and use the slider or ↑ ↓ on the wheel. Double-click a colour on the ring to zero it; Reset page zeroes the whole tab.',
-    'On the camera: Picture Mode › Color wheel; the front dial picks the colour, the rear dial sets it.']);
+    ? '为阴影或高光染上一种颜色，强度 0 至 10。旧固件仅支持偶数档。'
+    : tab === 'hue' ? '正值让颜色沿色轮顺时针偏移。'
+      : tab === 'light' ? '单独提亮或压暗所选颜色。' : '调整所选颜色的鲜艳程度。';
+  const hp = helpParts('十二色色轮', [
+    '独立调整 12 种颜色的饱和度、色相和明度。阴影和高光页用于分离色调。',
+    help,
+    '拖动色点调节，双击归零。也可用滑杆或方向键。',
+    '机身前拨轮选颜色，后拨轮改数值。']);
   return h('div', { class: 'group cam' },
     h('div', { class: 'cam-head' }, h('span', { class: 'lbl' }, pmIcon('wheel'), '十二色色轮（HSL）', hp.q),
       h('button', { class: 'link', onclick: () => { if (split) { if (l.split) { const s = { ...l.split, [tab]: 0 } as Split; if (s.sh || s.hl) l.split = s; else delete l.split; } } else l[tab as 'sat'].fill(0); renderEditor(); changed(); } }, '重置本页')),
@@ -559,8 +544,8 @@ function hslPanel(l: Look, changed: () => void): HTMLElement {
       onclick: () => { S.tab = t; renderEditor(); },
     }, TAB_NAME[t], tabHas(t) ? h('span', { class: 'dot' }) : null))),
     hp.box,
-    split && !om3Fw25() ? h('p', { class: 'warn' }, h('b', {}, 'Needs firmware v0.26: '), 'Export is set to an older firmware, so split toning is not previewed or saved. Choose "v0.26 or later" under Export › Firmware on the camera.') : null,
-    split && om3Fw25() && !om3Fw28() && cur() % 2 ? h('p', { class: 'warn' }, h('b', {}, 'Half steps need firmware v0.28: '), `the export is set to an older firmware, so ${cur()} is saved and previewed as ${cur() + 1}. Choose "v0.28 or later" under Export › Firmware on the camera.`) : null,
+    split && !om3Fw25() ? h('p', { class: 'warn' }, h('b', {}, '分离色调需要固件 v0.26 或更高版本。')) : null,
+    split && om3Fw25() && !om3Fw28() && cur() % 2 ? h('p', { class: 'warn' }, h('b', {}, '所选固件仅支持偶数档。'), `${cur()} 档将按 ${cur() + 1} 档预览和导出。`) : null,
     svg,
     h('div', { class: 'hw-ctl' },
       h('button', { class: 'icon', title: '上一个颜色（前拨轮）', 'aria-label': '上一个颜色', onclick: () => move(-1) }, '‹'),
@@ -631,13 +616,13 @@ function tonePanel(l: Look, changed: () => void): HTMLElement {
   draw();
   toneRedraw = draw;
   const hsm = () => l.tone.shadows || l.tone.midtones || l.tone.highlights;
-  const hp = helpParts('Highlight & Shadow', [
-    'The camera\'s tone curve for this film: Shadows, Midtones and Highlights, −7 to +7 each. + brightens that part of the picture, − darkens it; Shadows − and Highlights + together give more contrast, the other way round a softer, flatter look.',
-    'How to use: drag Sh, Mid or Hi on the curve up or down, or use the sliders; double-click a point to zero it. The curve shows the camera\'s normal (across) against this look (up); its two ends follow Blacks / Whites, which have their own grid below.',
-    'On the camera: Picture Mode › Highlight & Shadow.']);
+  const hp = helpParts('高光与阴影', [
+    '高光、中间调、阴影均可在 −7 至 +7 调节。正值提亮对应区域。',
+    '上下拖动控制点，双击归零。曲线两端跟随黑白位。',
+    '对应机身的高光与阴影控制。']);
   return h('div', { class: 'group cam' },
-    h('div', { class: 'cam-head' }, h('span', { class: 'lbl' }, 'Highlight & Shadow', hp.q),
-      hsm() ? h('button', { class: 'link', onclick: () => { for (const k of ['shadows', 'midtones', 'highlights'] as const) l.tone[k] = 0; renderEditor(); changed(); } }, 'Reset') : null),
+    h('div', { class: 'cam-head' }, h('span', { class: 'lbl' }, '高光与阴影', hp.q),
+      hsm() ? h('button', { class: 'link', onclick: () => { for (const k of ['shadows', 'midtones', 'highlights'] as const) l.tone[k] = 0; renderEditor(); changed(); } }, '重置') : null),
     hp.box,
     h('div', { class: 'cam-screen-wrap' }, top, svg), ...rows);
 }
@@ -660,7 +645,7 @@ function rgbPanel(l: Look, changed: () => void): HTMLElement {
     if (!hasCurves(l)) delete l.rgb;
     return true;
   };
-  const svg = svgEl('svg', { viewBox: `0 0 ${S0} ${S0}`, width: S0, height: S0, class: 'tone-curve rgb-curve cam-screen', role: 'img', 'aria-label': 'RGB curves: stock input to look output, per colour' });
+  const svg = svgEl('svg', { viewBox: `0 0 ${S0} ${S0}`, width: S0, height: S0, class: 'tone-curve rgb-curve cam-screen', role: 'img', 'aria-label': '红绿蓝三通道曲线' });
   svg.append(svgEl('rect', { x: P, y: P, width: W, height: W, class: 'tc-frame' }));
   for (const q of [0.25, 0.5, 0.75]) {          // the camera page's quarter lines (the points sit on them)
     svg.append(svgEl('line', { x1: X(q), y1: Y(0), x2: X(q), y2: Y(1), class: 'tc-grid' }));
@@ -694,7 +679,7 @@ function rgbPanel(l: Look, changed: () => void): HTMLElement {
     return g;
   });
   const top = h('div', { class: 'tc-top' });
-  const chips = h('div', { class: 'seg rgb-ch', role: 'radiogroup', 'aria-label': 'Curve colour' });
+  const chips = h('div', { class: 'seg rgb-ch', role: 'radiogroup', 'aria-label': '曲线颜色' });
   const rowsBox = h('div', {});
   // what the photo gets: t -> t + D(t), clamped, kept rising (as the camera's st_run)
   const out = (c: Channel) => {
@@ -718,7 +703,7 @@ function rgbPanel(l: Look, changed: () => void): HTMLElement {
     });
     top.replaceChildren(h('span', { class: `on rgb-letter rc-${ch()}`, title: RGB_NAME[ch()] }, ch().toUpperCase()), ...RGB_PT.map((_, i) => h('span', { class: get(ch(), i) ? 'on' : '' }, get(ch(), i) ? signed(get(ch(), i)) : '±0')));
     chips.replaceChildren(...CHANNELS.map((c) => h('button', {
-      role: 'radio', 'aria-checked': String(c === ch()), class: `rc-chip rc-${c}${c === ch() ? ' on' : ''}`, title: `${RGB_NAME[c]} curve${l.rgb && l.rgb[c].some((x) => x) ? '（已修改）' : ''}`,
+      role: 'radio', 'aria-checked': String(c === ch()), class: `rc-chip rc-${c}${c === ch() ? ' on' : ''}`, title: `${RGB_NAME[c]}曲线${l.rgb && l.rgb[c].some((x) => x) ? '（已修改）' : ''}`,
       onclick: () => { S.rgb = c; buildRows(); draw(); },
     }, c.toUpperCase(), l.rgb && l.rgb[c].some((x) => x) ? '*' : '')));
     syncs.forEach((f) => f());
@@ -732,14 +717,14 @@ function rgbPanel(l: Look, changed: () => void): HTMLElement {
     }));
   }
   buildRows(); draw();
-  const hp = helpParts('RGB curves', [
-    'A curve each for red, green and blue, with 5 points from black (0 %) to white (100 %), −7 to +7 each. Raise a colour\'s points to add that colour where those points are (in the shadows, mids or highlights); lower them to take it away. For example, blue up at the shadows and down at the highlights gives cool shadows and warm lights.',
-    'How to use: pick R, G or B, then drag a point up or down on the curve, or use its slider or ↑ ↓; double-click a point to zero it. Reset clears all three curves.',
-    fwLine('Firmware v0.30', 'saved with your looks as OM3MOD/CURVES.BIN (Export › Save to the SD card); the camera takes them at the next half-press, for each film that is still as you saved it.'),
-    'On the camera: Picture Mode › RGB: INFO picks R / G / B, the front dial the point (1–5), the rear dial its level.']);
+  const hp = helpParts('RGB 曲线', [
+    '红、绿、蓝各有五个控制点。提高数值会在对应的亮度范围加入该颜色。',
+    '选通道后拖动控制点或滑杆，双击单点归零。',
+    fwLine('固件 v0.30', '随 CURVES.BIN 导入机身。'),
+    '机身用 INFO 换通道，前拨轮选点，后拨轮调数值。']);
   return h('div', { class: 'group cam' },
-    h('div', { class: 'cam-head' }, h('span', { class: 'lbl' }, pmIcon('rgb'), 'RGB curves', hp.q),
-      hasCurves(l) ? h('button', { class: 'link', onclick: () => { delete l.rgb; renderEditor(); changed(); } }, 'Reset') : null),
+    h('div', { class: 'cam-head' }, h('span', { class: 'lbl' }, pmIcon('rgb'), 'RGB 曲线', hp.q),
+      hasCurves(l) ? h('button', { class: 'link', onclick: () => { delete l.rgb; renderEditor(); changed(); } }, '重置') : null),
     hp.box,
     chips,
     h('div', { class: 'cam-screen-wrap' }, top, svg), rowsBox);
@@ -766,7 +751,7 @@ function mixPanel(l: Look, changed: () => void): HTMLElement {
   // spokes from the centre; the chosen dot r 13 in its bright colour on a white r 16, the others r 8, dim.
   const S0 = 300, C = 150, R = 90, START = [-90, 30, 150];
   const BRIGHT: Record<Channel, string> = { r: '#ff6a2a', g: '#22e83a', b: '#4d7dff' }, DIM: Record<Channel, string> = { r: '#b3470f', g: '#1f8f2a', b: '#2e4f9f' };
-  const svg = svgEl('svg', { viewBox: `0 0 ${S0} ${S0}`, width: 200, height: 200, class: 'mix-ring cam-screen', role: 'img', 'aria-label': 'Colour mix, as on the camera: each colour as a dot, turned by its hue, out or in by its saturation' });
+  const svg = svgEl('svg', { viewBox: `0 0 ${S0} ${S0}`, width: 200, height: 200, class: 'mix-ring cam-screen', role: 'img', 'aria-label': '色彩混合示意图' });
   svg.append(svgEl('rect', { x: 0.5, y: 0.5, width: S0 - 1, height: S0 - 1, fill: '#1e1e1e', stroke: '#8a8a8a', 'stroke-width': 1.5 }),
     svgEl('line', { x1: C, y1: 0, x2: C, y2: S0, stroke: '#6a6a6a', 'stroke-width': 1 }),
     svgEl('line', { x1: 0, y1: C, x2: S0, y2: C, stroke: '#6a6a6a', 'stroke-width': 1 }),
@@ -784,7 +769,7 @@ function mixPanel(l: Look, changed: () => void): HTMLElement {
     return { g, ring, pip };
   });
   const top = h('div', { class: 'tc-top mx-top' });   // the letter centred over the ring, as the camera's header (test 11)
-  const chips = h('div', { class: 'seg rgb-ch', role: 'radiogroup', 'aria-label': 'Mix colour' });
+  const chips = h('div', { class: 'seg rgb-ch', role: 'radiogroup', 'aria-label': '混色通道' });
   const rowsBox = h('div', {});
   const syncs: (() => void)[] = [];
   function draw() {
@@ -820,14 +805,14 @@ function mixPanel(l: Look, changed: () => void): HTMLElement {
       row(0, '色相', `前拨轮调节色相：正值使 ${RGB_NAME[ch()].toLowerCase()}偏向 ${MIX_TOWARD[ch()]}，负值反向`));
   }
   buildRows(); draw();
-  const hp = helpParts('Color Mix', [
-    'Mixes the camera\'s red, green and blue into each other, before the curves and the colour wheel, so whole families of colours move together. Sat makes a colour stronger or weaker (its dot moves out or in); Hue turns it: red toward yellow, green toward cyan, blue toward purple (clockwise on the ring). Greys stay grey.',
-    'How to use: pick R, G or B, then drag its dot on the ring, or use the Sat and Hue sliders (−7 to +7). Reset clears the mix.',
-    fwLine('Firmware v0.30', 'saved with your looks as OM3MOD/CURVES.BIN (Export › Save to the SD card); the camera takes it at the next half-press, for each film that is still as you saved it.'),
-    'On the camera: Picture Mode › Mix: INFO picks R / G / B, the front dial Hue, the rear dial Sat.']);
+  const hp = helpParts('色彩混合', [
+    '调整红、绿、蓝原色的色相与饱和度。灰色保持中性。',
+    '选通道后拖动色点，或用两个滑杆调节。',
+    fwLine('固件 v0.30', '随 CURVES.BIN 导入机身。'),
+    '机身用 INFO 换通道，前拨轮调色相，后拨轮调饱和度。']);
   return h('div', { class: 'group cam' },
-    h('div', { class: 'cam-head' }, h('span', { class: 'lbl' }, pmIcon('mix'), 'Color Mix', hp.q),
-      hasMix(l) ? h('button', { class: 'link', onclick: () => { delete l.mix; renderEditor(); changed(); } }, 'Reset') : null),
+    h('div', { class: 'cam-head' }, h('span', { class: 'lbl' }, pmIcon('mix'), '色彩混合', hp.q),
+      hasMix(l) ? h('button', { class: 'link', onclick: () => { delete l.mix; renderEditor(); changed(); } }, '重置') : null),
     hp.box,
     chips,
     h('div', { class: 'cam-screen-wrap' }, top, svg), rowsBox);
@@ -837,7 +822,7 @@ function mixPanel(l: Look, changed: () => void): HTMLElement {
  *  −7..+7 each. Black boxes and edges for Blacks, white ones for Whites, as on the camera. */
 function bwPanel(l: Look, changed: () => void): HTMLElement {
   const N = OM3.bw, CELL = 12, PAD = 34, BOX = CELL * (2 * N + 1), SZ = PAD * 2 + BOX;
-  const svg = svgEl('svg', { viewBox: `0 0 ${SZ} ${SZ}`, class: 'wb-grid bw-grid cam-screen', role: 'slider', tabindex: 0, 'aria-label': 'Blacks and Whites: left and right for Blacks, up and down for Whites' });
+  const svg = svgEl('svg', { viewBox: `0 0 ${SZ} ${SZ}`, class: 'wb-grid bw-grid cam-screen', role: 'slider', tabindex: 0, 'aria-label': '左右调黑位，上下调白位' });
   const X = (b: number) => PAD + (b + N + 0.5) * CELL, Y = (w: number) => PAD + (N - w + 0.5) * CELL;
   svg.append(svgEl('rect', { x: 0, y: 0, width: SZ, height: SZ, rx: 14, class: 'cs-bg' }),
     svgEl('rect', { x: PAD, y: PAD, width: BOX, height: BOX, class: 'wb-box' }));
@@ -871,7 +856,7 @@ function bwPanel(l: Look, changed: () => void): HTMLElement {
     const [b, w] = get();
     dot.setAttribute('transform', `translate(${X(b)},${Y(w)})`);
     read.textContent = `${sg(b)}/${sg(w)}`;           // as the camera's cell: Blacks / Whites, "+3/−2"
-    svg.setAttribute('aria-valuetext', `Blacks ${sg(b)}, Whites ${sg(w)}`);
+    svg.setAttribute('aria-valuetext', `黑位 ${sg(b)}，白位 ${sg(w)}`);
   }
   const cellAt = (e: PointerEvent) => {
     const r = svg.getBoundingClientRect(), x = ((e.clientX - r.left) / r.width) * SZ, y = ((e.clientY - r.top) / r.height) * SZ;
@@ -890,17 +875,17 @@ function bwPanel(l: Look, changed: () => void): HTMLElement {
   });
   draw();
   const big = Math.abs(l.tone.blacks) > 5 || Math.abs(l.tone.whites) > 5;
-  const hp = helpParts('Blacks / Whites', [
-    'The two ends of the tone curve. Blacks (left and right): + lifts the darkest tones for softer, faded blacks; − deepens them. Whites (up and down): + brightens the lightest tones; − tones them down for softer highlights.',
-    'How to use: click or drag on the grid, or use the arrow keys; 0 or Delete sets both to 0. The read-out shows Blacks then Whites.',
-    fwLine('Firmware v0.28', '−7 to +7 (±5 on older firmware).'),
-    'On the camera: Picture Mode › Blacks / Whites grid.']);
+  const hp = helpParts('黑白位', [
+    '黑位控制最暗区域，白位控制最亮区域。正值提亮，负值压暗。',
+    '拖动十字或用方向键。按 0 或删除键归零。',
+    fwLine('固件 v0.28', '该版本起支持。'),
+    '对应机身的黑白位网格。']);
   return h('div', { class: 'group cam' },
-    h('div', { class: 'cam-head' }, h('span', { class: 'lbl' }, pmIcon('bw'), 'Blacks / Whites', hp.q), read,
-      h('button', { class: 'link', onclick: () => { set(0, 0); checkpoint(); } }, 'Reset')),
+    h('div', { class: 'cam-head' }, h('span', { class: 'lbl' }, pmIcon('bw'), '黑白位', hp.q), read,
+      h('button', { class: 'link', onclick: () => { set(0, 0); checkpoint(); } }, '重置')),
     hp.box,
     svg,
-    big ? needs28('Blacks / Whites past ±5') : null);
+    big ? needs28('超出 ±5 的黑白位') : null);
 }
 
 /** WB: the camera's fine-tune grid, A–B across and G–M up and down (−7..+7). Click a square, or use the arrow keys. */
@@ -908,7 +893,7 @@ function wbPanel(l: Look, changed: () => void): HTMLElement {
   // As the camera's WB fine-tune screen: a square with a coloured edge per direction (G up, M down, B left, A right),
   // the four letters in small boxes outside it, and a cross-hair marker; −7..+7 each way.
   const N = OM3.wb, CELL = 12, PAD = 34, BOX = CELL * (2 * N + 1), SZ = PAD * 2 + BOX;
-  const svg = svgEl('svg', { viewBox: `0 0 ${SZ} ${SZ}`, class: 'wb-grid cam-screen', role: 'slider', tabindex: 0, 'aria-label': 'White balance shift: left and right for A–B, up and down for G–M' });
+  const svg = svgEl('svg', { viewBox: `0 0 ${SZ} ${SZ}`, class: 'wb-grid cam-screen', role: 'slider', tabindex: 0, 'aria-label': '左右调琥珀蓝轴，上下调绿品红轴' });
   const X = (ab: number) => PAD + (ab + N + 0.5) * CELL, Y = (gm: number) => PAD + (N - gm + 0.5) * CELL;
   svg.append(svgEl('rect', { x: 0, y: 0, width: SZ, height: SZ, rx: 14, class: 'cs-bg' }),
     svgEl('rect', { x: PAD, y: PAD, width: BOX, height: BOX, class: 'wb-box' }));
@@ -956,14 +941,14 @@ function wbPanel(l: Look, changed: () => void): HTMLElement {
     else if (k === '0' || k === 'Delete' || k === 'Backspace') { set(0, 0); checkpoint(); e.preventDefault(); }
   });
   draw();
-  const hp = helpParts('WB Compensation', [
-    'Shifts the colour of the whole photo: A (amber, warmer) or B (blue, cooler) across, G (green) or M (magenta) up and down. From v0.40.1 picking the film sets it as the camera\'s own WB compensation (for the film\'s WB mode), so the super control panel shows it; before, it was added on top of the camera\'s own.',
-    'How to use: click or drag on the grid, or use the arrow keys; 0 or Delete centres it. The read-out shows the shift as the camera writes it (for example A2.G1).',
-    fwLine('Firmware v0.26.1', 'past ±5 (up to ±7).'),
-    'On the camera: Picture Mode › WB grid.']);
+  const hp = helpParts('白平衡偏移', [
+    '横向调暖黄与蓝，纵向调绿与品红。',
+    '拖动十字或用方向键。按 0 或删除键归零。',
+    fwLine('固件 v0.26.1', '该版本起支持。'),
+    '对应机身的白平衡偏移网格。']);
   return h('div', { class: 'group cam' },
-    h('div', { class: 'cam-head' }, h('span', { class: 'lbl' }, 'WB Compensation', hp.q), read,
-      h('button', { class: 'link', onclick: () => { set(0, 0); checkpoint(); } }, 'Reset')),
+    h('div', { class: 'cam-head' }, h('span', { class: 'lbl' }, '白平衡偏移', hp.q), read,
+      h('button', { class: 'link', onclick: () => { set(0, 0); checkpoint(); } }, '重置')),
     hp.box,
     wbModeRow(l, changed),
     svg);
@@ -976,7 +961,7 @@ const WB_MODE_NAMES: [FilmWb['mode'] | 'auto', string][] = [['auto', '自动'], 
   ['flash', '闪光灯（5500 K）'], ['custom', '自定义色温']];
 /** The camera's One-touch WB 1-4 (a measurement stored in the camera): not offered here (owner, 2026-11-12), shown only
  *  for a film that already has one (from a photo's code), so it is not lost. */
-const WB_ONE_TOUCH: [FilmWb['mode'], string][] = [['one_touch_1', 'One-touch 1'], ['one_touch_2', 'One-touch 2'], ['one_touch_3', 'One-touch 3'], ['one_touch_4', 'One-touch 4']];
+const WB_ONE_TOUCH: [FilmWb['mode'], string][] = [['one_touch_1', '一键白平衡 1'], ['one_touch_2', '一键白平衡 2'], ['one_touch_3', '一键白平衡 3'], ['one_touch_4', '一键白平衡 4']];
 function wbModeRow(l: Look, changed: () => void): HTMLElement {
   const mode = l.film_wb?.mode ?? 'auto';
   const sel = h('select', { 'aria-label': '此款胶片的白平衡模式', onchange: (e: Event) => {
@@ -993,23 +978,48 @@ function wbModeRow(l: Look, changed: () => void): HTMLElement {
   const odd = mode === 'underwater' || mode.startsWith('one_touch');
   return h('div', { class: 'wb-mode' },
     withHelp(h('div', { class: 'crow' }, h('span', { class: 'cname' }, '白平衡模式'), sel), '白平衡模式', [
-      'The white balance the camera switches to when you pick this film, for example Sunny for a daylight film or 3200 K for a tungsten film. Auto: the film has none of its own and the camera keeps the WB you set.',
-      'How to use: pick a mode; Custom WB adds a Kelvin slider. Changes you make on the camera afterwards are remembered for the film.',
-      'In the preview: shown as if the photo was taken in daylight (5300 K); Underwater and the one-touch modes are not shown.',
-      fwLine('Firmware v0.28', 'needed for a WB mode.')]),
+      '选用此胶卷时，机身会应用设定的白平衡模式。',
+      '选择「自定义色温」后可调整色温。',
+      '预览以日光 5300 K 为基准。',
+      fwLine('固件 v0.28', '该版本起支持。')]),
     kIn ? h('div', { class: 'crow' }, h('span', { class: 'cname' }, '色温（K）'), kIn, kOut) : null,
-    mode !== 'auto' ? needs28('the WB mode') : null,
+    mode !== 'auto' ? needs28('白平衡模式') : null,
     mode !== 'auto' && odd ? h('p', { class: 'help' }, '预览不模拟水下光照或自行测量的白平衡。') : null);
 }
 
 /** The firmware chosen under Export › Firmware on the camera (v0.28 or later by default, from the v0.28 release). Settings a firmware can't
  *  take are left out of the preview as they are left out of its LOOKS.BIN: split toning before v0.26; Halation, Tone
  *  Balance, the film's WB mode and Blacks / Whites past ±5 before v0.28 (split toning then in whole v0.26 steps). */
-const FW_VALUES = ['20', '21', '22', '23', '24', '25', '26', '28'];
-const fwSetting = (): Fw => { try { const s = localStorage.getItem('caduceus.om3.fw'); if (s !== null && FW_VALUES.includes(s)) return Number(s) as Fw; } catch { /* storage blocked */ } return 28; };
+// Export targets describe actual firmware families. The numeric format level
+// still drives the compatible LOOKS.BIN fields and the preview.
+const exportTargets = [
+  { id: 'nostalgia-effects', name: 'Nostalgia-OM · 胶卷效果实验版', fw: 28, labels: true, curves: true },
+  { id: 'nostalgia', name: 'Nostalgia-OM v0.1.1', fw: 28, labels: true, curves: true },
+  { id: 'caduceus-40', name: 'v0.40.2 / v0.40 系列', fw: 28, curves: true },
+  { id: 'caduceus-30', name: 'v0.30–v0.39', fw: 28, curves: true },
+  { id: '28', name: 'v0.28–v0.29', fw: 28 },
+  { id: '26', name: 'v0.26.1–v0.27.1', fw: 26 },
+  { id: '25', name: 'v0.26', fw: 25 },
+  { id: '24', name: 'v0.25', fw: 24 },
+  { id: '23', name: 'v0.24.1', fw: 23 },
+  { id: '22', name: 'v0.22–v0.24', fw: 22 },
+  { id: '21', name: 'v0.21', fw: 21 },
+  { id: '20', name: 'v0.19–v0.20', fw: 20 },
+  { id: 'profiles', name: 'v0.17–v0.18（PROFILES.BIN）', fw: 20 },
+] satisfies { id: string; name: string; fw: Fw; labels?: boolean; curves?: boolean }[];
+function savedExportTarget() {
+  try {
+    const selected = localStorage.getItem('caduceus.om3.export-target');
+    const old = localStorage.getItem('caduceus.om3.fw');
+    return exportTargets.find(t => t.id === selected || (!selected && old !== '28' && t.id === old)) ?? exportTargets[0];
+  } catch { return exportTargets[0]; }
+}
+let exportTarget = savedExportTarget();
+const fwSetting = (): Fw => exportTarget.fw;
 const om3Fw25 = () => fwSetting() >= 25;
 const om3Fw28 = () => fwSetting() >= 28;
 function splitPv(l: Look): Look {
+  if (l.filmEffects && exportTarget.id !== 'nostalgia-effects') l = { ...l, filmEffects: undefined };
   const fw = fwSetting();
   if (fw >= 28) return l;
   const c = (v: number) => Math.max(-5, Math.min(5, v));
@@ -1020,12 +1030,11 @@ function splitPv(l: Look): Look {
   return r;
 }
 /** A note under a v0.28 setting while the export is for an older firmware. */
-const needs28 = (what: string) => (om3Fw28() ? null : h('p', { class: 'warn' }, h('b', {}, 'Needs firmware v0.28: '),
-  `the export is set to an older firmware, so ${what} is not previewed or saved. Choose "v0.28 or later" under Export › Firmware on the camera.`));
+const needs28 = (what: string) => (om3Fw28() ? null : h('p', { class: 'warn' }, h('b', {}, '所选固件版本较早。'), `${what}需要 v0.28 或更高版本。`));
 
 function refreshProblems() {
   const el = document.getElementById('problems');
-  const probs = validateBank(O.bank), at = O.k * PER + O.v;
+  const probs = validateBank(O.bank), at = looseRoll ? -1 : O.k * PER + O.v;
   if (el) { const mine = probs.filter((p) => p.look === at); el.replaceChildren(...(mine.length ? [h('ul', { class: 'problems' }, ...mine.map((p) => h('li', {}, p.message)))] : [])); }
   const bad = new Set(probs.map((p) => p.look));
   document.querySelectorAll('#list li.look').forEach((li) => li.classList.toggle('bad', bad.has(Number((li as HTMLElement).dataset.at))));
@@ -1033,7 +1042,12 @@ function refreshProblems() {
 
 // ---------------------------------------------------------------- preview
 let srcData: ImageData | null = null;
-let userPhoto: ImageData | null = null;
+type PreviewPhoto = HTMLImageElement | HTMLCanvasElement;
+let userPhoto: HTMLCanvasElement | null = null;
+let photoSource: PreviewPhoto | null = null;
+let detailPreview = false;
+let renderedSource: PreviewPhoto | null = null;
+let renderedSize = 0;
 let canvas: HTMLCanvasElement;
 let beforeCv: HTMLCanvasElement;
 let beforeOf: ImageData | null = null;
@@ -1043,7 +1057,7 @@ function buildPreview() {
   canvas = h('canvas', { class: 'pv', 'aria-label': '当前胶片的模拟预览' });
   const thumbs = h('div', { class: 'thumbs' },
     ...samples().map((s) => h('button', { class: `thumb${S.image === s.id ? ' on' : ''}`, 'data-id': s.id, onclick: () => pickImage(s.id), title: s.label },
-      h('img', { src: `./samples/${s.id}.jpg?v=${SAMPLE_REV}`, alt: s.label, loading: 'lazy' }))),
+      h('img', { src: sampleUrl(s.id), alt: s.label, loading: 'lazy' }))),
     h('button', { class: `thumb own${S.image === 'user' ? ' on' : ''}`, 'data-id': 'user', onclick: () => (userPhoto ? pickImage('user') : $<HTMLInputElement>('#photo').click()), title: '自选照片（仅在本机处理）' },
       h('span', {}, '＋ 自选照片')));
   // before / after: the untouched photo on its own canvas, clipped at a line you drag on the photo (or arrow keys)
@@ -1053,13 +1067,19 @@ function buildPreview() {
   const frame = h('div', { class: 'pv-frame' }, canvas, beforeCv, divider);
   const setCut = (v: number) => {
     S.cut = Math.max(0, Math.min(100, v)); frame.style.setProperty('--cut', `${S.cut}%`);
-    divider.setAttribute('aria-valuenow', String(Math.round(S.cut))); divider.setAttribute('aria-valuetext', `${Math.round(S.cut)}% before`);
+    divider.setAttribute('aria-valuenow', String(Math.round(S.cut))); divider.setAttribute('aria-valuetext', `原图 ${Math.round(S.cut)}%`);
   };
   let dragging = false;
   const at = (e: PointerEvent) => { const r = frame.getBoundingClientRect(); setCut(((e.clientX - r.left) / r.width) * 100); };
-  frame.addEventListener('pointerdown', (e) => { if (e.button !== 0) return; dragging = true; frame.setPointerCapture(e.pointerId); at(e); e.preventDefault(); });
+  frame.addEventListener('pointerdown', (e) => {
+    const preview = $('#preview');
+    if (e.button !== 0 || (preview.dataset.view && preview.dataset.view !== 'split') ||
+        (preview.dataset.zoom === 'true' && !divider.contains(e.target as Node))) return;
+    dragging = true; frame.setPointerCapture(e.pointerId); at(e); e.preventDefault();
+  });
   frame.addEventListener('pointermove', (e) => { if (dragging) at(e); });
   frame.addEventListener('pointerup', () => { dragging = false; }); frame.addEventListener('pointercancel', () => { dragging = false; });
+  frame.addEventListener('lostpointercapture', () => { dragging = false; });
   divider.addEventListener('keydown', (e) => {
     const step = ({ ArrowLeft: -2, ArrowRight: 2, PageDown: -10, PageUp: 10 } as Record<string, number>)[e.key];
     if (step) { setCut(S.cut + step); e.preventDefault(); }
@@ -1071,7 +1091,7 @@ function buildPreview() {
     '画幅由机身单独设置。预览先对全图调色，再裁切，边框位于裁切范围内。',
     '在机身的超级控制面板或图像比例菜单选择。']);
   $('#preview').replaceChildren(
-    h('div', { class: 'pv-wrap' }, frame, h('span', { class: 'badge' }, '原图'), h('span', { class: 'badge r' }, '调色预览')),
+    h('div', { class: 'pv-wrap' }, h('div', {class: 'pv-viewport', 'aria-label': '照片预览'}, frame), h('span', { class: 'badge' }, '原图'), h('span', { class: 'badge r' }, '调色预览')),
     thumbs,
     h('div', { class: 'pv-opts' },
       h('label', { class: 'aspect' },
@@ -1081,21 +1101,47 @@ function buildPreview() {
       h('span', { class: 'help' }, 'Includes Contrast, Sharp, Shading, Film Grain, Border, Glow, Halation and the lens corners.'),
       h('button', { class: 'link', onclick: () => $<HTMLInputElement>('#photo').click() }, '选择自己的照片…')),
     aspectHelp.box,
-    h('p', { class: 'help' }, 'Drag the line on the photo to compare before and after. Shading, grain, border, glow and the lens corners follow the camera\'s own maths, checked against photos from an OM-3; colours are close but not exact (strong blues and purples differ most), so check a new look on the camera. Your own photo never leaves this browser.'));
+    h('p', { class: 'help' }, '在对比模式拖动分界线查看前后效果。双击照片放大，拖动查看局部。自选照片仅在本机处理。'));
   pickImage(S.image);
 }
 
+let photoRequest = 0;
+let customPhotoName = '自选照片';
 async function pickImage(id: string) {
+  const request = ++photoRequest;
   S.image = id;
   document.querySelectorAll('.thumb').forEach((t) => t.classList.toggle('on', (t as HTMLElement).dataset.id === id));
-  if (id === 'user') { srcData = userPhoto; schedulePreview(); return; }
+  if (id === 'user') {
+    if (userPhoto) showPreviewPhoto(userPhoto, customPhotoName, true);
+    return;
+  }
   try {
     const img = new Image();
-    img.src = `./samples/${id}.jpg?v=${SAMPLE_REV}`;
+    img.src = sampleUrl(id);
     await img.decode();
-    srcData = toImageData(img, img.naturalWidth, img.naturalHeight);
-    if (S.image === id) schedulePreview();
-  } catch { toast('无法加载样片', 'err'); }
+    if (request !== photoRequest) return;
+    showPreviewPhoto(img, id + '.jpg', false);
+  } catch { if (request === photoRequest) toast('无法加载样片', 'err'); }
+}
+
+function updatePreviewResolution() {
+  if (!photoSource) return;
+  const max = detailPreview ? 2048 : previewPx();
+  if (photoSource !== renderedSource || max !== renderedSize) {
+    const width = photoSource instanceof HTMLImageElement ? photoSource.naturalWidth : photoSource.width;
+    const height = photoSource instanceof HTMLImageElement ? photoSource.naturalHeight : photoSource.height;
+    srcData = toImageData(photoSource, width, height, max);
+    renderedSource = photoSource;
+    renderedSize = max;
+  }
+  schedulePreview();
+}
+
+function showPreviewPhoto(photo: PreviewPhoto, name: string, custom: boolean) {
+  photoSource = photo;
+  detailPreview = false;
+  updatePreviewResolution();
+  if (srcData) view.photoChanged?.(name, srcData, custom);
 }
 
 /** The preview's working size (long side, px): enough for the preview at this screen's pixel density (sharp on
@@ -1120,10 +1166,17 @@ async function onPhoto(e: Event) {
   const f = (e.target as HTMLInputElement).files?.[0];
   (e.target as HTMLInputElement).value = '';
   if (!f) return;
+  const request = ++photoRequest;
   try {
     const bmp = await createImageBitmap(f, { imageOrientation: 'from-image' } as ImageBitmapOptions);
-    userPhoto = toImageData(bmp, bmp.width, bmp.height);
-    bmp.close();
+    if (request !== photoRequest) { bmp.close(); return; }
+    customPhotoName = f.name;
+    try {
+      const scale = Math.min(1, 2048 / Math.max(bmp.width, bmp.height));
+      const source = h('canvas', { width: Math.max(1, Math.round(bmp.width * scale)), height: Math.max(1, Math.round(bmp.height * scale)) });
+      source.getContext('2d')!.drawImage(bmp, 0, 0, source.width, source.height);
+      userPhoto = source;
+    } finally { bmp.close(); }
     pickImage('user');
   } catch { toast('无法读取此图片', 'err'); }
 }
@@ -1133,6 +1186,7 @@ function sizeFrame(w: number, h: number) {
   const frame = canvas.parentElement as HTMLElement | null;
   if (!frame) return;
   frame.style.aspectRatio = `${w} / ${h}`;
+  frame.style.setProperty('--ratio', String(w / h));
   frame.style.width = `min(100%, ${(70 * w / h).toFixed(2)}vh)`;
 }
 
@@ -1179,7 +1233,7 @@ function pasteDialog() {
 }
 let importCodeMsg: (m: string) => void = (m) => toast(m, 'err');
 
-const rrName = (n: string) => n.replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') || 'look';
+const rrName = (n: string) => n.replace(/[^\p{L}\p{N}_.-]+/gu, '-').replace(/^-+|-+$/g, '') || 'look';
 // ---------------------------------------------------------------- OM-3 (Caduceus for OM-3)
 // The OM-3 has no look list: each of COLOR 1-4 holds five numbered looks (the camera's Film page, dial 1-5).
 const OB_PREFIX = 'ob1_', OP_PREFIX = 'op1_';
@@ -1190,7 +1244,7 @@ function newBank(kind: 'library' | 'empty') {
   if (!confirm(kind === 'library' ? '恢复默认的 20 款胶片及其顺序？当前胶片将被替换，可撤销。'
     : '清空所有 20 个位置？清空后可撤销。')) return;
   O.bank = kind === 'library' ? defaultBank(LIBRARY, fromLibrary) : emptyBank();
-  O.k = 0; O.v = 0;
+  selectSlot(0, 0);
   save(); renderAll();
   toast(kind === 'library' ? 'Reset to the 20 films (FILM 1–20)' : 'All films emptied');
 }
@@ -1201,51 +1255,136 @@ function swapSlots(a: [number, number], b: [number, number]) {
   const t = O.bank[a[0]][a[1]];
   O.bank[a[0]][a[1]] = O.bank[b[0]][b[1]];
   O.bank[b[0]][b[1]] = t;
-  [O.k, O.v] = b;
+  selectSlot(...b);
   save(); renderAll(); focusSel();
 }
 function clearSlot(k: number, v: number) {
   const l = O.bank[k][v];
   if (!l) return;
   O.bank[k][v] = null;
-  O.k = k; O.v = v;
+  selectSlot(k, v);
   save(); renderAll();
   toast(`Removed "${l.name}" from ${at(k, v)} (Undo brings it back)`);
 }
-/** The saved-lists bar above the looks: pick a list to load it, save the current looks as a new list, rename or
- *  delete. */
-function listsBar(): HTMLElement {
-  const names = listNames();
-  const sel = h('select', { 'aria-label': 'Saved list', onchange: (e: Event) => switchList((e.target as HTMLSelectElement).value) },
-    ...names.map((n) => h('option', { value: n, selected: n === LISTS.current }, n)));
-  return h('div', { class: 'lists-bar' },
-    h('label', { class: 'field' }, h('span', { class: 'lbl' }, '胶片组'), sel),
-    h('div', { class: 'lists-btns' },
-      h('button', { onclick: () => nameDialog('另存为新胶片组', '', '保存', (n) => {
-        flush(); LISTS.lists[n] = JSON.parse(JSON.stringify(O.bank)) as Bank; switchList(n, `Saved as "${n}". You're now on "${n}"; changes save into it.`);
-      }), title: '将这 20 款胶片另存为一个新组' }, '另存为…'),
-      h('button', { onclick: () => nameDialog(`重命名「${LISTS.current}」`, LISTS.current, '重命名', (n) => {
-        const b = LISTS.lists[LISTS.current]; delete LISTS.lists[LISTS.current];
-        LISTS.lists[n] = b; LISTS.current = n; O.name = n; flush(); renderList(); toast(`Renamed to "${n}"`);
-      }) }, '重命名'),
-      h('button', { class: 'danger', disabled: names.length < 2, title: names.length < 2 ? '至少需要保留一个胶片组' : undefined, onclick: () => {
-        if (!confirm(`删除胶片组「${LISTS.current}」？这会移除浏览器中该组的配方，此操作无法撤销。`)) return;
-        const gone = LISTS.current; delete LISTS.lists[gone];
-        LISTS.current = listNames()[0]; O.bank = LISTS.lists[LISTS.current]; O.name = LISTS.current; O.k = 0; O.v = 0;
-        hist = new History(snapshot(), 200); undoUi(); flush(); renderAll(); toast(`Deleted "${gone}"; now on "${LISTS.current}"`);
-      } }, '删除')));
+function openBox(name: string) {
+  LISTS.current = O.name = name;
+  O.bank = LISTS.lists[name];
+  selectSlot(0, 0);
 }
-function switchList(n: string, msg?: string) {
-  if (!LISTS.lists[n]) return;
-  flush();
-  LISTS.current = n; O.bank = LISTS.lists[n]; O.name = n; O.k = 0; O.v = 0;
-  hist = new History(snapshot(), 200); undoUi();
-  flush(); renderAll(); toast(msg ?? `Loaded "${n}"`);
+function boxActions(): HTMLElement {
+  function create(copy: boolean) {
+    nameDialog(copy ? '另存为胶片盒预设' : '创建空胶片盒', '', '创建', name => {
+      LISTS.lists[name] = copy ? O.bank.map(row => row.slice()) : emptyBank();
+      openBox(name); save(); renderAll();
+    });
+  }
+  const icon = (glyph: string, label: string, onclick: () => void, disabled = false) =>
+    h('button', { class: 'symbol-button', 'aria-label': label, title: label, onclick, disabled }, glyph);
+  return h('div', { class: 'box-actions' },
+    icon('＋', '创建空胶片盒', () => create(false)),
+    icon('⧉', '另存为胶片盒预设', () => create(true)),
+    icon('✎', '重命名胶片盒', () => nameDialog('重命名胶片盒', LISTS.current, '保存', name => {
+      delete LISTS.lists[LISTS.current]; LISTS.current = O.name = name;
+      save(); renderAll();
+    })),
+    icon('⌫', '删除胶片盒', () => {
+      if (!confirm('删除胶片盒「' + LISTS.current + '」？其中的胶卷会保留在库中。')) return;
+      delete LISTS.lists[LISTS.current]; openBox(listNames()[0]); save(); renderAll();
+    }, listNames().length < 2));
 }
+function switchList(name: string) {
+  openBox(name);
+  hist.reset(snapshot()); undoUi(); persist(); renderAll();
+}
+function renderBoxSelector() {
+  const select = document.querySelector<HTMLSelectElement>('#box-select');
+  if (!select) return;
+  select.replaceChildren(...listNames().map(name => h('option', {value: name, selected: name === LISTS.current}, name)));
+  select.onchange = () => switchList(select.value);
+  $('#box-count').textContent = O.bank.flat().filter(Boolean).length + ' / ' + COLORS * PER;
+  $('#bank-title').textContent = LISTS.current;
+}
+
+function selectRoll(look: Look) {
+  const slot = O.bank.flat().indexOf(look);
+  if (slot < 0) looseRoll = look;
+  else selectSlot(Math.floor(slot / PER), slot % PER);
+  renderAll();
+}
+
+function newRoll() {
+  const input = h('input', { maxlength: OM3_NAME_MAX, 'aria-label': '胶卷名称', value: 'My Film' });
+  const help = h('p', {class: 'help'}, '机身名称最多 15 个英文字符。创建后可在右侧编辑中文盒签和描述。');
+  const submit = () => {
+    const name = input.value.trim();
+    const issue = om3NameProblem(name);
+    if (!name || issue) { help.textContent = issue || '请输入胶卷名称。'; return; }
+    const look = blankProfile(name);
+    cabinet.register(look); looseRoll = look;
+    dlg.close(); save(); renderAll();
+  };
+  const dlg = modal('新增胶卷', h('div', {class: 'name-dlg'}, input, help),
+    [h('button', {onclick: () => dlg.close()}, '取消'), h('button', {class: 'primary', onclick: submit}, '创建')]);
+  input.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); submit(); } };
+  input.select();
+}
+
+function togglePlacement(look: Look) {
+  const slots = O.bank.flat();
+  const existing = slots.indexOf(look);
+  const slot = existing >= 0 ? existing : slots.indexOf(null);
+  if (slot < 0) { toast('胶片盒的 20 个位置已满，请先取出一卷。', 'err'); return; }
+  const keepSelected = cur() === look || !cur();
+  O.bank[Math.floor(slot / PER)][slot % PER] = existing >= 0 ? null : look;
+  if (keepSelected) {
+    if (existing >= 0) looseRoll = look;
+    else selectSlot(Math.floor(slot / PER), slot % PER);
+  }
+  save(); renderAll();
+}
+
+function deleteRoll() {
+  const look = cur();
+  if (!look) return;
+  const used = Object.values(LISTS.lists).filter(box => box.some(row => row.includes(look))).length;
+  if (!confirm('从胶卷库删除「' + look.name + '」？' + (used ? '同时从 ' + used + ' 个胶片盒中取出。' : '') + '可以撤销。')) return;
+  for (const box of Object.values(LISTS.lists)) for (const row of box) {
+    row.forEach((item, i) => { if (item === look) row[i] = null; });
+  }
+  cabinet.rolls.delete(look);
+  looseRoll = undefined;
+  save(); renderAll();
+}
+
+let shelfSignature = '';
+function renderShelf() {
+  const shelf = document.getElementById('roll-shelf');
+  if (!shelf) return;
+  const slots = O.bank.flat();
+  const selected = cur();
+  const rows = [...cabinet.rolls].map(([look, id]) => ({look, id, slot: slots.indexOf(look)}));
+  const signature = JSON.stringify(rows.map(({look, id, slot}) => [id, look.name, look.boxLabel, slot, look === selected]));
+  if (signature === shelfSignature) return;
+  shelfSignature = signature;
+  $('#roll-count').textContent = String(rows.length).padStart(2, '0');
+  ($<HTMLButtonElement>('#delete-roll')).disabled = !selected;
+  shelf.replaceChildren(...rows.map(({look, slot}) => {
+    const mark = drawRollLabel(look, 96);
+    mark.setAttribute('aria-hidden', 'true');
+    return h('div', {class: 'roll-row'},
+      h('button', {class: 'roll-pick', 'aria-pressed': String(look === selected), onclick: () => selectRoll(look)}, mark,
+        h('span', {class: 'roll-copy'}, h('b', {}, look.name || '未命名'),
+          h('small', {}, look.boxLabel?.caption || (slot >= 0 ? 'FILM ' + String(slot + 1).padStart(2, '0') : '库藏胶卷')))),
+      h('button', {class: 'roll-place', title: slot >= 0 ? '从当前盒取出' : '装入当前盒',
+        'aria-label': (slot >= 0 ? '取出 ' : '装入 ') + look.name, onclick: () => togglePlacement(look)}, slot >= 0 ? '−' : '＋'));
+  }));
+  if (!rows.length) shelf.append(h('p', {class: 'help'}, '胶卷库为空，点击「新增」创建第一卷。'));
+}
+
 function nameDialog(title: string, value: string, ok: string, done: (name: string) => void) {
   const help = h('p', { class: 'help' }, `最多 ${LIST_NAME_MAX} 个字符。`);
   const input = h('input', { type: 'text', value, maxlength: LIST_NAME_MAX, 'aria-label': 'List name', autocomplete: 'off' });
-  const problem = (n: string) => (!n ? '请输入名称。' : n !== value && LISTS.lists[n] ? `已有名为「${n}」的胶片组。` : null);
+  const problem = (n: string) => (!n ? '请输入名称。' : n !== value && Object.hasOwn(LISTS.lists, n) ? `已有名为「${n}」的胶片盒。` : null);
   const submit = () => {
     const n = input.value.trim(), p = problem(n);
     if (p) { help.textContent = p; help.className = 'help err'; input.focus(); return; }
@@ -1259,8 +1398,7 @@ function nameDialog(title: string, value: string, ok: string, done: (name: strin
 
 function newFilm() {
   const create = (k: number, v: number) => {
-    O.k = k;
-    O.v = v;
+    selectSlot(k, v);
     O.bank[k][v] = blankProfile(`Look ${k * PER + v + 1}`);
     save();
     renderAll();
@@ -1288,19 +1426,20 @@ function newFilm() {
 
 function renderBank() {
   const el = $('#list');
+  const scrollTop = el.closest('dialog')?.scrollTop;
   const bad = new Set(validateBank(O.bank).map((p) => p.look));
   const used = O.bank.flat().filter(Boolean).length;
   // owner 2026-11-08: one list FILM 1-20, as on the camera (FILM n = COLOR (n - 1) / 5 + 1, look (n - 1) % 5 + 1 in LOOKS.BIN)
   const N = COLORS * PER, slot = (n: number): [number, number] => [Math.floor(n / PER), n % PER];
   const films = h('ol', { class: 'looks bank' }, ...O.bank.flatMap((row, k) => row.map((l, v) => {
       const n = k * PER + v;
-      const sel = k === O.k && v === O.v;
+      const sel = !looseRoll && k === O.k && v === O.v;
       const li = h('li', {
         class: `look${sel ? ' sel' : ''}${l ? '' : ' empty-slot'}${bad.has(k * PER + v) ? ' bad' : ''}`, 'data-at': k * PER + v,
         draggable: l ? 'true' : 'false', tabindex: 0,
-        onclick: () => { O.k = k; O.v = v; renderAll(); },
+        onclick: () => { selectSlot(k, v); renderAll(); },
         onkeydown: (e: KeyboardEvent) => {
-          const go = (m: number) => { if (m >= 0 && m < COLORS * PER) { O.k = Math.floor(m / PER); O.v = m % PER; renderAll(); focusSel(); } };
+          const go = (m: number) => { if (m >= 0 && m < COLORS * PER) { selectSlot(Math.floor(m / PER), m % PER); renderAll(); focusSel(); } };
           if (e.key === 'ArrowUp' && e.altKey && n > 0) { swapSlots([k, v], slot(n - 1)); e.preventDefault(); }
           else if (e.key === 'ArrowDown' && e.altKey && n < N - 1) { swapSlots([k, v], slot(n + 1)); e.preventDefault(); }
           else if (e.key === 'ArrowUp') { go(n - 1); e.preventDefault(); }
@@ -1314,9 +1453,9 @@ function renderBank() {
         ondrop: (e: DragEvent) => { e.preventDefault(); li.classList.remove('over'); if (bankDrag) swapSlots(bankDrag, [k, v]); bankDrag = null; },
       },
       h('span', { class: 'grip', 'aria-hidden': 'true' }, l ? '⋮⋮' : ''),
+      l ? drawRollLabel(l, 72) : h('span'),
       h('span', { class: 'idx' }, String(n + 1)),
       h('span', { class: 'nm' }, l ? l.name || '（未命名）' : '空位'),
-      h('span'),
       h('span', { class: 'row-btns' },
         h('button', { class: 'icon', title: '上移（Alt+↑）', 'aria-label': '上移', disabled: n === 0, onclick: (e: Event) => { e.stopPropagation(); swapSlots([k, v], slot(n - 1)); } }, '↑'),
         h('button', { class: 'icon', title: '下移（Alt+↓）', 'aria-label': '下移', disabled: n === N - 1, onclick: (e: Event) => { e.stopPropagation(); swapSlots([k, v], slot(n + 1)); } }, '↓'),
@@ -1324,25 +1463,23 @@ function renderBank() {
       return li;
     })));
   el.replaceChildren(
-    listsBar(),
-    h('div', { class: 'list-head' }, h('span', {}, '胶片列表'),
-      h('button', { onclick: newFilm }, '＋ 新建胶片'), h('span', { class: 'count' }, `${used} / ${N}`)),
-    films,
-    h('p', { class: 'help' }, '机身在图像模式的 COLOR 1–4 后按此顺序显示 FILM 1–20。拖动胶片或点击 ↑ ↓ 调整顺序；机身会跳过空位并依次编号。'));
+    boxActions(),
+    h('div', { class: 'list-head' }, h('span', {}, '装盒顺序'), h('span', { class: 'count' }, `${used} / ${N}`)),
+    films);
+  const dialog = el.closest('dialog');
+  if (dialog && scrollTop) dialog.scrollTop = scrollTop;
 }
 
 /** The editor for a number with no look: make one. */
 function emptySlotPanel(): HTMLElement {
   const k = O.k, v = O.v;
   return h('div', { class: 'empty-slot-panel' },
-    h('h3', {}, `${at(k, v)}: Empty`),
-    h('p', { class: 'help' }, 'On the camera this number shows "Empty" and loads neutral settings. Give it a look:'),
+    h('h3', {}, `${at(k, v)} · 空位`),
     h('div', { class: 'pick-row' },
       h('button', { class: 'primary', onclick: newFilm }, '空白配方'),
       h('button', { onclick: () => om3FilmPicker({ k, v }) }, '从胶片模拟中选择…'),
       h('button', { onclick: om3LibraryPicker }, '从内置配方库选择…'),
-      h('button', { onclick: pasteDialog }, '粘贴链接…')),
-    h('p', { class: 'help' }, 'Library looks are the starter looks of Caduceus for the E-P7 by cakelesscoder, converted for the OM-3: Hue, Light and WB shifts are limited to ±5, a halation glow becomes a plain glow (the OM-3 glow has no colour), and Blur is left out. NR, Glow / Clarity and Art Effects carry over (firmware v0.20).'));
+      h('button', { onclick: pasteDialog }, '粘贴链接…')));
 }
 
 function om3Changes(c: { changed: string[]; dropped: string[] }): string {
@@ -1392,7 +1529,7 @@ function om3FilmPicker(into?: { k: number; v: number }) {
   };
   const place = (f: Film, t: { k: number; v: number }) => {
     const old = O.bank[t.k][t.v];
-    O.bank[t.k][t.v] = filmLook(f); O.k = t.k; O.v = t.v; into = undefined;
+    O.bank[t.k][t.v] = filmLook(f); selectSlot(t.k, t.v); into = undefined;
     save(); renderAll(); drawRows();
     toast(old ? `${f.name} replaced "${old.name}" as ${at(t.k, t.v)}` : `${f.name} added as ${at(t.k, t.v)}`);
   };
@@ -1457,144 +1594,274 @@ function om3FilmPicker(into?: { k: number; v: number }) {
   modal(into ? `为 ${at(into.k, into.v)} 选择胶片` : '胶片模拟', body);
 }
 
+const boxPalettes = [
+  { name: '琥珀', paper: '#edb64c', accent: '#403b39', ink: '#332b26' },
+  { name: '森林', paper: '#e3e6c7', accent: '#315b46', ink: '#233d31' },
+  { name: '夜蓝', paper: '#c0d1dc', accent: '#254766', ink: '#152b3f' },
+  { name: '朱砂', paper: '#f4d9b0', accent: '#a8372e', ink: '#6b2922' },
+] as const;
+const boxColorFields = [['paper', '底色'], ['accent', '色带'], ['ink', '上方字色与线条']] as const;
+
+function defaultLabelTitle(name: string) {
+  const speed = name.match(/^(.*?)\s+(\d{2,4}[A-Za-z]?)$/);
+  if (name.length > 8 && speed) {
+    return speed[1].replace(/\s+/g, '').slice(0, 8 - speed[2].length) + speed[2];
+  }
+  return [...name].slice(0, 8).join('');
+}
+
+function editStockLabel() {
+  const look = cur();
+  if (!look) return;
+
+  const { paper, accent, ink } = boxPalettes[0];
+  const label: BoxLabel = look.boxLabel ? { ...look.boxLabel } : {
+    style: 0, paper, accent, ink, title: defaultLabelTitle(look.name), caption: '',
+  };
+  let custom = Boolean(look.boxLabel);
+  let cameraPreview = false;
+  const name = h('input', { type: 'text', value: look.name, maxlength: OM3_NAME_MAX, spellcheck: 'false', autocomplete: 'off' });
+  const notes = h('textarea', { rows: 3, maxlength: 400, placeholder: '记录适合的场景或调色思路' }, look.notes);
+  const field = (title: string, input: HTMLElement, detail?: HTMLElement) =>
+    h('label', { class: 'box-field' }, h('span', { class: 'box-field-title' }, title, detail), input);
+  const title = h('input', { type: 'text', value: label.title, maxlength: 8, spellcheck: 'false' });
+  const caption = h('input', { type: 'text', value: label.caption, maxlength: 10 });
+  const titleLength = h('small', { class: 'box-length' });
+  const captionLength = h('small', { class: 'box-length' });
+  const notesLength = h('small', { class: 'box-length' });
+  const previewArt = h('canvas', { 'aria-hidden': 'true' });
+  const preview = h('div', { class: 'box-preview-art' }, previewArt);
+  const previewName = h('p', { class: 'box-preview-name' });
+  const previewCaption = h('p', { class: 'box-preview-caption' });
+  const previewModes = ['画稿', '机内效果'].map((mode, index) =>
+    h('button', { type: 'button', onclick: () => { cameraPreview = index === 1; redrawPreview(); } }, mode));
+  const previewSwitch = h('div', { class: 'box-preview-switch', role: 'group', 'aria-label': '盒签预览模式' }, ...previewModes);
+  const error = h('p', { class: 'err box-error', role: 'alert', hidden: true });
+
+  const colors = boxColorFields.map(([key, text]) => {
+    const picker = h('input', { type: 'color', value: label[key], oninput: () => {
+      label[key] = picker.value; redraw();
+    }});
+    const hit = h('button', {
+      class: 'box-hit box-hit-' + key, type: 'button', title: '调整' + text, 'aria-label': '从预览调整' + text,
+      onclick: () => picker.click(),
+    });
+    return { key, text, picker, hit };
+  });
+  preview.append(...colors.map(({hit}) => hit));
+  const choice = [-1, ...styles.keys()].map(i => {
+    const tile = h('span', { class: 'box-choice-art', 'aria-hidden': 'true' });
+    const button = h('button', {
+      class: 'box-choice', type: 'button', onclick: () => {
+        custom = i >= 0;
+        if (custom) label.style = i;
+        redraw();
+      },
+    }, tile, h('span', {}, i < 0 ? '机身默认' : styles[i]));
+    return { i, tile, button };
+  });
+  const swatches = boxPalettes.map(palette => {
+    const selected = () => boxColorFields.every(([key]) => label[key] === palette[key]);
+    const button = h('button', {
+      class: 'box-palette', type: 'button', title: palette.name, 'aria-label': palette.name, onclick: () => {
+        for (const {key, picker} of colors) { label[key] = palette[key]; picker.value = palette[key]; }
+        redraw();
+      },
+    }, h('span', { style: 'background:' + palette.paper }), h('span', { style: 'background:' + palette.accent }));
+    return { button, selected };
+  });
+  const customFields = h('fieldset', { class: 'box-custom', 'aria-label': '自定义盒签' },
+    h('div', { class: 'box-colors', role: 'group', 'aria-label': '逐项选色' },
+      ...colors.map(({text, picker}) => field(text, picker))),
+    h('div', { class: 'box-palettes', role: 'group', 'aria-label': '预设配色' },
+      ...swatches.map(({button}) => button)),
+    h('div', { class: 'box-label-copy' },
+      field('盒签字标', title, titleLength), field('机身短句', caption, captionLength)));
+  const body = h('div', { class: 'box-editor' },
+    h('aside', { class: 'box-preview', 'aria-label': '盒签预览' },
+      previewSwitch, preview, previewName, previewCaption),
+    h('div', { class: 'box-fields' },
+      h('div', { class: 'box-choices', role: 'group', 'aria-label': '盒签版式' }, ...choice.map(({button}) => button)),
+      customFields,
+      h('div', { class: 'box-metadata' }, field('胶卷名称', name), field('配方备注', notes, notesLength)),
+      error));
+
+  function redrawPreview() {
+    const art = drawRollLabel({ name: name.value, boxLabel: custom ? label : undefined }, cameraPreview ? undefined : 480);
+    previewArt.width = art.width;
+    previewArt.height = art.height;
+    previewArt.classList.toggle('native-label', art.classList.contains('native-label'));
+    previewArt.getContext('2d')!.drawImage(art, 0, 0);
+    for (const {hit} of colors) hit.hidden = !custom;
+    previewName.textContent = name.value;
+    previewCaption.textContent = custom ? label.caption : '';
+    previewSwitch.hidden = !custom;
+    previewModes.forEach((button, index) => button.setAttribute('aria-pressed', String(cameraPreview === (index === 1))));
+  }
+  function redraw() {
+    redrawPreview();
+    for (const {i, tile, button} of choice) {
+      tile.replaceChildren(drawRollLabel({
+        name: name.value,
+        boxLabel: i < 0 ? undefined : { ...label, style: i },
+      }, 120));
+      button.setAttribute('aria-pressed', String(i === (custom ? label.style : -1)));
+    }
+    for (const {button, selected} of swatches) button.setAttribute('aria-pressed', String(selected()));
+    customFields.disabled = !custom;
+    titleLength.textContent = [...label.title].length + ' / 8';
+    captionLength.textContent = [...label.caption].length + ' / 10';
+  }
+  function countNotes() {
+    notesLength.textContent = new TextEncoder().encode(notes.value).length + ' / ' + NOTE_MAX + ' 字节';
+  }
+  name.oninput = redraw;
+  title.oninput = () => { label.title = title.value; redraw(); };
+  caption.oninput = () => { label.caption = caption.value; redraw(); };
+  notes.oninput = countNotes;
+
+  const apply = h('button', { class: 'primary', onclick: () => {
+    const issue = om3NameProblem(name.value) ? '胶卷名称需为 1 至 15 个英文字符，首尾不能有空格。'
+      : notes.value !== look.notes && new TextEncoder().encode(notes.value).length > NOTE_MAX ? '配方备注超过 ' + NOTE_MAX + ' 字节。' : '';
+    if (issue) { error.textContent = issue; error.hidden = false; return; }
+    try {
+      if (custom) look.boxLabel = parseLabel(label); else delete look.boxLabel;
+      look.name = name.value;
+      look.notes = notes.value;
+    } catch {
+      error.textContent = '盒签字标或机身短句含有无效字符。';
+      error.hidden = false;
+      return;
+    }
+    dialog.close();
+    save(); renderAll();
+  }}, '应用盒签');
+  redraw(); countNotes();
+  const dialog = modal('盒签与描述', body, [h('button', { onclick: () => dialog.close() }, '取消'), apply]);
+  dialog.setAttribute('aria-label', '盒签与描述');
+}
+
+const editGroups = new Set(['对比度与锐度']);
+function editGroup(title: string, ...content: HTMLElement[]) {
+  const group = h('details', { class: 'edit-group', open: editGroups.has(title) }, h('summary', {}, title), ...content);
+  group.querySelector('summary')!.addEventListener('click', () => {
+    if (group.open) editGroups.delete(title); else editGroups.add(title);
+  });
+  return group;
+}
+
 function renderOm3Editor(l: Look) {
   // v0.21: Grain with Glow / Clarity or an Art Effect takes the camera's slow route: say so next to the Grain setting
   const grainWarn = h('p', { class: 'warn', role: 'status' });
   const showWarn = () => {
     grainWarn.replaceChildren(
-      ...(slowGrain(l) ? [h('b', {}, 'Slower saving: '), 'Glow / Clarity and Frame together with grain use a slower way (about 3 seconds more per photo, no fast burst). Grain with any one of them, or with Shading, is as fast as normal. '] : []),
-      ...(monoGrain(l) ? [h('b', {}, 'Firmware v0.24.1 only: '), 'Shading with grain turned the photo black and white there, so looks saved for v0.24.1 get Shading 0.'] : []));
+      ...(slowGrain(l) ? [h('b', {}, '保存用时增加。'), '同时启用颗粒、柔光或清晰度以及边框时，机身每张约多用 3 秒，且无法高速连拍。'] : []),
+      ...(monoGrain(l) ? [h('b', {}, '固件 v0.24.1。'), '导出到此版本会清零暗角效果，避免与颗粒同时使用时变成黑白照片。'] : []));
     grainWarn.hidden = !slowGrain(l) && !monoGrain(l);
   };
   const fxChanged = () => { changed(); showWarn(); };
   showWarn();
   const el = $('#editor');
-  const k = O.k, v = O.v;
   const changed = () => { save(); schedulePreview(); refreshProblems(); };
-  const np = om3NameProblem(l.name);
-  const nameInput = h('input', {
-    type: 'text', value: l.name, maxlength: OM3_NAME_MAX, spellcheck: 'false', autocomplete: 'off', 'aria-describedby': 'name-help',
-    onchange: checkpoint, onkeydown: enterCommits,
-    oninput: (e: Event) => draft(() => {
-      l.name = (e.target as HTMLInputElement).value;
-      const p = om3NameProblem(l.name);
-      $('#name-help').textContent = p ?? `${l.name.length} / ${OM3_NAME_MAX} · 显示在机身胶片页色轮下方`;
-      $('#name-help').className = p ? 'help err' : 'help';
-      const row = document.querySelector(`#list li[data-at="${k * PER + v}"] .nm`);
-      if (row) row.textContent = l.name || '（未命名）';
-      changed();
-    }),
-  });
-  const notesBytes = () => new TextEncoder().encode(l.notes).length;
   const film = filmOf(l), orig = film ? undefined : libraryOrigin(l, LIBRARY);
   el.replaceChildren(
-    h('div', { class: 'ed-head' },
-      h('label', { class: 'field grow' }, h('span', { class: 'lbl' }, `名称 · ${at(k, v)}`), nameInput,
-        h('span', { id: 'name-help', class: np ? 'help err' : 'help' }, np ?? `${l.name.length} / ${OM3_NAME_MAX} · 显示在机身胶片页色轮下方`)),
-      h('div', { class: 'ed-btns' },
-        h('button', { class: 'primary', title: '修改会自动保存在此浏览器中；点击可立即保存当前胶片组。', onclick: () => {
-          if (flush()) toast(`已保存到本机胶片组「${LISTS.current}」`);
-          else toast('浏览器未能保存。请从「导出」下载胶片配方文件（.json）备份。', 'err');
-        } }, '保存到本机'),
+      h('div', { class: 'ed-btns recipe-actions' },
         h('button', {
-          class: 'share-btn', title: film ? `恢复 ${film.name} 的默认参数` : orig ? `Restore the built-in "${orig.name}" values (OM-3 version)` : '将所有参数恢复为中性值',
+          class: 'share-btn', title: film ? `恢复 ${film.name} 的默认参数` : orig ? `恢复 ${orig.name} 的默认参数` : '将所有参数恢复为中性值',
           onclick: () => {
+            const { boxLabel, notes } = l;
             const r = film ? Object.assign(filmLook(film), { name: l.name }) : toOm3(resetLook(l, LIBRARY, [])).look ?? blankProfile(l.name);
-            O.bank[k][v] = r; save(); renderAll();
-            toast(film ? `"${r.name}" restored to the ${film.name} film sim` : orig ? `"${r.name}" restored to the built-in values` : `"${l.name}" reset to neutral`);
+            for (const key of Object.keys(l) as (keyof Look)[]) Reflect.deleteProperty(l, key);
+            Object.assign(l, r, { boxLabel, notes }); save(); renderAll();
+            toast(film ? `"${r.name}" 已恢复为 ${film.name} 默认参数` : orig ? `"${r.name}" 已恢复默认参数` : `"${l.name}" 已恢复中性参数`);
           },
         }, '重置此配方'),
-        h('button', { class: 'share-btn', onclick: () => om3ShareProfile(l), title: '生成这款胶片的分享链接' }, '分享'))),
-    h('label', { class: 'field' }, h('span', { class: 'lbl' }, '备注'),
-      h('textarea', {
-        rows: 3, maxlength: 400, placeholder: '记下适合的场景或调色思路…', onchange: checkpoint,
-        oninput: (e: Event) => draft(() => {
-          l.notes = (e.target as HTMLTextAreaElement).value;
-          const b = notesBytes();
-          $('#notes-help').textContent = `${b} / ${NOTE_MAX} 字节 · 备注仅保存在配方文件中`;
-          $('#notes-help').className = b > NOTE_MAX ? 'help err' : 'help';
+        h('button', { class: 'share-btn', onclick: () => om3ShareProfile(l), title: '生成这款胶片的分享链接' }, '分享')),
+    h('div', { id: 'problems' }),
+    editGroup('胶卷成片效果', h('div', { class: 'group cam' }, ...filmEffects.map(effect =>
+      h('label', {}, h('input', { type: 'checkbox', checked: l.filmEffects?.includes(effect),
+        onchange: (event: Event) => {
+          const selected = new Set(l.filmEffects);
+          if ((event.target as HTMLInputElement).checked) selected.add(effect); else selected.delete(effect);
+          if (selected.size) l.filmEffects = filmEffects.filter(k => selected.has(k)); else delete l.filmEffects;
           changed();
-        }),
-      }, l.notes),
-      h('span', { id: 'notes-help', class: notesBytes() > NOTE_MAX ? 'help err' : 'help' }, `${notesBytes()} / ${NOTE_MAX} 字节 · 备注仅保存在配方文件中`)),
-    mixPanel(l, changed),
-    rgbPanel(l, changed),
-    hslPanel(l, changed),
-    h('div', { class: 'group cam' },
+        } }), effectNames[effect] + (effect === 'trichrome' ? '（仅保存设置，机内三帧拍摄尚未接通）' : ''))))),
+    editGroup('色轮与分离色调', hslPanel(l, changed), h('div', { class: 'group cam' },
       ...(() => {
         const note = h('p', {});
         const show = () => {
           const v = l.tone_balance ?? 0;
           note.hidden = !v || (om3Fw28() && !!l.split);
-          if (!om3Fw28()) { note.className = 'warn'; note.replaceChildren(h('b', {}, 'Needs firmware v0.28: '), 'the export is set to an older firmware, so Split Tone Balance is not previewed or saved. Choose "v0.28 or later" under Export › Firmware on the camera.'); }
-          else { note.className = 'help'; note.textContent = 'This film has no split tone yet: add one on the Color wheel\'s Shadows or Highlights tab.'; }
+          if (!om3Fw28()) { note.className = 'warn'; note.replaceChildren(h('b', {}, '分离色调平衡需要较新固件。')); }
+          else { note.className = 'help'; note.textContent = '请先在色轮的阴影或高光页设置染色。'; }
         };
         const { inp, out } = slider(-5, 5, l.tone_balance ?? 0, (x) => { if (x) l.tone_balance = x; else delete l.tone_balance; show(); changed(); }, undefined, '分离色调平衡');
         show();
-        return [withHelp(h('div', { class: 'crow' }, h('span', { class: 'cname' }, pmIcon('tb'), 'Split Tone Balance'), steps(inp), out), 'Split Tone Balance', [
-          'Moves where the two split-tone tints (Color wheel › Shadows and Highlights) meet: − lets the shadow colour reach further up into the mid-tones, + lets the highlight colour reach further down. It does nothing until the film has a split tone.',
-          'How to use: drag the slider or use − / +, −5 to +5; double-click to zero.',
-          fwLine('Firmware v0.28', 'needed for Tone Balance.')], note)];
-      })()),
-    wbPanel(l, changed),
-    tonePanel(l, changed),
-    bwPanel(l, changed),
-    h('div', { class: 'group cam rows' },
-      crow('Contrast', OM3.contrast, () => l.advice.contrast ?? 0, (x) => { l.advice.contrast = x; }, [
-        'The camera\'s Contrast for this film, −2 to +2. + makes the picture punchier: on the OM-3 mostly brighter highlights, with slightly deeper shadows; − makes it flatter and softer.',
-        'How to use: drag the slider or use − / +; double-click to zero. For finer control of the tones, use Highlight & Shadow and Blacks / Whites.']),
+        return [withHelp(h('div', { class: 'crow' }, h('span', { class: 'cname' }, pmIcon('tb'), '分离色调平衡'), steps(inp), out), '分离色调平衡', [
+          '调整阴影和高光染色的交界。先在色轮中设定染色。',
+          '范围 −5 至 +5，双击归零。',
+          fwLine('固件 v0.28', '该版本起支持。')], note)];
+      })())),
+    editGroup('白平衡', wbPanel(l, changed)),
+    editGroup('色调曲线与黑白位', tonePanel(l, changed), bwPanel(l, changed)),
+    editGroup('色彩混合', mixPanel(l, changed)),
+    editGroup('RGB 通道曲线', rgbPanel(l, changed)),
+    editGroup('对比度与锐度', h('div', { class: 'group cam rows' },
+      crow('对比度', OM3.contrast, () => l.advice.contrast ?? 0, (x) => { l.advice.contrast = x; }, [
+        '正值增强对比，负值让影调更柔和。范围 −2 至 +2。',
+        '可用高光、阴影和黑白位进一步微调。']),
       (() => {
-        const { inp, out } = slider(SHARP.lo, SHARP.hi, l.advice.sharpness ?? 0, (x) => { l.advice.sharpness = x; changed(); }, sharpLabel, 'Sharpness');
-        return withHelp(h('div', { class: 'crow' }, h('span', { class: 'cname' }, 'Sharpness'), steps(inp), out), 'Sharpness', [
-          'The camera\'s sharpening for photos with this film: 0 is its normal, +1 and +2 crisper, −1 to −4 softer, −5 Off (no sharpening, the most film-like).',
-          'How to use: drag the slider or use − / +; double-click for 0. The preview shows the change at this size; up close the camera\'s effect is finer.',
-          fwLine('Firmware v0.22', 'needed below −2.')]);
-      })()),
-    h('div', { class: 'group cam rows' },
-      cseg('Noise Filter', [['off', 'Menu'], ['film', 'Off'], ['fine', 'Low'], ['standard', 'Std'], ['high', 'High']], l.grain,
+        const { inp, out } = slider(SHARP.lo, SHARP.hi, l.advice.sharpness ?? 0, (x) => { l.advice.sharpness = x; changed(); }, v => v <= SHARP.lo ? '关' : sharpLabel(v), '锐度');
+        return withHelp(h('div', { class: 'crow' }, h('span', { class: 'cname' }, '锐度'), steps(inp), out), '锐度', [
+          '正值增强细节，负值减弱锐化。调到 −5 关闭。',
+          '双击归零。可放大照片查看锐化效果。',
+          fwLine('固件 v0.22', '该版本起支持。')]);
+      })())),
+    editGroup('降噪与镜头效果', h('div', { class: 'group cam rows' },
+      cseg('降噪', [['off', '跟随机身'], ['film', '关'], ['fine', '低'], ['standard', '标准'], ['high', '高']], l.grain,
         (x) => { l.grain = x as Look['grain']; renderEditor(); changed(); }, [
-          'The camera\'s noise reduction for photos with this film. Menu keeps whatever the camera\'s menu is set to; Off, Low, Std (Standard) and High override it for this film. Lower settings keep more fine detail and a little noise (more film-like); High smooths more, which helps at high ISO.',
-          'How to use: pick one. Not shown in the preview.']),
-      cseg('Vignette Correction', [['off', 'Off'], ['on', 'On']], l.lens_correction ? 'on' : 'off', (x) => {
+          '为胶卷设定机身降噪强度。高档更平滑，低档保留更多纹理。',
+          '降噪在机身处理。']),
+      cseg('镜头暗角校正', [['off', '关'], ['on', '开']], l.lens_correction ? 'on' : 'off', (x) => {
         if (x === 'on') l.lens_correction = true; else delete l.lens_correction;
         renderEditor(); changed();
       }, [
-        'Off leaves the lens\'s own darker corners, as many film cameras did; On lets the camera brighten them as it normally does.',
-        'How to use: pick Off or On. The preview shows Off as a typical prime at f/4 (corners about 15 % darker); wide-open apertures and wide lenses darken the corners more.',
-        fwLine('Firmware v0.21', 'needed for the choice; before it every film keeps the camera\'s correction.')]),
-      crow('Shading Effect', OM3.shading, () => l.vignette, (x) => { l.vignette = x; }, [
-        'The camera\'s own Shading, −5 to +5: − darkens the edges and corners toward black, + lightens them toward white; the middle of the picture is left alone.',
-        'Every level is strong: even 1 takes the corners most of the way, and each step adds a little more (measured on an OM-3).',
-        'How to use: drag the slider or use − / +; double-click to zero.']),
+        '开启后，机身会补偿镜头边角的亮度下降。',
+        '预览以 f/4 定焦镜头的典型暗角作示意。',
+        fwLine('固件 v0.21', '该版本起支持。')]),
+      crow('暗角效果', OM3.shading, () => l.vignette, (x) => { l.vignette = x; }, [
+        '负值压暗边缘，正值提亮边缘，中心亮度保持原样。',
+        '一档即可看到明显变化。',
+        '拖动滑杆或用加减按钮，双击归零。']),
       (() => {
         const e = l.effect, v = !e ? 0 : e.type === 'clarity' ? -e.strength : e.strength;
         const { inp, out } = slider(-OM3.fx, OM3.fx, v, (x) => {
           l.effect = x === 0 ? null : x > 0 ? { type: 'bloom', strength: x } : { type: 'clarity', strength: -x };
           fxChanged();
-        }, (x) => (x === 0 ? '0' : x > 0 ? `+${x}` : String(x)), 'Glow Effect');
-        return withHelp(h('div', { class: 'crow' }, h('span', { class: 'cname' }, pmIcon('glow'), 'Glow Effect'), steps(inp), out), 'Glow Effect', [
-          '+ Glow: a soft, dreamy glow mixed into the photo (the camera\'s Soft Focus), 1 to 5. − Clarity: more local contrast, so textures and mid-tones look crisper, 1 to 5. A film has one or the other.',
-          'How to use: drag right for Glow, left for Clarity; double-click to zero.',
-          fwLine('Firmware v0.20', 'needed.')]);
+        }, (x) => (x === 0 ? '0' : x > 0 ? `+${x}` : String(x)), '柔光／清晰度');
+        return withHelp(h('div', { class: 'crow' }, h('span', { class: 'cname' }, pmIcon('glow'), '柔光／清晰度'), steps(inp), out), '柔光／清晰度', [
+          '正值加入柔光，负值提升局部对比度。',
+          '右拉增加柔光，左拉增加清晰度，双击归零。',
+          fwLine('固件 v0.20', '该版本起支持。')]);
       })(),
       ...(() => {
         const note = h('p', {});
         const show = () => {                     // after each preview: is the glow on this photo?
           const v = l.halation ?? 0, r = lastHalation;
           note.hidden = !v || (om3Fw28() && r !== 'off' && r !== 'none');
-          if (!om3Fw28()) { note.className = 'warn'; note.replaceChildren(h('b', {}, 'Needs firmware v0.28: '), 'the export is set to an older firmware, so Halation is not previewed or saved. Choose "v0.28 or later" under Export › Firmware on the camera.'); }
+          if (!om3Fw28()) { note.className = 'warn'; note.replaceChildren(h('b', {}, '胶片光晕需要较新固件。')); }
           else if (r === 'off') { note.className = 'help'; note.replaceChildren(h('b', {}, '当前照片未显示光晕：'), '日光下光晕会减弱。可选择「夜间街道」或「蓝调时刻」观察灯光边缘。'); }
           else { note.className = 'help'; note.replaceChildren(h('b', {}, '当前照片未显示光晕：'), '画面中没有能形成光晕的明亮光源。'); }
         };
         afterPreview = show;
         const { inp, out } = slider(0, OM3.halation, l.halation ?? 0, (x) => { if (x) l.halation = x; else delete l.halation; changed(); }, (x) => (x ? `+${x}` : '0'), '胶片光晕');
         show();
-        return [withHelp(h('div', { class: 'crow' }, h('span', { class: 'cname' }, pmIcon('halo'), 'Halation Effect'), steps(inp), out), 'Halation Effect', [
-          'A red-orange glow around bright lights in darker scenes, as on cinema film, 1 to 5. Like the camera, it fades out in bright daylight photos; pick a night photo with lights (Night street, Blue hour) to see it. Works with or without Glow.',
-          'How to use: drag the slider or use − / +; double-click to zero.',
-          fwLine('Firmware v0.28', 'needed; saving a photo with Halation takes a little longer.')], note)];
-      })()),
-    h('div', { class: 'group cam rows' },
+        return [withHelp(h('div', { class: 'crow' }, h('span', { class: 'cname' }, pmIcon('halo'), '胶片光晕'), steps(inp), out), '胶片光晕', [
+          '在低光场景为明亮光源添加红橙色光晕，可用夜景样片观察。',
+          '拖动滑杆或用加减按钮，双击归零。',
+          fwLine('固件 v0.28', '该版本起支持。')], note)];
+      })())),
+    editGroup('颗粒与边框', h('div', { class: 'group cam rows' },
       ...(() => {                                // v0.40: Film Grain Off, 1..5 and Grain Size, as the camera's rows
         const note = h('p', { class: 'help' });
         const show = () => {
@@ -1608,33 +1875,32 @@ function renderOm3Editor(l: Look) {
           if (x === '2') delete l.grain_size; else l.grain_size = Number(x);
           renderEditor(); changed();
         }, [
-          'How big the grain is: Fine, Medium or Coarse.',
-          'How to use: pick one. The looks file has no place for the size, so films start at Medium on the camera: set Fine or Coarse on the camera\'s Grain Size row after loading the looks.',
-          fwLine('Firmware v0.40', 'needed.')]);
+          '选择胶片颗粒的尺寸。',
+          '配方导入后，细或粗颗粒需在机身上设置。',
+          fwLine('固件 v0.40', '该版本起支持。')]);
         show();
         return [withHelp(h('div', { class: 'crow' }, h('span', { class: 'cname' }, '胶片颗粒'), steps(inp), out), '胶片颗粒', [
-          'Colour film grain the camera adds as the photo develops: Off, or 1 (light) to 5 (strong). It is the same in the shadows and the highlights, with a little colour speckle, as on colour film. The preview shows it as the photo looks at this size.',
-          'How to use: drag the slider or use − / +; then pick its size on Grain Size.',
-          'The looks file holds 2, 3 or 5 (Low / Med / High on firmware before v0.40); for 1 or 4, set Film Grain on the camera after loading the looks.',
-          fwLine('Firmware v0.40', 'needed for 1 to 5 and the size.')]),
+          '模拟彩色胶片颗粒，可关闭或设为强度 1 至 5。',
+          '先调整强度，再选颗粒大小。',
+          '文件可保存强度 2、3、5。强度 1 或 4 需在机身上设置。',
+          fwLine('固件 v0.40', '该版本起支持。')]),
           ...(l.film_grain ? [sizeRow] : []), note];
       })(),
       ...(() => {
         const note = h('p', {});
         const show = () => {
           note.hidden = !l.border;
-          if (!om3Fw28()) { note.className = 'warn'; note.replaceChildren(h('b', {}, 'Needs firmware v0.40: '), 'the export is set to an older firmware, so the Border is not previewed or saved. Choose "v0.28 or later" under Export › Firmware on the camera.'); }
+          if (!om3Fw28()) { note.className = 'warn'; note.replaceChildren(h('b', {}, '边框需要较新固件。')); }
           else note.hidden = true;
         };
         const { inp, out } = slider(-OM3.border, OM3.border, l.border ?? 0, (x) => { if (x) l.border = x; else delete l.border; show(); changed(); }, (x) => (x > 0 ? `+${x} 白` : x < 0 ? `${x} 黑` : '0'), '边框');
         show();
         return [withHelp(h('div', { class: 'crow' }, h('span', { class: 'cname' }, '边框'), steps(inp), out), '边框', [
-          'A plain border around the photo, the same width on every side: + white, − black, from 1.5 % (1) to 7.5 % (5) of the photo\'s short side. JPEGs only: the photo keeps its size and the border covers its outer edge; at a crop (Image Aspect) it sits inside the crop.',
-          'How to use: drag right for white, left for black; double-click for none.',
-          fwLine('Firmware v0.40', 'needed (black from v0.40-beta); older firmware ignores it.')], note)];
+          '给照片四周加同宽边框，宽度为照片短边的 1.5% 至 7.5%。',
+          '右拉加白边，左拉加黑边，双击清除。',
+          fwLine('固件 v0.40', '该版本起支持。')], note)];
       })(),
-      grainWarn),
-    h('div', { id: 'problems' }));
+      grainWarn)));
   refreshProblems();
 }
 
@@ -1658,7 +1924,10 @@ async function decodeOm3(prefix: string, t: string): Promise<unknown> {
 const isOm3Code = (t: string, p: string) => new RegExp(`(^|#)\\s*${p}`).test(t.trim());
 
 function replaceBank(bank: Bank, msg: string, name?: string) {
-  O.bank = bank; if (name) O.name = name; O.k = 0; O.v = 0;
+  const base = name?.trim().slice(0, LIST_NAME_MAX) || '导入的胶片盒';
+  let box = base;
+  for (let i = 2; Object.hasOwn(LISTS.lists, box); i++) box = base + ' (' + i + ')';
+  LISTS.lists[box] = bank; openBox(box);
   save(); renderAll();
   const probs = validateBank(bank);
   toast(probs.length ? `${msg}. ${probs.length} problem(s) to fix before export.` : msg, probs.length ? 'err' : 'ok');
@@ -1769,7 +2038,7 @@ async function gradeDialog(f: File) {
     let k: number, v: number;
     if (t) ({ k, v } = t);
     else { if (!confirm(`All 20 looks are in use. Replace ${at(O.k, O.v)} ("${O.bank[O.k][O.v]!.name}") with "${look.name}"?`)) return; k = O.k; v = O.v; }
-    O.bank[k][v] = look; O.k = k; O.v = v;
+    O.bank[k][v] = look; selectSlot(k, v);
     save(); renderAll(); dlg.close();
     toast(`Added "${look.name}" as ${at(k, v)}`);
   } }, '添加为胶片');
@@ -1788,7 +2057,7 @@ async function om3ImportCode(t: string, fromLink: boolean): Promise<boolean> {
     if (isOm3Code(t, OB_PREFIX)) {
       const b = parseBank(await decodeOm3(OB_PREFIX, t), parseLook);
       const n = b.bank.flat().filter(Boolean).length;
-      if (!confirm(`Open the shared looks "${b.name}" (${n} looks)? They replace your current looks (Undo brings them back).`)) return fromLink;
+      if (!confirm(`将「${b.name}」的 ${n} 卷胶卷导入新胶片盒？`)) return fromLink;
       replaceBank(b.bank, `Opened "${b.name}"${bankMinFw(b.bank) > 20 ? ` · needs Caduceus v${FW_NAME[bankMinFw(b.bank)]} or later` : ''}`, b.name);
       return true;
     }
@@ -1806,7 +2075,7 @@ async function om3ImportCode(t: string, fromLink: boolean): Promise<boolean> {
         else if (!confirm(`All 20 looks are in use. Replace ${at(O.k, O.v)} ("${O.bank[k][v]!.name}") with "${c.look.name}"?`)) return false;
       }
     }
-    O.bank[k][v] = c.look; O.k = k; O.v = v;
+    O.bank[k][v] = c.look; selectSlot(k, v);
     save(); renderAll();
     toast(`Added "${c.look.name}" as ${at(k, v)}${om3Changes(c)}${minFw(c.look) > 20 ? ` · needs Caduceus v${FW_NAME[minFw(c.look)]} or later` : ''}`);
     return true;
@@ -1891,12 +2160,16 @@ function om3InstallDialog() {
 }
 
 type DirHandle = { name: string; getDirectoryHandle(n: string, o?: { create?: boolean }): Promise<DirHandle>; getFileHandle(n: string, o?: { create?: boolean }): Promise<{ createWritable(): Promise<{ write(d: BlobPart): Promise<void>; close(): Promise<void> }> }>; values(): AsyncIterable<{ name: string }> };
-async function om3ToCard(files: { name: string; data: Uint8Array }[]) {
+async function om3ToCard(buildFiles: () => Promise<{ name: string; data: Uint8Array }[]>) {
   const pick = (window as unknown as { showDirectoryPicker?: (o?: object) => Promise<DirHandle> }).showDirectoryPicker;
   if (!pick) { toast('当前浏览器无法直接写入文件夹，请下载 SD 卡文件包并解压。', 'err'); return; }
   let dir: DirHandle;
-  try { dir = await pick({ mode: 'readwrite', id: 'om3card' }); } catch { return; }
+  try { dir = await pick.call(window, { mode: 'readwrite', id: 'om3card' }); } catch (e) {
+    if ((e as Error).name !== 'AbortError') toast('无法打开目录，请下载 SD 卡文件包。', 'err');
+    return;
+  }
   try {
+    const files = await buildFiles();
     let om3 = dir;
     if (dir.name.toUpperCase() !== 'OM3MOD') om3 = await dir.getDirectoryHandle('OM3MOD', { create: true });
     for (const f of files) {
@@ -1909,38 +2182,49 @@ async function om3ToCard(files: { name: string; data: Uint8Array }[]) {
 
 function om3ExportDialog() {
   const probs = validateBank(O.bank);
-  const fname = (O.name || 'om3-looks').replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'om3-looks';
+  const fname = (O.name || 'om3-looks').replace(/[^\p{L}\p{N}_.-]+/gu, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'om3-looks';
   const n = O.bank.flat().filter(Boolean).length;
   const bankJson = () => JSON.stringify(exportBank(), null, 1) + '\n';
-  let fw: Fw = fwSetting();
-  const looksBin = () => profilesBin(O.bank, fw);
-  const fwSel = h('select', { onchange: (e: Event) => {
-    fw = Number((e.target as HTMLSelectElement).value) as Fw;
-    try { localStorage.setItem('caduceus.om3.fw', String(fw)); } catch { /* storage blocked */ }
-    renderEditor(); schedulePreview(); wbNote();   // v0.26: split toning shows only with the v0.26 export; v0.28 its settings
-  } }, h('option', { value: '28', selected: fw === 28 }, 'v0.28 或更高'), h('option', { value: '26', selected: fw === 26 }, 'v0.26.1 – v0.27.1'), h('option', { value: '25', selected: fw === 25 }, 'v0.26（分离色调）'), h('option', { value: '24', selected: fw === 24 }, 'v0.25'), h('option', { value: '23', selected: fw === 23 }, 'v0.24.1'), h('option', { value: '22', selected: fw === 22 }, 'v0.22'), h('option', { value: '21', selected: fw === 21 }, 'v0.21'), h('option', { value: '20', selected: fw === 20 }, 'v0.20 或更早'));
+  const profileName = () => exportTarget.id === 'profiles' ? 'PROFILES.BIN' : 'LOOKS.BIN';
+  const looksBin = () => profilesBin(O.bank, exportTarget.fw, Boolean(exportTarget.labels), exportTarget.id === 'nostalgia-effects');
+  const targetOptions = exportTargets.map(t => h('option', { value: t.id, selected: t === exportTarget }, t.name));
+  const fwSel = h('select', { 'aria-label': '机身固件', onchange: (e: Event) => {
+    const id = (e.target as HTMLSelectElement).value;
+    exportTarget = exportTargets.find(t => t.id === id) ?? exportTargets[0];
+    try { localStorage.setItem('caduceus.om3.export-target', id); } catch { /* storage blocked */ }
+    renderEditor(); schedulePreview(); wbNote(); updateFiles();
+  } }, h('optgroup', { label: '本项目' }, targetOptions[0]),
+      h('optgroup', { label: '上游 Caduceus for OM-3' }, ...targetOptions.slice(1)));
   const wbBig = O.bank.flat().filter((l) => l?.wb && Math.max(Math.abs(l.wb.a_b), Math.abs(l.wb.g_m)) > 5).map((l) => l!.name);
   const wbBox = h('p', { class: 'warn' });
   const v28 = O.bank.flat().filter((l) => l && v28Parts(l).length).map((l) => `${l!.name} (${v28Parts(l!).join(', ')})`);
   const wbNote = () => {
-    const big = wbBig.length && fw < 26, new28 = v28.length && fw < 28;
-    wbBox.hidden = !big && !new28;
+    const big = wbBig.length && exportTarget.fw < 26;
+    const limited = v28.length && exportTarget.fw < 28;
+    const labels = O.bank.flat().some(l => l?.boxLabel) && !exportTarget.labels;
+    const effects = O.bank.flat().some(l => l?.filmEffects?.length) && exportTarget.id !== 'nostalgia-effects';
+    const curves = O.bank.flat().some(l => l && (hasCurves(l) || hasMix(l))) && !exportTarget.curves;
+    wbBox.hidden = !big && !limited && !labels && !curves && !effects;
     wbBox.replaceChildren(
-      ...(big ? [h('b', {}, 'WB beyond ±5: '), `${wbBig.join(', ')}. Firmware v0.26 and older refuse a LOOKS.BIN with a WB shift past ±5, so this export saves it as ±5. Choose "v0.26.1 – v0.27.1" or "v0.28 or later" for the full ±7. `] : []),
-      ...(new28 ? [h('b', {}, 'v0.28 settings left out: '), `${v28.join('; ')}. Older firmware refuses a LOOKS.BIN with them, so this export saves these looks without them (Blacks / Whites as ±5, split toning in whole v0.26 steps). Choose "v0.28 or later" if the camera has v0.28.`] : []));
+      ...(big ? [h('div', {}, '白平衡偏移将限制在 ±5：', wbBig.join('、'))] : []),
+      ...(limited ? [h('div', {}, '所选固件会略过 v0.28 新增参数，并使用旧版色调范围。')] : []),
+      ...(labels ? [h('div', {}, '自定义盒签与机身短句会保留在 JSON 配方中。')] : []),
+      ...(effects ? [h('div', {}, '导出胶卷成片效果请选择「胶卷效果实验版」。')] : []),
+      ...(curves ? [h('div', {}, '通道曲线与色彩混合会保留在 JSON 配方中。')] : []));
   };
-  wbNote();
-  // v0.30: CURVES.BIN (the films' RGB curves and colour mix) goes with LOOKS.BIN, made from the same bytes; older firmware never reads it
   const cardFiles = async () => {
     const lb = looksBin();
-    return [{ name: 'LOOKS.BIN', data: lb }, { name: 'NAMES.BIN', data: await namesBin(O.bank) as Uint8Array },
-      ...(fw >= 28 ? [{ name: 'CURVES.BIN', data: curvesBin(lb, O.bank) }] : [])];
+    const files = [{ name: profileName(), data: lb }];
+    if (exportTarget.id === 'profiles') return files;
+    if (exportTarget.curves) files.push({ name: 'CURVES.BIN', data: curvesBin(lb, O.bank) });
+    files.push({ name: 'NAMES.BIN', data: await namesBin(O.bank, view.labelFont) as Uint8Array });
+    return files;
   };
   const busy = async (b: HTMLButtonElement, f: () => Promise<void>) => { b.disabled = true; try { await f(); } catch (e) { toast((e as Error).message, 'err'); } finally { b.disabled = probs.length > 0; } };
   const looks = O.bank.flat().filter(Boolean) as Look[];
   const rrAll = () => makeZip(looks.map((l, i) => ({ name: `${String(i + 1).padStart(2, '0')}-${rrName(l.name)}.rrpreset`, data: new TextEncoder().encode(rrpreset(bankPack(looks), i)) })));
   const fmt = (p: Problem) => (p.look !== undefined ? `${at(Math.floor(p.look / PER), p.look % PER)} (${O.bank[Math.floor(p.look / PER)][p.look % PER]?.name || 'no name'}): ` : '') + p.message;
-  const toCard: HTMLButtonElement = h('button', { class: 'primary', disabled: probs.length > 0, onclick: () => busy(toCard, async () => om3ToCard(await cardFiles())) }, '写入 SD 卡…');
+  const toCard: HTMLButtonElement = h('button', { class: 'primary', disabled: probs.length > 0, onclick: () => busy(toCard, () => om3ToCard(cardFiles)) }, '写入 SD 卡…');
   const zip: HTMLButtonElement = h('button', {
     disabled: probs.length > 0, onclick: () => busy(zip, async () => {
       const files = (await cardFiles()).map((f) => ({ name: `OM3MOD/${f.name}`, data: f.data }));
@@ -1948,28 +2232,35 @@ function om3ExportDialog() {
       download(`${fname}-card.zip`, makeZip(files), 'application/zip');
     }),
   }, '下载');
-  const names: HTMLButtonElement = h('button', { disabled: probs.length > 0, onclick: () => busy(names, async () => download('NAMES.BIN', await namesBin(O.bank) as Uint8Array)) }, 'NAMES.BIN');
-  modal('导出到 OM-3', h('div', { class: 'export' },
+  const names: HTMLButtonElement = h('button', { disabled: probs.length > 0, onclick: () => busy(names, async () => download('NAMES.BIN', await namesBin(O.bank, view.labelFont) as Uint8Array)) }, 'NAMES.BIN');
+  const profileDownload = h('button', { disabled: probs.length > 0, onclick: () => download(profileName(), looksBin()) });
+  const curveDownload = h('button', { disabled: probs.length > 0, onclick: () => download('CURVES.BIN', curvesBin(looksBin(), O.bank)) }, 'CURVES.BIN');
+  const filesNote = h('p', { class: 'help' });
+  function updateFiles() {
+    profileDownload.textContent = profileName();
+    names.hidden = exportTarget.id === 'profiles';
+    curveDownload.hidden = !exportTarget.curves;
+    filesNote.textContent = exportTarget.labels ? '包含自定义盒签与机身短句。' : '使用所选固件支持的文件格式。';
+  }
+  wbNote(); updateFiles();
+  modal('导出胶片盒 · ' + O.name, h('div', { class: 'export' },
     probs.length
-      ? h('div', { class: 'problems-box' }, h('b', {}, `${probs.length} problem(s) to fix first:`), h('ul', { class: 'problems' }, ...probs.slice(0, 12).map((p) => h('li', {}, fmt(p)))))
-      : h('p', { class: 'ok' }, `✓ ${n} 款胶片通过格式检查。导出时会按所选固件版本保留支持的设置。v0.17–v0.18 请下载 PROFILES.BIN。`),
+      ? h('div', { class: 'problems-box' }, h('b', {}, `请先修正 ${probs.length} 处配方问题`), h('ul', { class: 'problems' }, ...probs.slice(0, 12).map((p) => h('li', {}, fmt(p)))))
+      : h('p', { class: 'ok' }, `✓ ${n} 卷胶片`),
     h('div', { class: 'ex-row' },
-      h('div', {}, h('b', {}, '机身固件版本'), h('p', { class: 'help' }, '按实际机身固件选择。v0.28 加入光晕、色调平衡、胶片白平衡、半级分离色调及 ±7 黑白位。旧版本会略过不支持的设置：v0.26 起支持分离色调，v0.22 起支持扩展锐度，v0.21 起支持颗粒和镜头校正。')),
+      h('div', {}, h('b', {}, '机身固件'), filesNote),
       fwSel),
     wbBox,
     h('div', { class: 'ex-row' },
-      h('div', {}, h('b', {}, '写入 SD 卡'), h('p', { class: 'help' }, '在 Chrome 或 Edge 中选择 SD 卡根目录或 OM3MOD 文件夹。会写入 LOOKS.BIN、NAMES.BIN；选择 v0.28 或更高时也会写入 CURVES.BIN，供 v0.30 起读取曲线和混色。v0.28 及以前会替换卡上配方，请先打开原文件以保留修改。v0.29 起机身保存自己的配方，仅载入新的胶片组。')),
+      h('div', {}, h('b', {}, '写入 SD 卡'), h('p', { class: 'help' }, '选择 SD 卡根目录或 OM3MOD 文件夹。')),
       toCard),
     h('div', { class: 'ex-row' },
       h('div', {}, h('b', {}, 'SD 卡文件包（.zip）'), h('p', { class: 'help' }, '将压缩包解压到 SD 卡根目录。配方、名称和受支持的曲线文件位于 OM3MOD 文件夹，另附配方备份。')),
       zip),
     h('div', { class: 'ex-row' },
-      h('div', {}, h('b', {}, '单独下载文件'), h('p', { class: 'help' }, 'LOOKS.BIN 保存 20 个配方，NAMES.BIN 保存显示名称。v0.30 起使用 CURVES.BIN 保存通道曲线和混色，请与同批 LOOKS.BIN 配套使用。文件放在 OM3MOD 中，v0.17–v0.18 使用 PROFILES.BIN。')),
+      h('div', {}, h('b', {}, '机身文件')),
       h('div', { class: 'ex-btns' },
-        h('button', { disabled: probs.length > 0, onclick: () => download('LOOKS.BIN', looksBin()) }, 'LOOKS.BIN'),
-        h('button', { disabled: probs.length > 0 || fw < 28, title: 'Firmware v0.30: the films\' RGB curves and colour mix, for the LOOKS.BIN above', onclick: () => download('CURVES.BIN', curvesBin(looksBin(), O.bank)) }, 'CURVES.BIN'),
-        h('button', { disabled: probs.length > 0, title: 'For firmware v0.17–v0.18', onclick: () => download('PROFILES.BIN', profilesBin(O.bank, 20)) }, 'PROFILES.BIN'),
-        names)),
+        profileDownload, curveDownload, names)),
     h('div', { class: 'ex-row' },
       h('div', {}, h('b', {}, '胶片配方文件（.json）'), h('p', { class: 'help' }, '包含所有配方和备注，可重新打开编辑或分享。')),
       h('button', { onclick: () => download(`${fname}.om3.json`, bankJson(), 'application/json') }, '下载')),
@@ -1989,9 +2280,42 @@ async function handleHash() {
   importCodeMsg = (m) => toast(m, 'err');
 }
 
-shell();
-renderAll();
-if (libNotice) toast(libNotice);
-undoUi();
-handleHash();
-window.addEventListener('hashchange', handleHash);
+export function startLookLab(options: LookLabView, mount: () => void) {
+  view = options;
+  mount();
+  renderAll();
+  if (libNotice) toast(libNotice);
+  undoUi();
+  handleHash();
+  window.addEventListener('hashchange', handleHash);
+}
+
+/** Compact workbench controls operate on the same selected slot as the full editor. */
+export const workbench = {
+  renderShelf, newRoll, deleteRoll, editStockLabel,
+  selected: cur,
+  slot: () => looseRoll ? -1 : O.k * PER + O.v,
+  setTone(key: keyof Tone, value: number, continuous: boolean) {
+    const l = cur();
+    if (!l) return;
+    l.tone[key] = Math.max(-toneLimit(key), Math.min(toneLimit(key), Math.round(value)));
+    if (continuous) draft(save); else save();
+    schedulePreview();
+    refreshProblems();
+  },
+  finishTone() { checkpoint(); renderEditor(); },
+  resetTone() {
+    const l = cur();
+    if (!l) return;
+    const f = filmOf(l);
+    l.tone = { ...(f ? f.tone : resetLook(l, LIBRARY, []).tone) };
+    save(); renderAll();
+  },
+  buildPreview(image: string) { S.image = image; buildPreview(); },
+  showPreviewDetail(enabled: boolean) { detailPreview = enabled; updatePreviewResolution(); },
+  undo: () => step('undo'), redo: () => step('redo'),
+  openFile, onFile: om3OnFile, onPhoto, onGrade: om3OnGradeFile,
+  newEmpty: () => newBank('empty'), newDefaults: () => newBank('library'),
+  films: () => om3FilmPicker(), paste: pasteDialog, share: om3Share,
+  install: om3InstallDialog, exportBank: om3ExportDialog,
+};

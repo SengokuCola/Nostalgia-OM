@@ -42,6 +42,20 @@ fs_update_entry:
  jmp fs_stock_update
 .section .ext13,"ax"
 fs_update_ready:
+ mov d0,(FB_DISPLAY_MASK)
+ mov (FB_RETIRE),d2
+ cmp 0,d2
+ beq 9f
+ mov d0,(4,sp)
+ mov d1,(8,sp)
+ mov a0,(12,sp)
+ mov a1,(16,sp)
+ call fb_retire_pages,[d2,d3,a2,a3],20
+ mov (16,sp),a1
+ mov (12,sp),a0
+ mov (8,sp),d1
+ mov (4,sp),d0
+9:
  mov (FS_ON),d2
  cmp 1,d2
  bne 1f
@@ -176,6 +190,27 @@ fs_th: /* original TH frame [d2,d3,a2,a3],76 */
  mov (4,sp),a0
  mov (8,sp),a1
  mov (12,sp),d1
+ /* Process a private request through the same stock handler. Its documented
+  * inputs include colour settings, source coordinates and the live bank. */
+ mov (FB_SLOT),d0
+ cmp 0,d0
+ beq fs_th_original
+ mov (a0),d0
+ cmp 1,d0
+ bne fs_th_original
+ movhu (LG_GUI),d0
+ cmp 0x0801,d0
+ bne fs_th_original
+ mov (12,a0),d0
+ cmp 1,d0
+ bne fs_th_original
+ mov (16,a0),d0
+ cmp 0,d0
+ bne fs_th_original
+ mov (CC_REVIEW),d0
+ cmp 0,d0
+ bne fs_th_original
+ jmp fb_inset_request
 fs_th_original:
  mov a0,a3
  mov 2,d0
@@ -380,7 +415,6 @@ fs_clear: /* epoch invalidates a tile being captured by another context */
 fs_clear_out:
  ret [d2,d3,a2,a3],24
 fs_release: /* caller holds LOCK; no source reads */
- call fb_osd_restore,[d2,d3],12
  mov (FS_OWNER),d0
  cmp 0,d0
  beq fs_release_out
@@ -389,10 +423,19 @@ fs_release: /* caller holds LOCK; no source reads */
  mov 0,a1
  call overlay_native,[d2,d3,a2,a3],40
 fs_release_out:
+ call fb_osd_restore,[d2,d3],12
  ret [d2,d3,a2,a3],20
 
 fs_tick:
+ mov d0,(FB_DISPLAY_MASK)
  mov d0,(4,sp)
+ cmp 2,d0
+ bne 9f
+ mov (FB_SLOT),d1
+ cmp 0,d1
+ beq 9f
+ call fb_close,[d2,d3,a2,a3],24
+9:
  mov (FS_ON),d0
  cmp 1,d0
  bne fs_tick_out
@@ -402,6 +445,12 @@ fs_tick:
  call fs_gate,[],0
  cmp 1,d0
  bne fs_leave_shooting
+ mov (FB_OPEN_GUI),d0
+ cmp 0,d0
+ beq 2f
+ clr d0
+ mov d0,(FB_OPEN_GUI)
+2:
  mov (CC_REVIEW),d0
  cmp 0,d0
  bne 1f
@@ -456,6 +505,10 @@ fs_channel:
  mov d0,(FS_LV_CARD)
  clr d1
  mov d1,(FB_PAINTED)
+ mov d1,(FB_MIRRORED)
+ mov d1,(FB_FINE)
+ mov d1,(FB_CACHE)
+ mov d1,(FB_CACHE+12)
  mov d1,(CC_PAINTED)
  call fs_release,[d2,d3,a2,a3],20
 fs_mode_ready:
@@ -486,7 +539,7 @@ fs_claimed:
  FS_INC 40
  mov (4,sp),d0
  call fs_diag_capture,[d2,d3,a2,a3],20
- /* Wait for both panels to stop reading the picker before writing FS_SRC. */
+ /* Focus and card share their original scratch tiles. Picker has its own pair. */
  mov (FS_LV_CARD),d0
  cmp 2,d0
  beq fs_capture_geometry
@@ -499,6 +552,18 @@ fs_claimed:
  cmp 0,d0
  bne fs_failed
 fs_capture_geometry:
+ mov (FS_LV_CARD),d0
+ cmp 2,d0
+ bne 1f
+ /* The sidebar has no sensor-pixel dependency. TFT progressive, 1:1. */
+ mov FB_WIDTH,d0
+ mov d0,(FS_LV_W)
+ mov 600,d0
+ mov d0,(FS_LV_H)
+ clr d0
+ mov d0,(12,sp)
+ jmp fs_captured_tile
+1:
  mov (4,sp),d0
  mov FS_SRC,a0
  call capture_native,[d2,d3,a2,a3],160
@@ -566,8 +631,9 @@ fs_captured_tile:
  beq fs_card_tile
  cmp 2,d0
  bne fs_small_buffers
- mov FS_SRC,d0
- mov d0,(24,sp)
+ mov (FB_PAGES),d3
+ cmp 0,d3
+ beq fs_failed
  clr d0
  mov d0,(16,sp)
  mov (FB_SLOT),d2
@@ -575,63 +641,105 @@ fs_captured_tile:
  bcs fs_failed
  cmp NF,d2
  bhi fs_failed
- mov (FB_PAINTED),d0
- cmp d2,d0
- beq fs_mapped
- /* Keep the current picture visible while the large page is being retired. */
- mov FS_SRC,d0
- call fs_address_in_use,[],0
- cmp 0,d0
- bne fs_picker_hold
  clr d0
- call fs_tile_in_use,[],0
- cmp 0,d0
- bne fs_failed
- mov 1,d0
- call fs_tile_in_use,[],0
- cmp 0,d0
- bne fs_failed
- mov FS_SRC,a1
- mov d2,d0
- call fb_draw,[d2,d3,a2,a3],32
- mov d2,(FB_PAINTED)
- jmp fs_mapped
-fs_picker_hold:
- mov FS_MAP,d0
+ call LOCK,[d2],8
+ mov d0,(20,sp)
+ mov (FB_Q_REV),d1
+ mov d1,(FB_RENDER_REV)
+ mov (FB_OFF),d0
+ or d0,d2
+ mov d2,(FB_TARGET)
+ clr d0
+ mov d0,(FB_Q_ACTIVE)
+ mov (FB_Q_WRITE),d0
+ mov (FB_Q_READ),d1
+ sub d1,d0
+ beq 8f
+ mov 1,d2
+ mov d2,(FB_Q_ACTIVE)
+ and 1023,d1
+ mov fb_queue_slots+0x40000000,a0
+ add d1,a0
+ movbu (a0),d2
+ mov d2,d1
+ and 31,d2
+ mov d2,(FB_TARGET)
+ btst 128,d1
+ mov 1,d1
+ beq 7f
+ mov 5,d1
+7:
+ inc d1                         /* first published pose already shows travel */
+ cmp 1,d0
+ beq 6f
+ inc d1
+6:
+ asl 6,d1
+ or d2,d1
+ mov d1,d0
+ bra 9f
+8:
+ mov (FB_PAINTED),d0
+ call fb_next_page,[],0
+9:
+ mov d0,(FB_NEXT_KEY)
+ mov d0,d2
+ mov (20,sp),d0
+ call UNLOCK,[d2],8
+ /* Always paint the other page. EVF can temporarily report no active
+  * reader during a field change while the preceding page is still queued. */
+ mov (FB_FRONT_PAGE),d0
+ cmp d3,d0
+ bne 1f
+ mov (FB_PAGE2),d3
+1:
+ mov d3,d0
  call fs_address_in_use,[],0
  cmp 0,d0
  bne fs_wait_picker
- mov (FB_PAINTED),d0
- cmp 0,d0
- beq fs_failed
- /* Downsample the read-only front page into the idle split-focus map.
-  * Shape classes rebuild the entire map before its next focus use. */
- mov 1,d0
- mov d0,(fs_map_dirty+0x40000000)
- mov FS_SRC,a0
- mov FS_MAP,a1
- clr d3
-fs_picker_row:
- mov 64,d1
-fs_picker_pair:
- mov (a0),d0
- mov d0,(a1)
- add 8,a0
- inc4 a1
- add -1,d1
- bne fs_picker_pair
- add 512,a0
- inc d3
- btst 3,d3
- bne 1f
- add 512,a0
+ mov d3,(24,sp)
+ mov (USCLK),d0
+ mov d0,(FB_PAINT_START)
+ mov FB_CACHE,a2
+ mov (FB_PAGES),d0
+ cmp d0,d3
+ beq 1f
+ add 12,a2
 1:
- cmp 64,d3
- bcs fs_picker_row
- mov FS_MAP,d0
- mov d0,(24,sp)
- mov 2,d0
- mov d0,(16,sp)
+ mov (4,a2),d0
+ mov (FB_VIEW_W),d1
+ cmp d1,d0
+ bne 6f
+ mov (8,a2),d0
+ mov (FB_VIEW_H),d1
+ cmp d1,d0
+ bne 6f
+ mov (a2),d1
+ cmp d2,d1
+ beq 3f
+ bra 7f
+6:
+ clr d1
+ mov d1,(FB_MIRRORED)
+ mov d1,(FB_FINE)
+7:
+ mov d3,a1
+ mov d2,d0
+ call fb_draw,[d2,d3,a2,a3],40
+ mov d2,(a2)
+ mov (FB_VIEW_W),d0
+ mov d0,(4,a2)
+ mov (FB_VIEW_H),d0
+ mov d0,(8,a2)
+3:
+ mov (USCLK),d0
+ mov d0,(FB_COPY_START)
+ mov (FB_PAINT_START),d1
+ sub d0,d1
+ and 0x7fffffff,d1
+ mov d1,(FB_PAINT_US)
+ clr d0
+ mov d0,(FB_COPY_US)
  jmp fs_mapped
 fs_wait_picker:
  clr d0
@@ -815,7 +923,12 @@ fs_request_copy:
  mov (12,sp),d1
  and 0x7fff,d1
  asl 16,d1
+ mov (FS_LV_CARD),d0
+ cmp 2,d0
  mov (0x42c,a0),d0
+ bne 1f
+ mov (0x420,a0),d0
+1:
  and 0xffff0000,d0
  add d1,d0
  mov (FS_LV_W),d2
@@ -833,7 +946,19 @@ fs_request_copy:
  lsr 1,d3                         /* EVF field mode halves vertical display lines */
  /* Whole-frame pitch stays at 256 bytes. Field scanning steps alternate rows. */
 fs_tile_area:
+ mov (FS_LV_CARD),d0
+ cmp 2,d0
  mov (0x430,a0),d0
+ bne 1f
+ mov (0x424,a0),d0
+ mov d0,a1
+ exthu d0
+ sub d3,d0
+ lsr 1,d0
+ asl 16,d0
+ add d0,d1
+ mov a1,d0
+1:
  and 0xffff0000,d0
  add d1,d0
  or d3,d0
@@ -845,15 +970,17 @@ fs_tile_area:
  mov (FS_LV_W),d1
  cmp 2,d0
  bne fs_scale_small
- mov 32,d3
- mov (16,sp),d0
- cmp 2,d0
- bne 2f
- mov 16,d3
-2:
+ mov FB_PITCH/16,d3
  mov d3,(FS_REQ+4)
  mov d3,(FS_REQ+8)
- bra fs_scaled
+ cmp FB_WIDTH,d1
+ bne fs_scaled
+ mov (FS_LV_H),d0
+ cmp FB_ROWS,d0
+ bne fs_scaled
+ /* A native-size field takes alternate rows; the DMA already does this
+  * without interpolation. A native-size progressive plane is also 1:1. */
+ bra fs_scale_done
 fs_scale_small:
  mov 32,d3
  mov d3,(FS_REQ+4)
@@ -872,10 +999,7 @@ fs_scaled:
  mov (FS_LV_CARD),d3
  cmp 2,d3
  bne 1f
- mov (16,sp),d3
- cmp 2,d3
- beq 1f
- mov 255*4096,d0
+ mov FB_WIDTH*4096-4096,d0
 1:
  add -1,d1
  clr d3
@@ -892,19 +1016,10 @@ fs_vertical_step:
  mov (FS_LV_CARD),d3
  cmp 2,d3
  bne 1f
- mov (16,sp),d3
- cmp 2,d3
- bne 2f
- mov 63*4096,d0
+ mov FB_ROWS*4096-4096,d0
  cmp 0,d2
  beq 1f
- mov 31*4096,d0
- bra 1f
-2:
- mov 143*4096,d0
- cmp 0,d2
- beq 1f
- mov 71*4096,d0
+ mov FB_ROWS*2048-4096,d0
 1:
  add -1,d1
  clr d3
@@ -925,13 +1040,17 @@ fs_scale_done:
  mov (FS_LV_CARD),d0
  cmp 2,d0
  bne 1f
- mov (16,sp),d0
- cmp 2,d0
- beq 1f
- mov (FB_PAINTED),d0
- mov (FB_SLOT),d1
+ mov (FB_Q_ACTIVE),d0
+ cmp 0,d0
+ beq 8f
+ mov (FB_Q_REV),d0
+ mov (FB_RENDER_REV),d1
  cmp d1,d0
  bne fs_cancel
+8:
+ mov (FB_SLOT),d0
+ cmp 0,d0
+ beq fs_cancel
 1:
  mov (4,sp),d0
  call cap_scan,[],0
@@ -965,9 +1084,67 @@ fs_published:
  mov (FS_LV_CARD),d0
  cmp 2,d0
  bne 1f
- mov (FB_SLOT),d0
+ mov (FB_PUBLISHED),d0
+ inc d0
+ mov d0,(FB_PUBLISHED)
+ mov (USCLK),d1
+ mov (FB_PREV_TIME),d0
+ mov d1,(FB_PREV_TIME)
  cmp 0,d0
- beq 1f
+ beq 6f
+ sub d1,d0
+ and 0x7fffffff,d0
+ mov d0,(FB_PERIOD_US)
+ mov FB_SCROLL_STATS,a0
+ mov (FB_NEXT_KEY),d1
+ lsr 6,d1
+ bne 7f
+ add 20,a0
+7:
+ mov (a0),d1
+ inc d1
+ mov d1,(a0)
+ .irp item,0,1,2
+ mov (FB_PAINT_US+4*\item),d0
+ lsr 5,d0
+ mov (4+4*\item,a0),d1
+ add d1,d0
+ mov d0,(4+4*\item,a0)
+ .endr
+ mov (FB_PERIOD_US),d0
+ mov (16,a0),d1
+ cmp d1,d0
+ bls 6f
+ mov d0,(16,a0)
+6:
+ mov (24,sp),d0
+ mov d0,(FB_FRONT_PAGE)
+ mov (FB_NEXT_KEY),d0
+ mov d0,(FB_PAINTED)
+ mov (FB_Q_ACTIVE),d0
+ cmp 0,d0
+ beq 8f
+ mov (FB_Q_READ),d0
+ mov d0,d1
+ and 1023,d1
+ asl2 d1
+ mov fb_queue_time+0x40000000,a0
+ mov (d1,a0),d1
+ mov (USCLK),d2
+ sub d2,d1
+ and 0x7fffffff,d1
+ mov d1,(FB_LAG+4)
+ mov (FB_LAG+8),d2
+ cmp d2,d1
+ bls 7f
+ mov d1,(FB_LAG+8)
+7:
+ mov (FB_LAG),d1
+ inc d1
+ mov d1,(FB_LAG)
+ inc d0
+ mov d0,(FB_Q_READ)
+8:
  mov (4,sp),d0
  call fb_osd_hide,[d2,d3],12
 1:
@@ -1019,6 +1196,23 @@ fs_failed:
 fs_failure_traced:
  jmp fs_publish_skip
 fs_leave_shooting:
+ /* gx_map runs before the native GUI commits its new state. A display
+  * tick in that gap must leave the pending selection for the first live frame. */
+ movbu (UI_PSW),d0
+ cmp 2,d0
+ bne 1f
+ mov (FB_OPEN_GUI),d0
+ cmp 0x1804,d0
+ beq 2f
+ cmp 0x0401,d0
+ bne 1f
+2:
+ movhu (LG_GUI),d1
+ cmp d0,d1
+ beq fs_tick_clear
+ cmp 0x0401,d1
+ beq fs_tick_clear
+1:
  call fb_close,[d2,d3,a2,a3],24
 fs_tick_clear:
  call fs_clear,[d2,d3,a2,a3],24
@@ -1107,6 +1301,8 @@ fs_tile_free:
  .include "focus_overlay.inc"
  .include "focus_screen_diag.inc"
 .balign 4
+fb_front_page: .long 0
+.set FB_FRONT_PAGE,fb_front_page+0x40000000
 fb_painted: .long 0
 .set FB_PAINTED,fb_painted+0x40000000
 fs_path: .asciz "C:\\OM3MOD\\FOCUS.TXT"

@@ -1,4 +1,5 @@
 import { bendSplit } from './split';
+import { previewFilmEffects } from './film-effects';
 import { mixIsFlat, mixMatrix } from './curves';
 // Approximate look preview on 8-bit sRGB images (Canvas 2D, CPU). A rough port of the repo's desktop sim
 // (sim/pipeline.py ColorEngine + grain, sim/film.py WB / tone levels / mono, sim/library_preview.py bloom), applied to
@@ -275,6 +276,7 @@ export function renderLook(src: ImageData, dst: ImageData, look: Look, opt: Prev
   lastHalation = om3 && look.halation ? om3Halation(img, w, h, look.halation) : null;   // OM-3 v0.28: after the Soft Focus blend, as the camera
   // 6. OM-3 Shading and Border (the camera's passes on the finished photo); grain (E-P7: Olympus xorshift32 luma grain)
   if (om3 && look.vignette) om3Shading(img, w, h, look.vignette);
+  if (om3 && look.filmEffects?.length) previewFilmEffects(img,w,h,look.filmEffects,look.name);
   if (om3 && look.border) om3Border(img, w, h, look.border, opt.crop);
   const gi = om3 ? 0 : GRAINS.indexOf(look.grain);
   const gain = gi > 0 ? (mono ? MONO_GRAIN : COLOUR_GRAIN)[gi] : 0;

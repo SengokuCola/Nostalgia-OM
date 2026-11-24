@@ -231,9 +231,7 @@ hl_pp_cb:                         /* tools/test/emu_test.py enters here */
  mov (SEC_READY),d0               /* section 6 (slot_any) ready? Before it STATE is 0: the same exit */
  and 0x20,d0
  beq 8f                           /* short, so the gate stays right before the call; Z still set at 8 */
- call fb_color_source,[d2,d3,a2],16
- cmp 2,d0
- beq hl_values
+ call slot_any,[d2,d3,a2],16
  cmp 0,d0
 8:
  beq hl_out
@@ -3105,7 +3103,7 @@ st_get:
 31:
  cmp 203,d0                       /* v0.24 film test 5: "Picture Mode" (the row's title) on the Picture Mode screen */
  bne 5f
- jmp fl_pm
+ jmp st_stk
 5:
  cmp 2755,d0                      /* v0.24: "Color Profile 1..4" -> the film's name when COLOR k holds one */
  beq 4f
@@ -3566,7 +3564,6 @@ sl_get:
  clr d0
  rets
 1:
- jmp fl_get                       /* v0.24 film list: 901 for the list / left column, FLB + j (film j there?) */
 sl_gb:
  movm [d2,d3,a2,a3],(sp)
  add -4,sp                        /* (0,sp): the return address slot of our own call */
@@ -4376,12 +4373,6 @@ ic_get:
  bcc 13f
  jmp fl_lvp
 13:
- cmp 15746,d1                     /* v0.24: the quick menu's "COLOR k" / "COLOR k*" pictures */
- bcs 12f
- cmp 15754,d1
- bcc 12f
- jmp fl_scp
-12:
  cmp 16244,d1                     /* v0.25: the Shading icon, moved down (sh_build) */
  bne 13f
  mov (sh_desc + 12),a0
@@ -5240,7 +5231,84 @@ pm_ev:
 
 /* gx_map <- jmp from 0x610f6016 (the state dispatcher, d0 = a handler's next state, (8,sp) -> the GUI state bytes
  * {parent, child}; a0 / a1 / d1 free here): a state change while in Picture Mode (0x0418) clears gr_flag. */
+.section .ext12,"ax"
 gx_map:
+ mov (FB_SCP_TOUCH),d1
+ cmp 3,d1
+ beq gx_film_ready
+ cmp 2,d1
+ bne gx_skip
+ mov (8,sp),a0
+ movhu (a0),d1
+ cmp 0x0304,d1
+ bne gx_skip
+ mov 3,d1
+ mov d1,(FB_SCP_TOUCH)
+ bra gx_film_call
+gx_film_ready:
+ cmp 8,d0                         /* Native display request following the SCP exit via the black screen. */
+ bne gx_skip
+ mov (8,sp),a0
+ movhu (a0),d1
+ cmp 0x0401,d1
+ bne gx_skip
+ clr d1
+ mov d1,(FB_SCP_TOUCH)
+gx_film_call:
+ add -24,sp
+ mov d3,(16,sp)
+ mov a2,(20,sp)
+ mov mdr,d3
+ mov d3,(4,sp)
+ mov d0,(8,sp)
+ mov a1,(12,sp)
+ cmp 0,d1
+ bne 1f
+ mov -1,d1
+ mov d1,(FB_KEY)
+ call fb_open_color,[d2,d3,a2,a3],28
+ bra 2f
+1:
+ mov 0,a0
+ mov fb_scp_exit,a1
+ mov fb_gui_send,a2
+ calls (a2)
+2:
+ mov (20,sp),a2
+ mov (12,sp),a1
+ mov (8,sp),d0
+ mov (4,sp),d3
+ mov d3,mdr
+ mov (16,sp),d3
+ add 24,sp
+gx_skip:
+ jmp gx_slot
+.section .ext11,"ax"
+gx_slot:
+ mov (FB_SLOT),d1
+ cmp 0,d1
+ beq gx_normal
+ mov (8,sp),a0
+ movhu (a0),d1
+ cmp 0x1804,d1                    /* Front dial entered Film Box from the native Picture Mode selector. */
+ bne gx_normal
+gx_to_film:
+ mov 0x0108,d0                    /* Exit the native selector through its normal state transition. */
+gx_normal:
+ mov (8,sp),a0
+ movhu (a0),d1
+ cmp 0x0304,d1
+ bne 1f
+ cmp 0,d0
+ beq 1f
+ clr d1
+ mov d1,(FB_SCP_COLOR)
+ mov (FB_SCP_TOUCH),d1
+ cmp 3,d1
+ beq 1f
+ clr d1
+ mov d1,(FB_SCP_TOUCH)
+1:
  movhu (STATE),d1                 /* films loaded: el_go has nothing to do */
  cmp 0,d1
  bne 2f
@@ -6252,46 +6320,7 @@ sl_dot:
  mul d0,d1
  jmp dot_back                     /* 0x611d1103: add d1,d2 */
 
-/* ------------------------------------------------------------------ v0.24 film list (test 1)
- * The Picture Mode list on the COLOR position shows COLOR 1-4 and then every film (look) on the card, by name.
- * The list is setting 901's value table (0x6152f8a0: {setting, count, records}; COLOR 1-4 = 4 records of 20 B at
- * 0x6152f850 {value, availability id, value, 0, 0}). build.py points 901 at fl_rec (the stock four, then FV0 + j) and
- * item 111's three option lists (title, left column, strip) at fl_l0 / fl_l1 / fl_l2 (the stock 48, then type-4
- * strings ST_F0 + j). A film value is never stored: choosing it sets COLOR k and its look number (as the Film page),
- * and only the list and the left column (GetValue 901 from 0x611b32ae / 0x611d1869) read the film value back. */
 .balign 4
-fl_rec:
- .long 54, 1072, 54, 0, 0         /* the stock four (build.py checks them) */
- .long 55, 1073, 55, 0, 0
- .long 56, 1074, 56, 0, 0
- .long 64, 1075, 64, 0, 0
- .irp j, 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19
- .long FV0 + \j, FLB + \j, FV0 + \j, 0, 0
- .endr
- .macro FLOPT base
- .irp j, 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19
- .long FV0 + \j
- .short 4, \base + \j
- .long 0x6154b480
- .endr
- .endm
-fl_l0:                            /* item 111's title list: the stock 48 (build.py), then the films */
- .space 48 * 12
- FLOPT ST_F0
-fl_l1:                            /* the left column */
- .space 48 * 12
- .irp j, 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19
- .long FV0 + \j
- .short 3, IC_FL0 + \j
- .long 0x6154b480
- .endr
-fl_l2:                            /* the strip */
- .space 48 * 12
- .irp j, 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19
- .long FV0 + \j
- .short 3, IC_FM0 + \j
- .long 0x6154b480
- .endr
 fl_rtab:                          /* the held-OK reset's {picture mode, row count, rows} table (stock 0x61536324, 8
                                    * entries: MONO / COLOR 1-4), then the films with COLOR's rows (film test 4) */
  .space 8 * 8
@@ -6367,91 +6396,6 @@ fl_has:
 3:
  mov 1,d0
  ret [],0
-
-/* fl_get <- sl_get (CALLS: d0 id, a0 facade, a1 out != 0, mdr return): FLB + j -> 1 / 0 (film j there?); 901 asked
- * by the list builder (0x611b32ae) while COLOR k has look n -> FV0 + 5k + n - 1.
- * Anything else: back to sl_gb with the registers as at entry. Stores: (a1), own frame. */
-fl_get:
- movm [d2,d3,a2,a3],(sp)
- add -20,sp                       /* (0) call slot, (4) return, (8) a0, (12) a1, (16) d0 */
- mov mdr,d1
- mov d1,(4,sp)
- mov a0,(8,sp)
- mov a1,(12,sp)
- mov d0,(16,sp)
- mov d0,d2
- exthu d2
- PVAL 8f
- mov (LPTR,a2),a3
- cmp 0,a3
- beq 8f
- cmp 901,d2
- beq 1f
- cmp 111,d2                       /* film test 6: the Picture Mode row's left cell (0x611d08f4) shows the film too */
- bne 12f
- mov (4,sp),d1
- cmp 0x611d08f4,d1
- beq fl_g2
- cmp 0x611c6e79,d1                /* sd3: the super control panel's dial step (0x611c6e44) reads where it is: the film, so the next is the next film */
- beq fl_g2
- bra 8f
-12:
- add -FLB,d2
- cmp NF,d2
- bcc 8f
- mov d2,d0
- mov a3,a0
- call fl_has,[],0
- bra 7f
-1:
- mov (4,sp),d1
- cmp 0x611b32ae,d1                /* only the list builder (film test 4: 0x611d1869 is the "COLOR k changed?" check */
- bne 8f                           /* behind the Reset guide and the held-OK reset: it must see COLOR k) */
-fl_g2:
- mov 111,d0
- call sget,[],4                   /* the picture mode (keeps d2, d3, a2, a3) */
- call fl_k,[],0
- cmp 0,d0
- blt 8f
- mov d0,d2                        /* k */
- mov a2,a0
- add d2,a0
- movbu (LIDX,a0),d1
- extb d1
- cmp 1,d1
- blt 8f
- cmp 5,d1
- bgt 8f
- mov d2,d0
- asl2 d0
- add d2,d0
- add d1,d0
- add -1,d0                        /* j = 5k + n - 1 */
- mov d0,d2
- mov a3,a0
- call fl_has,[],0
- cmp 0,d0
- beq 8f
- mov d2,d0
- add FV0,d0
-7:
- mov (12,sp),a1
- mov d0,(a1)
- mov (4,sp),d1
- mov d1,mdr
- add 20,sp
- movm (sp),[d2,d3,a2,a3]
- clr d0
- rets
-8:
- mov (4,sp),d1
- mov d1,mdr
- mov (8,sp),a0
- mov (12,sp),a1
- mov (16,sp),d0
- add 20,sp
- movm (sp),[d2,d3,a2,a3]
- jmp sl_gb
 
 /* fl_sel <- sl_sel (d0 901, d1 value >= FV0, a0; CALLS) -> d0 1 when film value - FV0 is there, else 0. */
 fl_sel:
@@ -7840,31 +7784,7 @@ fl_LVL1:                          /* the shooting screen's changed film, "FILM N
  .long 96, 44, 0x0b05f02b, fl_lvw, LVWB / 2, LVWI, fl_lvd, LVDB / 2, LVDB * 44 / 2, fl_lvdw, LV_GAP, LV_DGAP
  .long fl_lvst, LVSTB / 2, LVSTI, LV_SGAP
 
-/* fl_scp <- ic_get (d0 / d1 = 15746..15753: the quick menu's "COLOR k" / "COLOR k*", k = 0..3) and fl_lvp <- ic_get
- * (15706..15709: the shooting screen's "COLOR1".."COLOR4", film test 9): when COLOR k holds a film that is there,
- * "FILM N" (N its number in the list) from a block {4 slot words, 4 descriptors, 4 drawn numbers, 4 pictures} (P+TORG
- * with SP_SLOT pictures, layout fl_LS; P+LVB with LV_SLOT, fl_LVL), drawn (fl_sp) when N changes; else as stock
- * (ic_stk). Returns as ic_get (retf). Frame: (0) call slot, (4) i, (8) return, (12) id, (16) k, (20) j, (24) layout,
- * (28) slot size, (32) the block's place in P. */
-fl_scp:
- movm [d2,d3,a2,a3],(sp)
- add -36,sp
- mov d0,(12,sp)
- mov mdr,d0
- mov d0,(8,sp)
- mov d1,d2
- add -15746,d2
- cmp 4,d2
- bcs 1f
- add -4,d2
-1:
- mov fl_LS,d0
- mov d0,(24,sp)
- mov SP_SLOT,d0
- mov d0,(28,sp)
- mov TORG,d0
- mov d0,(32,sp)
- bra fl_pcp
+/* Live-view COLOR badges retain the film number and its change marker. */
 fl_lvp:
  mov d1,d0
  movm [d2,d3,a2,a3],(sp)
@@ -7892,7 +7812,6 @@ fl_lvp:
  mov d0,(28,sp)
  mov LVB,d0
  mov d0,(32,sp)
-fl_pcp:
  mov d2,(16,sp)
  PVAL 80f
  mov (TORG,a2),d0
@@ -7930,14 +7849,7 @@ fl_pcp:
  bra 2b
 3:
  inc d3
- mov (24,sp),d0                   /* v0.28: the quick menu's "FILM N*" when the film is changed (as the list's cell) */
- mov fl_LS1,d1
- cmp fl_LS,d0
- beq 40f
- mov fl_LVL1,d1                   /* and the shooting screen's, as its "COLOR1*" */
- cmp fl_LVL,d0
- bne 6f
-40:
+ mov fl_LVL1,d1
  mov d1,(4,sp)                    /* the starred layout (fl_fch keeps no d1) */
  mov (20,sp),d0
  call fl_fch,[d2,d3,a2,a3],28
@@ -8021,6 +7933,20 @@ fl_pcp:
 /* fl_tt <- st_get (the string getter's frame: ret [d2],8; d0 = 2755 / 2756 / 2757 / 4769, "Color Profile 1..4"):
  * when COLOR k holds a film that is there, its name (fl_str), else as stock (st_stk). */
 fl_tt:
+ movhu (LG_GUI),d1
+ cmp 0x0304,d1                    /* The SCP Picture Mode cell reports the native profile too. */
+ bne 1f
+ mov (FB_SCP_COLOR),d1
+ cmp 1,d1
+ bne fl_stock_title
+ mov fb_scp_title,a0
+ ret [d2],8
+1:
+ cmp 0x1804,d1
+ bne 9f
+fl_stock_title:
+ jmp st_stk
+9:
  add -16,sp                       /* (0) call slot, (4) d3, (8) a2, (12) id */
  mov d3,(4,sp)
  mov a2,(8,sp)
@@ -8056,43 +7982,6 @@ fl_tt:
  mov (4,sp),d3
  mov (8,sp),a2
  add 16,sp
- jmp st_stk
-
-/* fl_pm <- st_get (the string getter's frame: ret [d2],8; d0 = 203, "Picture Mode"): on the Picture Mode screen (GUI
- * state 0x0418: the two bytes at the pointer 0x603713a4) with COLOR k selected, the title of what is selected, as when
- * it is chosen in the list (fl_tt: the film's name, or "Color Profile k"); the stock title moved to "Picture Mode"
- * when the row was reached with up / down (owner, film test 4: "the name goes away"). Else as stock. */
-fl_pm:
- mov (0x603713a4),a0
- cmp 0,a0
- beq 9f
- movbu (a0),d1
- cmp 4,d1
- bne 9f
- movbu (1,a0),d1
- cmp 0x18,d1
- bne 9f
- add -4,sp
- mov 111,d0
- call sget,[],4                   /* the picture mode */
- add 4,sp
- mov d0,d1
- mov 2755,d0
- cmp 54,d1
- beq 8f
- mov 2756,d0
- cmp 55,d1
- beq 8f
- mov 2757,d0
- cmp 56,d1
- beq 8f
- mov 4769,d0
- cmp 64,d1
- bne 9f
-8:
- jmp fl_tt
-9:
- mov 203,d0
  jmp st_stk
 
 /* fl_pmod <- .hook_pmod (stock 0x6129ba07 "COLOR profile changed?", the caller's call [d2,d3,a2],16; d0 picture
@@ -10834,6 +10723,26 @@ st_run:
  mov d3,a2                        /* a2 = context C */
  mov (12,a2),a3                   /* a3 = output O */
  mov (4,a2),a1                    /* request R */
+ .ifdef OM3_HIGHLIGHT_TRIAL
+ movhu (14,a1),d0
+ cmp 0x1000,d0
+ bne 90f
+ call hilat_still,[d2,d3,a2,a3],20
+ cmp 0,d0
+ beq s9
+ bra 91f
+90:
+ mov d0,(hilat_other_selector+0x40000000)
+ mov d0,d1
+ asl 16,d1
+ movhu (10,a1),d0
+ mov d0,(hilat_other_id+0x40000000)
+ or d1,d0
+ call hilat_note_other,[d2,d3],12
+ mov (hilat_other_count+0x40000000),d0
+ inc d0
+ mov d0,(hilat_other_count+0x40000000)
+ .endif
  movhu (10,a1),d0
  cmp 11,d0
  beq 1f
@@ -10864,6 +10773,9 @@ st_run:
  mov (3180,a3),d0
  cmp d1,d0
  bne s9
+ .ifdef OM3_HIGHLIGHT_TRIAL
+91:
+ .endif
  PVAL s9                          /* a2 = P (uses d3, a2) */
  clr d1                           /* any strength on COLOR 1-4? (else no getter call) */
  mov a2,a0
@@ -11644,21 +11556,6 @@ sdl_poke:
 9:
  ret [d2,d3,a2,a3],28
 
-/* sd3: the super control panel's Picture Mode cell steps with the dials through its own table (0x615384b4, 6 x {key, count,
- * default, records}; records 20 B {0, value, 0, 0, availability id}). Entry 5 (key 901: the COLOR position) had COLOR 1-4;
- * build.py points it here: the stock four, then the films FV0 + j with FLB + j (the step helpers skip a film that is
- * not there, as they skip a picture mode that is switched off). SetValue 901 <- FV0 + j is fl_set, as from the list. */
-.section .ext11,"ax"
-.balign 4
-fl_scr:
- .long 0, 54, 0, 0, 1072
- .long 0, 55, 0, 0, 1073
- .long 0, 56, 0, 0, 1074
- .long 0, 64, 0, 0, 1075
- .irp j, 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19
- .long 0, FV0 + \j, 0, 0, FLB + \j
- .endr
-
 /* fl_scw <- 0x61157d30 `call 0x6128abe0,[d2,a2],12` in the super control panel's update (a0 = the Picture Mode cell's
  * widget, d0 = its choice: 16..19 for COLOR 1-4), entered by the same call. The widget draws again only when its choice
  * changes, and a step from one film to the next on the same COLOR leaves it (emulator: no picture / title request). After
@@ -12096,6 +11993,7 @@ lg_wk:
  mov LG_POLL,d0
  call sdl_dly_tsk,[d2,a2,a3],16
  call sw_flush,[d2,d3,a2,a3],32
+ call fb_boot_sample,[d2,d3,a2,a3],24
  mov (lg_n),d0
  mov d0,d1
  sub d3,d1
@@ -13602,8 +13500,8 @@ lg_btn:
  mov lg_dash,a0
  cmp -1,d0
  beq 4f
- add -3900,d0                     /* DV1: 0 Normal, 1 CRT, 2 ART, 3 COLOR, 4 MONO */
- cmp 5,d0
+ add -3900,d0                     /* DV1: Normal, CRT, ART, COLOR, MONO, Film Box */
+ cmp 6,d0
  bcs 3f
  clr d0
 3:
@@ -15216,7 +15114,9 @@ lg_bn:                            /* button names, lg_cid's order */
 lg_dpn:                           /* the Creative Dial's positions */
  .long lg_n4, lg_n3, lg_n1, lg_n2
 lg_dvn:                           /* a dial row's choice (DV1 + 0..4) */
- .long lg_dv0, lg_n4, lg_n3, lg_n1, lg_n2
+ .long lg_dv0, lg_n4, lg_n3, lg_n1, lg_n2, lg_film_box
+lg_film_box: .asciz "Film Box"
+ .balign 4
 lg_dmn:                           /* the modes of the dial functions */
  .long lg_mP, lg_mA, lg_mS, lg_mM
 lg_wbt:                           /* WB (1578 / 1579) -> name (research/NOTES.md, "Film WB"); 9 Custom: lg_wb */
@@ -15245,6 +15145,9 @@ lg_ring:                          /* 32 x 48 B {u32 number, u32 picture mode, u8
                                    * the screen (GUI state), +34 photos so far (lg_np)} */
  .space 32 * 48
 lg_buf:
+ .ifdef OM3_HIGHLIGHT_TRIAL
+ .space 4096                       /* room for all 16 HILAT rows and the original report */
+ .endif
  .space 9216                       /* v0.30 test 10: 8192 -> 9216 (curves / CURVES.BIN / #54 lines) */
 lg_bend:                          /* lg_s / lg_d / lg_kf / lg_h / lg_nl / lg_tab write nothing once at lg_bend; one
                                    * begun before it may run on, at most 117 B (lg_s's longest string) */
@@ -15259,7 +15162,7 @@ lg_mw:
  .asciz "w"
  .include "lgver.inc"
 lg_t1:
- .asciz "Caduceus for OM-3 debug log\r\nBuild: "
+ .asciz "Nostalgia-OM debug log\r\nBuild: "
 lg_t2:
  .asciz "\r\nWritten at shutter button event "
 lg_t3:
@@ -15997,10 +15900,25 @@ sx_set:                           /* from sl_set (entered as the manager: d0 id,
  movbu (dm_pos),d0
  mov d0,(12,sp)
  call dm_turn,[d2,d3,a2,a3],24    /* -> d0 = the mode 0..3 (CRT, ART, COLOR, MONO), d1 = its COLOR choice or 0 */
+ mov (12,sp),d3
+ cmp d2,d3
+ beq dm_family_ready
+ mov (FB_SLOT),a2
+ cmp 0,a2
+ beq dm_family_ready
+ add -12,sp
+ mov d0,(4,sp)
+ mov d1,(8,sp)
+ call fb_close,[d2,d3,a2,a3],24
+ mov (4,sp),d0
+ mov (8,sp),d1
+ add 12,sp
+dm_family_ready:
  mov (4,sp),a0
  mov (8,sp),a1
- mov (12,sp),d3
  add 16,sp
+ cmp 4,d0                         /* Film Box operates on the COLOR family. */
+ beq 44f
  cmp 2,d0
  beq 43f
  mov dm_fam,a3                    /* not COLOR: that mode's family, the stock way */
@@ -16165,7 +16083,7 @@ dm_mode:
  mov (a0),d0
  call sget,[],4
  add -DV1,d0
- cmp 5,d0
+ cmp 6,d0
  bcc 1f
  cmp 0,d0
  beq 1f
@@ -16303,7 +16221,7 @@ dm_get:                           /* from sl_get (d0 one of the four, a1 -> the 
  add 12,sp
  mov d0,d1
  add -DV1,d1
- cmp 5,d1
+ cmp 6,d1
  bcs 1f
  clr d1
 1:
@@ -16313,15 +16231,15 @@ dm_get:                           /* from sl_get (d0 one of the four, a1 -> the 
  rets
  .balign 4
 dm_list:                          /* the options (validator list), in the picker's order */
- .short DV1, DV1 + 1, DV1 + 2, DV1 + 3, DV1 + 4
+ .short DV1, DV1 + 1, DV1 + 2, DV1 + 3, DV1 + 4, DV1 + 5
 dm_lend:
  .balign 4
 dm_lab:                           /* {value, string << 16 | 4, 0x61570e04}: Normal (616), COLOR k, film n's name */
- .space 12 * 25
+ .space 12 * ((dm_lend-dm_list)/2)
 dm_hlp:                           /* the same with the help text */
- .space 12 * 25
+ .space 12 * ((dm_lend-dm_list)/2)
 dm_tit:                           /* the same with the picker titles: film n's name (ST_F0 + n - 1) */
- .space 12 * 25
+ .space 12 * ((dm_lend-dm_list)/2)
 dm_strs:                          /* ST_DC0 .. ST_DF0 + 19 */
  .long dm_s1, dm_s2, dm_s3, dm_s4, dm_sh, dm_sh, dm_sh, dm_sh
  .long dm_f1, dm_f2, dm_f3, dm_f4, dm_f5, dm_f6, dm_f7, dm_f8, dm_f9, dm_f10, dm_f11, dm_f12, dm_f13, dm_f14, dm_f15, dm_f16, dm_f17, dm_f18, dm_f19, dm_f20
@@ -16425,6 +16343,38 @@ ar_get:                           /* .hook_ag (the dispatcher's value read, fram
 ar_ic:                            /* .hook_ic: our ▲ / ◀ / ▲◀▶▼ pictures (AR_IC0 + 0..2), else ic_get */
  mov d0,d1
  exthu d1
+ cmp 15746,d1
+ bcs 1f
+ cmp 15754,d1
+ bcc 1f
+ movhu (LG_GUI),d1
+ cmp 0x0304,d1
+ bne 2f
+ movbu (UI_PSW),d1
+ cmp 2,d1
+ bne 2f
+ mov (FB_SCP_COLOR),d1
+ cmp 0,d1
+ bne 3f
+ add -12,sp
+ mov d0,(4,sp)
+ mov mdr,d1
+ mov d1,(8,sp)
+ call fb_has_binding,[d2,d3,a2,a3],20
+ mov d0,(FB_SCP_COLOR)
+ mov (8,sp),d1
+ mov d1,mdr
+ mov d0,d1
+ mov (4,sp),d0
+ add 12,sp
+3:
+ cmp 1,d1
+ bne 2f
+ mov fb_scp_badge_slot,a0
+ retf [],0
+2:
+ mov d0,d1
+1:
  cmp DG0,d1                       /* v0.27 polish 2: the body diagrams (dg_get) */
  bcs 0f
  cmp DG0 + NDG,d1
@@ -19782,19 +19732,29 @@ ub_rd:                            /* `call ub_rd,[d2,d3,a2,a3],28`, a0 = a buffe
  mov UB_PFL,d1
  mov (4,sp),a1
  call fread,[d2,d3,a2,a3],24
- mov d0,d2
- mov (4,sp),a0
- call fclose,[d2,a2,a3],16
- cmp UB_PFL,d2
- bne 9f
+ cmp UB_PFL,d0
+ bne 7f
  mov (8,sp),a0
  mov UB_PFL,d3
  call pf_check,[d2,d3,a2,a3],20
  cmp 0,d0
- bne 9f
+ bne 7f
  mov 1,d0
  movbu d0,(ub_cv)
+ mov (4,sp),a0
+ mov (8,sp),a1
+ call fb_read_labels,[d2,d3,a2,a3],56
+ bra 8f
+7:
+ clr d0
+ call fb_publish_labels,[d2,d3,a2,a3],24
+8:
+ mov (4,sp),a0
+ call fclose,[d2,a2,a3],16
+ ret [d2,d3,a2,a3],28
 9:
+ clr d0
+ call fb_publish_labels,[d2,d3,a2,a3],24
  ret [d2,d3,a2,a3],28
 
 ub_kn:                            /* `call ub_kn,[d2,d3],12`, a0 = a LOOKS image -> d0 1 when the block's ring holds its
@@ -22955,6 +22915,9 @@ bl_v:                             /* the value */
  .include "shutter_beep.inc"
  .include "focus_drive.inc"
  .include "focus_pdaf_unlock.inc"
+ .section .fb_runtime,"ax"
+ .include "film_row_transfer.inc"
+ .include "film_styles.inc"
 
  .ifndef OM3_NO_SUNLIT
  .include "sunlit.s"

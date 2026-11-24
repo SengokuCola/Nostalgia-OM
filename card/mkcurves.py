@@ -22,7 +22,7 @@ def entry(check, r, g, b, mix):
 
 
 def build(looks, spec):
-    assert len(looks) == 1632 and looks[:4] == b'OM3P', 'not a LOOKS.BIN v1'
+    assert len(looks) >= 1632 and looks[:4] == b'OM3P', 'not a LOOKS.BIN v1'
     names = [looks[1312 + 16 * j:1328 + 16 * j].rstrip(b'\0').decode('latin1') for j in range(COUNT)]
     unknown = set(spec) - set(names)
     assert not unknown, f'not in this LOOKS.BIN: {sorted(unknown)}'

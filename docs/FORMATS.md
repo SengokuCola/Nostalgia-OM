@@ -47,6 +47,34 @@ writes the file the first time a look is used. Writes go to `LOOKS.NEW`, are rea
 Generators: `card/mkprofiles.py` (JSON → file) and LookLab (`webapp/src/om3.ts`: `profilesBin` / `readProfiles`), byte-identical
 (`webapp/tests/om3.test.ts`).
 
+### Optional OM3L box labels
+
+With no custom label or per-roll effect the file is exactly 1632 bytes. Otherwise LookLab appends
+a 20496-byte trailer. The length and CRC in the OM3P prefix still cover only
+the original v1 data. In the trailer, bytes 0..3 are ASCII OM3L, +4 is the
+trailer length, +8 is the CRC-32 of all 20 records, and +12 is the CRC-32 of
+prefix bytes 32..1631. The three integers are little-endian u32.
+
+Each 1024-byte record follows its recipe's slot. Reserved bytes are zero.
+
+| Record offset | Bytes | Content |
+|---|---:|---|
+| 0 | 1 | 0 = built-in art and caption, 1 = band, 2 = wave, 3 = diagonal |
+| 1 | 9 | Paper, ink, accent colors as RGB triples |
+| 12 | 33 | Zero-padded UTF-8 wordmark, up to 8 Unicode scalar values |
+| 45 | 41 | Zero-padded UTF-8 caption, up to 10 Unicode scalar values |
+| 96 | 16 | Four palette entries, each Y/Cb/Y/Cr |
+| 112 | 576 | 48 × 48 label, 2 bits per pixel, high bits first |
+| 688 | 288 | 144 × 16 caption mask, one bit per pixel, high bit first |
+| 976 | 1 | Effect bits in the experimental still-effects build. Bits 1–4 enable false-colour infrared, colour screen print, film leader burn and back light leak. Bit 0 reserves the three-exposure colour separation request. Zero disables all five. |
+
+LookLab keeps the editable fields and generates both bitmaps when exporting.
+The firmware reads the optional data with the card's recipe bank, checks its
+CRC and associates a label with its matching active recipe and name. Unset
+records and missing or damaged trailers fall back to built-in artwork.
+Internal camera recipe storage keeps the v1 prefix. Keep the extended file
+on the card for the custom labels across power cycles.
+
 ## Films in the camera's memory (v0.29)
 
 From v0.29 the camera keeps the files below in a block in its own settings memory (store M, image offset 0x3A000 in

@@ -37,6 +37,7 @@ HALATION_CASES = ['fade3', 'odd2', 'small5', 'min5', 'w68', 'odd131', 'clamp5', 
 HALATION_CHECK = REPO / 'research/halation/emu_check.py'
 # borders (2026-11-16): the border pass (editor.s bd_run) called directly on test frames must give every byte of
 # research/border/model.py (research/border/emu_check.py). Small frames, a few seconds.
+FILM_STYLES = 'per-roll-still-effects'
 SUNLIT = 'sunlit-film20-still'
 BORDER = 'border-matches-the-model'
 BORDER_CHECK = REPO / 'research/border/emu_check.py'
@@ -500,20 +501,20 @@ BORDER_LINE_OFF = 'expect:pxsame:75,300,100,300 expect:pxsame:200,25,200,40'
 BORDER_LINE_OFF_VIDEO = 'expect:pxsame:22,250,40,250 expect:pxsame:75,300,100,300'
 BORDER_TO_3 = f'{OPEN_BORDER}' + ' right wait' * 3 + ' expect:p:82=03 menu wait wait s1 wait wait'
 # screen info (feature/screen-info s2): Custom menu > 4. Information > Camera Info Settings > Information 1, its fifth row
-# (the first of ours, Shooting Mode) unticked, out to shooting. The rear screen's mode icon (900 x 600): (48, 575) is
+# (the first of ours, Shooting Mode) unticked, out to shooting. The rear screen's mode icon (900 x 600): (56, 575) is
 # on its white camera body, (300, 450) live view; in video (62, 574) is on the movie mode icon. The record in M +
 # 0x3C000 holds Information 1's hide mask at +12 (bit 0 = Shooting Mode).
 SI_HIDE_MODE = ('menu wait left wait left wait down wait ok wait down wait right wait' + ' down wait' * 4 +
                 ' ok wait menu wait menu wait menu wait')
 SI_MASK1 = 'expect:mem:6295c70c=01000000'
-SI_MODE_ON, SI_MODE_OFF = 'expect:pxdiff:48,575,300,450', 'expect:pxsame:48,575,300,450'
+SI_MODE_ON, SI_MODE_OFF = 'expect:pxdiff:56,575,300,450', 'expect:pxsame:56,575,300,450'
 SI_MODE_ON_VIDEO = 'expect:pxdiff:62,574,300,450'
 # s3: Exposure Comp. split in two rows. Information 1's ninth row (Exposure Level Meter, bit 15) unticked: the meter's
-# centre tick (522, 575) goes, the +/- value's "0" (623, 566) stays.
+# centre tick (682, 575) goes, the +/- value's "0" (783, 566) stays.
 SI_HIDE_METER = ('menu wait left wait left wait down wait ok wait down wait right wait' + ' down wait' * 8 +
                  ' ok wait menu wait menu wait menu wait')
-SI_METER_ON, SI_METER_OFF = 'expect:pxdiff:522,575,300,450', 'expect:pxsame:522,575,300,450'
-SI_EV_ON = 'expect:pxdiff:623,566,300,450'
+SI_METER_ON, SI_METER_OFF = 'expect:pxdiff:682,575,300,450', 'expect:pxsame:682,575,300,450'
+SI_EV_ON = 'expect:pxdiff:783,566,300,450'
 BORDER_TO_0 = f'{OPEN_BORDER}' + ' left wait' * 3 + ' expect:p:82=00 menu wait wait s1 wait wait'
 BORDER_TO_M3 = f'{OPEN_BORDER}' + ' left wait' * 3 + ' expect:p:82=fd menu wait wait s1 wait wait'   # black -3
 BORDER_FROM_M3 = f'{OPEN_BORDER}' + ' right wait' * 3 + ' expect:p:82=00 menu wait wait s1 wait wait'
@@ -756,20 +757,48 @@ def ck_line(mem, card, matches, on_builtin, with_values):
             '^Curves / mix on COLOR 1-4: ' + re.escape(', '.join(words)) + '$']
 
 
-# Button Function > arrow-pad Direct Function > Up > Film Box. Use physical
-# inputs from the shooting screen, including shutter release after cancelling.
-FILM_BOX_BIND = ('s1 menu left left left left left ok ok '
-                 'down down down down down ok right right ok down ok'
-                 + ' down' * 9 + ' right ok expect:val:50=4201 s1')
+# Button Function > arrow-pad Direct Function. The per-key pickers start at
+# different positions. Bind each key through the camera menu before pressing it.
+FILM_BOX_KEY_MENU = 's1 menu left left left left left ok ok down down down down down ok right right ok'
+FILM_BOX_BIND = FILM_BOX_KEY_MENU + ' down ok' + ' down' * 9 + ' right ok expect:val:50=4201 s1'
+FILM_BOX_BIND_DOWN = (FILM_BOX_KEY_MENU + ' down' * 4 + ' ok' + ' down' * 9 +
+                      ' right' * 4 + ' ok expect:val:51=4201 s1')
 
 TESTS = {
-    'film-box-dial-apply-and-cancel': [Boot(
+    'film-box-super-panel': [Boot(
+        FILM_BOX_BIND + ' ok expect:val:261=111 ok expect:mem:{FB_SLOT}=01000000 '
+        'right expect:p:712=02 s1 expect:mem:{FB_SLOT}=00000000 poweroff')],
+    'film-box-touch-return': [Boot(
+        FILM_BOX_BIND_DOWN + ' ok tap:112:350 expect:mem:{FB_SLOT}=01000000 ' + 'left ' * 7 +
+        'expect:mem:{FB_SLOT}=0e000000 expect:p:714=04 ok s1 ok ' + PANEL +
+        ' ok expect:mem:{FB_SLOT}=0e000000 poweroff')],
+    'film-box-down-shortcut': [Boot(
+        FILM_BOX_BIND_DOWN +
+        ' down expect:mem:{FB_SLOT}=01000000 expect:mem:{FB_DOWN_OPENS}=01000000 right expect:p:712=02 poweroff')],
+    'film-box-front-dial': [Boot(
+        's1 menu left left left left left ok ok down down down down down ok right right ok '
+        'down down down down down down down down ok right right right right right ok expect:val:54=3905 s1 front:3 expect:mem:{FB_SLOT}=01000000 '
+        'main+1 expect:mem:{FB_SLOT}=02000000 s1 expect:mem:{FB_SLOT}=00000000 '
+        's1 expect:mem:{FB_SLOT}=00000000 front:1 expect:mem:{dm_pos}=02 expect:mem:{FB_SLOT}=00000000 '
+        'front:3 expect:mem:{FB_SLOT}=02000000 main+1 expect:mem:{FB_SLOT}=03000000 front:1 expect:mem:{FB_SLOT}=00000000 expect:mem:{dm_pos}=02 expect:val:897=901 poweroff')],
+    'film-box-panel-dial': [Boot(FILM_BOX_BIND + ' ok ' + PANEL +
+        ' main+1 expect:mem:{FB_SLOT}=01000000 main+1 expect:p:712=02 poweroff')],
+    'picture-mode-native-colors': [Boot(
+        OPEN_PICTURE_MODE + ' ' + PICTURE_MODE +
+        ' right right right right right expect:p:712=00000000 '
+        's1 ok ' + PANEL + ' main+1 main+1 main+1 main+1 main+1 expect:p:712=00000000 poweroff')],
+    'film-box-dial-and-arrows': [Boot(
         FILM_BOX_BIND + ' up expect:mem:{FB_SLOT}=01000000 '
-        'main+1 expect:mem:{FB_SLOT}=02000000 main-1 expect:mem:{FB_SLOT}=01000000 '
-        'sub+1 expect:mem:{FB_SLOT}=14000000 sub-1 expect:mem:{FB_SLOT}=01000000 '
-        'main+1 s1 expect:mem:{FB_SLOT}=00000000 expect:p:712=00000000 '
-        'up main+1 ok expect:mem:{FB_SLOT}=00000000 expect:p:712=02000000 '
-        'up expect:mem:{FB_SLOT}=02000000 s1 poweroff')],
+        'main+3 expect:mem:{FB_SLOT}=04000000 main-2 expect:mem:{FB_SLOT}=02000000 '
+        'left expect:mem:{FB_SLOT}=01000000 '
+        'right expect:mem:{FB_SLOT}=02000000 expect:p:712=02 '
+        'left expect:mem:{FB_SLOT}=01000000 expect:p:712=01 '
+        'up expect:mem:{FB_SLOT}=14000000 down expect:mem:{FB_SLOT}=01000000 '
+        'main+1 expect:p:712=02 key-down:ok elapse:1200 expect:p:712=02 elapse:450 expect:p:712=00 '
+        'elapse:1600 key-up:ok expect:p:712=00 '
+        'hold:ok expect:p:712=02 s1 expect:mem:{FB_SLOT}=00000000 expect:p:712=02 '
+        'up sub-1 expect:mem:{FB_SLOT}=03000000 expect:p:712=03 '
+        'ok expect:mem:{FB_SLOT}=00000000 expect:p:712=03 poweroff')],
     'focus-probe-log': [Boot('expect:mem:{cf_latest}=00000000 s1 wait wait poweroff', expect=[
         r'^FOCUS PROBE 2 - raw lens state, NOT focus accuracy',
         r'^FP \d+ valid=\d+ status=\d+ inhibit=\d+ dir=\d+ record=[01] pos=-?\d+ lo=-?\d+ hi=-?\d+$',
@@ -1221,8 +1250,8 @@ TESTS = {
     # fwver 1: the page gets our line under the camera's own: 2 lines, line 1 "Caduceus : " + the build's name (drawn:
     # label and value), the Body line as it was (om-emu: "0.0"), and OK goes back to the same menu screen.
     'firmware-version-page-shows-our-line': [
-        Boot(f's1 wait wait {FV_WALK} fhash:menu {FV_AT}=02 {FV_AT}+80=0400 {FV_AT}+84={ST_FWV & 255:02x}{ST_FWV >> 8:02x} '
-             f'{FV_AT}+208=30002e0030000000 ok wait wait expect:atmem expect:ink:270,305,420,360 '
+        Boot(f's1 wait wait expect:str:{ST_FWV:x}={FV_HEX("Nostalgia-OM")} {FV_WALK} fhash:menu {FV_AT}=02 {FV_LINE(1, (REPO / "firmware/VERSION").read_text().split()[0].removeprefix("v"))} '
+             f'{FV_AT}+208=30002e0030000000 ok wait wait expect:atmem expect:ink:105,305,260,360 expect:ink:270,305,420,360 '
              'expect:ink:480,305,550,360 ok wait wait fhash:back expect:fsame:menu:back poweroff'),
     ],
     # ... a name of 14 letters (the most with one camera line) shows whole: the value boxes are wider (build.py DATA)
@@ -2100,7 +2129,7 @@ def run_screen(emu, build, out, card0):
             lines = read_log(emu, sub / 'card.omsd', sub / 'cadlog.txt')
             if not lines or decoder.decode('\n'.join(lines))['SC']['on'] != 1:
                 errors.append('screen diagnostics missing from actual CADLOG file')
-            elif 'Build: ' + (REPO / 'firmware/VERSION').read_text().strip() not in lines:
+            elif 'Build: ' + json.loads((build / 'lgver.inc').read_text().split('.asciz', 1)[1].strip()) not in lines:
                 errors.append('CADLOG has stale build identifier')
     return SCREEN, errors
 
@@ -2307,6 +2336,12 @@ def run_engine(emu, build, out, card0):
     sym = elf_symbols(build / 'p.elf')
     job, tables, live0, calls = engine_job(sym)
     spec = [c for name, look in ENGINE_CASES.items() for c in calls(name, look)]
+    if 'hilat_enabled' in sym:
+        neutral = (bytes([12, 0, 12, 0]), 0, [[0] * 6] * 3)
+        flag = hex(sym['hilat_enabled'] + 0x40000000)
+        spec.insert(0, {'name': 'boot-switch', 'pc': 'B', 'stop': ['B'], 'max': 1, 'read': [[flag, 4]]})
+        for name, enabled, request in [('control', 0, '0010'), ('trial', 1, '0010'), ('live', 1, '0000')]:
+            spec.extend(calls(name, neutral, [[flag, f'{enabled:02x}000000'], ['B+0x40e', request]]))
     spec.append({'name': 'reset', 'pc': 'B', 'stop': ['B'], 'max': 1,
                  'mem': [['P+87', '00000000'], ['P+65', '00'], [live0, bytes(CV_SLOTS).hex()]]})
     crc_data = bytes((i * 151 + 7) & 255 for i in range(CRC_BYTES))
@@ -2318,6 +2353,47 @@ def run_engine(emu, build, out, card0):
     if isinstance(res, str):
         return ENGINE, [res]
     errors = []
+    if 'hilat_enabled' in sym:
+        sys.path.insert(0, str(REPO / 'research/rgbcurves'))
+        from indexed_shoulder import compare
+        stock, _, trial = compare((build / 'main.bin').read_bytes())
+        marked_card = d / 'marked.omsd'
+        shutil.copyfile(card0, marked_card)
+        marker = d / 'HILAT.TXT'
+        marker.write_text('highlight trial enabled\n')
+        card_tool(emu, 'put', marked_card, marker, 'OM3MOD/HILAT.TXT')
+        marked_dir = d / 'marked'
+        marked_dir.mkdir(exist_ok=True)
+        tokens = 's1 ncall s1 wait wait s1 wait wait' if 'hilat_ring' in sym else 's1 ncall'
+        marked_spec = [spec[0], *calls('marked', neutral)]
+        if 'hilat_other_pairs' in sym:
+            marked_spec.extend(calls('camera-selector', neutral, [['B+0x40e', '3001']]))
+        marked = run_ncall(emu, build, marked_dir, marked_card, tokens,
+                           marked_spec)
+        if isinstance(marked, str):
+            errors.append(marked)
+        elif (res['boot-switch']['mem'][0] != '00000000' or marked['boot-switch']['mem'][0] != '01000000'
+              or marked['marked']['mem'][0] != res['trial']['mem'][0]):
+            errors.append('half-press card marker did not select the expected development curve')
+        if 'hilat_ring' in sym and not isinstance(marked, str):
+            report = read_log(emu, marked_dir / 'card.omsd', marked_dir / 'CADLOG.TXT') or []
+            if 'hilat_other_pairs' in sym and not any(
+                    line.startswith('HILAT other selector:id') and '0130000B' in line for line in report):
+                errors.append('CADLOG missing camera selector 0x0130 / request 0x000b')
+            rows = [line.split(': ')[-1].split() for line in report if line.startswith('HILAT seq ')]
+            if not any(len(row) == 14 and [int(x, 16) for x in row[2:11]] ==
+                       [11, 1, 7, *([stock[241]] * 3), *([trial[241]] * 3)] for row in rows):
+                errors.append('CADLOG missing applied still request and its measured RGB knot values')
+        for name in ('control', 'trial', 'live'):
+            before = u16s(res[name + ':stage']['mem'][0])
+            expected = before.copy()
+            if name == 'trial':
+                for start in range(0, len(before), TABLE_ENTRIES):
+                    if before[start:start + 256] != stock:
+                        errors.append('trial: native stage selected a different curve')
+                    expected[start:start + 256] = trial
+            if u16s(res[name]['mem'][0]) != expected:
+                errors.append(f'{name}: native output tables differ from expected')
     for name, (slot, balance, curves) in ENGINE_CASES.items():
         before, after = u16s(res[name + ':stage']['mem'][0]), u16s(res[name]['mem'][0])
         st_k = [b - 256 if b > 127 else b for b in bytes.fromhex(res[name]['mem'][1])]
@@ -2472,18 +2548,10 @@ def run_hl(emu, build, out, card0):
         spec.append({'name': name, 'pc': f'{sym["hl_pp_cb"]:#x}', 'stop': [hex(sym['color_resume'])],
                      'max': 200000, 'mem': mem, 'regs': {'a2': 'B+0x200'}, 'read': [[f'B+0x1000+{HL_REC}', span]],
                      'count': [sym['getter']]})
-    # Compare the same colour-stage output with the picker on two live routes and on a still.
-    for name, kind, sat in [('picker-lv', 0x30, 4), ('picker-lv-zero', 0x30, 0),
-                            ('picker-lv-alt', 0x130, 4), ('picker-still', 0x1000, 4)]:
-        mem = [['B+0x204', '=B+0x400'], ['B+0x20c', '=B+0x1000'],
-               ['B+0x40e', struct.pack('<H', kind).hex()],
-               [hex(sym['FB_SLOT']), '=2'], [hex(sym['FB_PREVIEW']), '=B+0xc00'],
-               ['B+0xc00', (look + bytes([sat] * 12)).hex()],
-               [f'B+0x1000+{HL_REC}', f'{HL_FILL:02x}' * span]]
-        mem.extend([f'P+{32 + 64*k + 31}', '00'] for k in range(4))
-        spec.append({'name': name, 'pc': hex(sym['hl_pp_cb']), 'stop': [hex(sym['color_resume'])],
-                     'max': 200000, 'mem': mem, 'regs': {'a2': 'B+0x200'},
-                     'read': [[f'B+0x1000+{HL_REC}', span]], 'count': [sym['color_builder']]})
+    # An open picker must use exactly the shooting colour path.
+    for case in list(spec[1:]):
+        spec.append({**case, 'name': 'picker-' + case['name'],
+                     'mem': [*case['mem'], [hex(sym['FB_SLOT']), '=2']]})
     res = run_ncall(emu, build, d, card0, 's1 wait wait ncall', spec)
     if isinstance(res, str):
         return HL, [res]
@@ -2505,24 +2573,10 @@ def run_hl(emu, build, out, card0):
         calls = res[name]['count'][0]
         if calls != (slot is not None):
             errors.append(f'{name}: hl_pp calls the getter {calls} times, want {int(slot is not None)} (out.json)')
-    for name in ('picker-lv', 'picker-lv-zero', 'picker-lv-alt', 'picker-still'):
-        output = bytes.fromhex(res[name]['mem'][0])
-        live = name != 'picker-still'
-        if res[name]['regs']['pc'] != f"{sym['color_resume']:x}" or res[name]['count'][0] != int(live):
-            errors.append(f'{name}: native colour builder routing')
-        if live:
-            for r, sector in enumerate(HL_PERM):
-                hue, _, light = struct.unpack_from('<hhh', output, r * HL_REC_STEP)
-                if (hue, light) != (HL_HUE[HL_LOOK[sector]+7], HL_LIGHT[HL_LOOK[12+sector]+7]):
-                    errors.append(f'{name}: candidate sector {sector}')
-                    break
-        elif output != bytes([HL_FILL]) * span:
-            errors.append('picker preview modified a still job')
-    def saturations(name):
-        data = bytes.fromhex(res[name]['mem'][0])
-        return [struct.unpack_from('<h', data, r*HL_REC_STEP+2)[0] for r in range(12)]
-    if saturations('picker-lv') == saturations('picker-lv-zero'):
-        errors.append('candidate saturation did not reach the native colour builder')
+    for name, _ in HL_CASES:
+        baseline, picker = res[name], res['picker-' + name]
+        if any(baseline[key] != picker[key] for key in ('count', 'mem')) or picker['regs']['pc'] != baseline['regs']['pc']:
+            errors.append(f'{name}: opening the picker changed the native colour stage')
     return HL, errors
 
 
@@ -2795,7 +2849,7 @@ def newest_looks():
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('build', type=pathlib.Path)
-    ap.add_argument('--only', nargs='+', choices=sorted([*TESTS, AUDIT, STACKING, HALATION, SUNLIT, BORDER, SHADING, SHTAKE, ENGINE, DIAL, VIDEO, GRAINMIX, CROPHIST, CROPPL, CROPQ, GATES, GRAINTILE, FOCUS, CONTRAST, SCREEN, CAMERA, XPAN, *DIRECT, *STATIC]))
+    ap.add_argument('--only', nargs='+', choices=sorted([*TESTS, AUDIT, STACKING, HALATION, SUNLIT, FILM_STYLES, BORDER, SHADING, SHTAKE, ENGINE, DIAL, VIDEO, GRAINMIX, CROPHIST, CROPPL, CROPQ, GATES, GRAINTILE, FOCUS, CONTRAST, SCREEN, CAMERA, XPAN, *DIRECT, *STATIC]))
     ap.add_argument('--jobs', type=lambda v: max(1, int(v)), default=DEFAULT_JOBS)
     ap.add_argument('--out', type=pathlib.Path)
     ap.add_argument('--looks', type=pathlib.Path)
@@ -2818,7 +2872,7 @@ def main():
     looks = (a.looks or newest_looks()).resolve()
     make_card(emu, build, looks, card0)
     fixtures = make_fixtures(out, looks)
-    names = a.only or sorted([*TESTS, AUDIT, STACKING, HALATION, SUNLIT, BORDER, SHADING, SHTAKE, ENGINE, DIAL, VIDEO, GRAINMIX, CROPHIST, CROPPL, CROPQ, GATES, GRAINTILE, FOCUS, CONTRAST, SCREEN, CAMERA, XPAN, *DIRECT, *STATIC])
+    names = a.only or sorted([*TESTS, AUDIT, STACKING, HALATION, SUNLIT, FILM_STYLES, BORDER, SHADING, SHTAKE, ENGINE, DIAL, VIDEO, GRAINMIX, CROPHIST, CROPPL, CROPQ, GATES, GRAINTILE, FOCUS, CONTRAST, SCREEN, CAMERA, XPAN, *DIRECT, *STATIC])
     stock = static_check.find_stock(a.stock) if any(n in STATIC for n in names) else None
     runs = [(n, k) for n in names for k in range(1, a.repeat + 1)]
     print(f'{len(names)} tests{f" x {a.repeat}" if a.repeat > 1 else ""} on {build}, results in {out}')
@@ -2843,6 +2897,10 @@ def main():
                 return run_stacking(emu, build, d, card0)
             if n == HALATION:
                 return run_halation(emu, build, d, card0)
+            if n == FILM_STYLES:
+                sys.path.insert(0, str(REPO / 'research/film-grading'))
+                import still_effects_check
+                return n, still_effects_check.run(emu, build, d / n, looks)
             if n == SUNLIT:
                 path = REPO / 'research/sunlit-foliage'
                 sys.path.insert(0, str(path))

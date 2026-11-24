@@ -12,8 +12,8 @@ const NM_W = 175, NM_H = 50, NM_GROUP_MAX = 16384;
 // line, faint rim). Font: a renamed ASCII subset of DejaVu Sans Condensed (Bitstream Vera licence: public/fonts/FONT-LICENSE.txt).
 const NM_FONT = './fonts/om3label.woff2';
 let nmFontReady = null;
-const nmFont = () => nmFontReady || (nmFontReady = (async () => {
-  const f = new FontFace('OM3 Label Condensed', 'url(' + NM_FONT + ')'); await f.load(); document.fonts.add(f);
+const nmFont = (url = NM_FONT) => nmFontReady || (nmFontReady = (async () => {
+  const f = new FontFace('OM3 Label Condensed', 'url(' + url + ')'); await f.load(); document.fonts.add(f);
 })());
 function nmRaster(txt, fs, sq) {          // grayscale (0..255) rows, cropped to the ink's columns, like mkguides.raster
   const S = 4, c = document.createElement('canvas'); c.width = fs * S * txt.length + 200; c.height = fs * S * 2;
@@ -88,8 +88,8 @@ export function encode11(px, w, h) {
 }
 /** Picture name for COLOR k look j (0-based): its name; "Empty" for a number with no look. */
 const nameText = (prof, k, j) => prof[k][j] ? (prof[k][j].name.trim() || 'Look ' + (j + 1)) : 'Empty';
-export async function namesBin(prof) {
-  await nmFont();
+export async function namesBin(prof, fontUrl = NM_FONT) {
+  await nmFont(fontUrl);
   const groups = [];
   for (let k = 0; k < 4; k++) {
     let shrink = 0, pics;

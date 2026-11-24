@@ -1,9 +1,11 @@
-# Fork changes by SengokuCola. Builds and publishes fork-specific patch kits.
+# Fork changes by SengokuCola. Publishes firmware patch kits and attaches LookLab.
 name: Nostalgia Release
 
 on:
   push:
     tags: ['fork-v*']
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       version:
@@ -20,6 +22,7 @@ concurrency:
 
 jobs:
   build:
+    if: github.event_name != 'release'
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     env:
@@ -86,6 +89,10 @@ jobs:
       - uses: actions/download-artifact@v7
         with:
           name: fork-patch-kit
+      - uses: actions/checkout@v6
+        with:
+          path: source
+          persist-credentials: false
       - name: Publish fork prerelease
         env:
           GH_TOKEN: ${{ github.token }}
@@ -98,6 +105,80 @@ jobs:
             echo "Release $VERSION already exists."
             exit 0
           fi
+          awk -v heading="## Nostalgia-OM $VERSION " '
+            index($0, heading) == 1 { found=1; next }
+            found && /^## / { exit }
+            found { print }
+          ' source/CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+          grep -q '[^[:space:]]' "$RUNNER_TEMP/notes.md"
           gh release create "$TAG" "nostalgia-$VERSION.zip" SHA256SUMS \
-            --verify-tag --prerelease --title "Nostalgia 怀旧 $VERSION" \
-            --notes "Firmware patch kit for OM SYSTEM OM-3 firmware 1.1. Includes the Windows and macOS launchers, matching SD card files, and the release checksum. The launchers build the update locally from OM firmware 1.1."
+            --verify-tag --prerelease --title "Nostalgia-OM $VERSION" \
+            --notes-file "$RUNNER_TEMP/notes.md"
+
+  build-looklab:
+    name: Build LookLab for Windows x64
+    needs: publish
+    # GitHub does not dispatch release events for releases created with GITHUB_TOKEN.
+    if: >-
+      ${{ !cancelled() && github.repository == 'SengokuCola/Nostalgia-OM' &&
+          (github.event_name == 'release' || needs.publish.result == 'success') }}
+    runs-on: windows-2022
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: webapp
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: webapp/package-lock.json
+      - name: Set up Rust
+        run: rustup default stable
+      - name: Install LookLab dependencies
+        run: npm ci
+      - name: Build the LookLab app and installer
+        run: npm run package:win
+      - name: Collect the Windows executables
+        shell: pwsh
+        run: |
+          $installers = @(Get-ChildItem src-tauri/target/release/bundle/nsis -Filter '*_x64-setup.exe' -File)
+          if ($installers.Count -ne 1) {
+            throw "Expected one LookLab x64 installer, found $($installers.Count)."
+          }
+          $assets = New-Item -ItemType Directory -Path (Join-Path $env:RUNNER_TEMP 'looklab-assets')
+          Copy-Item -LiteralPath $installers[0].FullName -Destination $assets.FullName
+          Copy-Item -LiteralPath src-tauri/target/release/looklab.exe -Destination (Join-Path $assets.FullName 'LookLab-windows-x64.exe')
+      - uses: actions/upload-artifact@v6
+        with:
+          name: looklab-windows-x64
+          path: ${{ runner.temp }}/looklab-assets/
+          if-no-files-found: error
+          compression-level: 0
+
+  attach-looklab:
+    name: Attach LookLab to the release
+    needs: build-looklab
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: looklab-windows-x64
+          path: looklab-assets
+      - name: Upload missing LookLab assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          existing=$(gh release view --json assets --jq '.assets[].name' -- "$TAG")
+          for asset in looklab-assets/*.exe; do
+            if ! grep -Fxq -- "${asset##*/}" <<< "$existing"; then
+              gh release upload -- "$TAG" "$asset"
+            fi
+          done

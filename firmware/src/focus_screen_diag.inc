@@ -22,12 +22,92 @@ fs_diag_capture:                  /* d0 channel; caller already validated 1/2 */
  ret [d2,d3,a2,a3],20
 
 fs_diag_text:
+ .ifdef OM3_HIGHLIGHT_TRIAL
+ LGS hilat_summary
+ mov hilat_enabled+0x40000000,a2
+ mov 6,d3
+ clr d2
+ call fs_diag_words,[d2,d3,a2,a3],24
+ mov hilat_other_pairs+0x40000000,a3
+3:
+ mov (4,a3),d0
+ cmp 0,d0
+ beq 4f
+ LGS hilat_pair_label
+ mov a3,a2
+ mov 2,d3
+ clr d2
+ call fs_diag_words,[d2,d3,a2,a3],24
+ add 8,a3
+ cmp hilat_other_pairs+0x40000000+96,a3
+ bne 3b
+4:
+ LGS hilat_overflow_label
+ mov hilat_other_overflow+0x40000000,a2
+ mov 1,d3
+ clr d2
+ call fs_diag_words,[d2,d3,a2,a3],24
+ LGS hilat_legend
+ mov hilat_ring+0x40000000,a3
+1:
+ mov (a3),d0
+ cmp 0,d0
+ beq 2f
+ LGS hilat_row
+ mov a3,a2
+ mov 14,d3
+ clr d2
+ call fs_diag_words,[d2,d3,a2,a3],24
+2:
+ add 64,a3
+ cmp hilat_ring+0x40000000+1024,a3
+ bne 1b
+ .endif
  LGS sb_diag_label
  mov sb_diag_fields,a2
  mov 7,d3
  mov 1,d2
  call fs_diag_words,[d2,d3,a2,a3],24
  LGS fs_diag_title
+ LGS fb_diag_label
+ mov fb_diag_fields,a2
+ mov 10,d3
+ mov 1,d2
+ call fs_diag_words,[d2,d3,a2,a3],24
+ LGS fb_timing_label
+ mov FB_PAINT_US,a2
+ mov 3,d3
+ clr d2
+ call fs_diag_words,[d2,d3,a2,a3],24
+ LGS fb_queue_label
+ mov FB_Q_WRITE,a2
+ mov 2,d3
+ clr d2
+ call fs_diag_words,[d2,d3,a2,a3],24
+ mov FB_Q_PEAK,a2
+ mov 2,d3
+ clr d2
+ call fs_diag_words,[d2,d3,a2,a3],24
+ LGS fb_native_label
+ mov FB_TH_STATS,a2
+ mov 4,d3
+ clr d2
+ call fs_diag_words,[d2,d3,a2,a3],24
+ LGS fb_lag_label
+ mov FB_LAG,a2
+ mov 3,d3
+ clr d2
+ call fs_diag_words,[d2,d3,a2,a3],24
+ LGS fb_scroll_label
+ mov FB_SCROLL_STATS,a2
+ mov 5,d3
+ clr d2
+ call fs_diag_words,[d2,d3,a2,a3],24
+ LGS fb_rest_label
+ mov FB_SCROLL_STATS+20,a2
+ mov 5,d3
+ clr d2
+ call fs_diag_words,[d2,d3,a2,a3],24
  mov cc_rec_sample+0x40000000,a2
  mov (a2),d0
  cmp 0,d0
@@ -194,6 +274,27 @@ pdaf_live_label: .asciz "PDAF_LIVE valid lag_raw ema_q2 score cnt split green be
 fs_diag_regs:
  .long 0x60,0x390,0x3a8,0x3c0,0x3d8,0x400,0x42c,0x430
  .long 0x4f0,0x4f4,0x4f8,0x4fc,0x500,0x394,0x404,0x624
+.pushsection .ext12,"ax"
+.balign 4
+fb_diag_fields: .long FB_KEY,FB_OPENS,FB_OPENED,FB_PAGES,FB_PAGE2,FB_PUBLISHED,FB_SLOT,FB_DOWN_OPENS,FB_MISSES,FB_MISS_REASON
+fb_diag_label: .asciz "FILM trigger requests opened page1 page2 published slot down preview_misses last_reason: "
+.popsection
+.balign 4
+fb_timing: .space 24
+fb_scroll_stats: .space 40
+.set FB_SCROLL_STATS,fb_scroll_stats+0x40000000
+fb_queue_label: .asciz "FILM queue write/read, then peak-depth/dropped (hex): "
+fb_native_label: .asciz "FILM native TFT requests / source WH / inset WH / XY (hex): "
+fb_lag_label: .asciz "FILM wheel presented count last-us peak-us (hex): "
+fb_scroll_label: .asciz "FILM moving frames sums32us(paint/copy/period) peak-us: "
+fb_rest_label: .asciz "FILM settled frames sums32us(paint/copy/period) peak-us: "
+.set FB_PAINT_START,fb_timing+0x40000000
+.set FB_COPY_START,FB_PAINT_START+4
+.set FB_PREV_TIME,FB_PAINT_START+8
+.set FB_PAINT_US,FB_PAINT_START+12
+.set FB_COPY_US,FB_PAINT_START+16
+.set FB_PERIOD_US,FB_PAINT_START+20
+fb_timing_label: .asciz "FILM us last paint preview publish_interval: "
 fs_diag_title: .asciz "\r\nSCREEN VISUAL TEST 2 - diagnostics (hex words)\r\n"
 cc_rec_label: .asciz "REC_DISP count type pre/post EVF TFT: "
 fs_miss_label: .asciz "EVF_MISS address changed held: "

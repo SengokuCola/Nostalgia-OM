@@ -1,3 +1,4 @@
+import { appendLabels, readLabels } from './boxlabel';
 import { parseSplit, splitCode, splitFromCode, splitOk, toSteps } from './split';
 // OM SYSTEM OM-3 with Caduceus for OM-3 (androidfanman/caduceus-om3): the profile bank and its card files.
 // The camera has 5 looks for each of COLOR 1-4 (its Film page, dial 0-5). A look holds the wheels (Saturation, Hue,
@@ -182,7 +183,12 @@ export function validateBank(bank: Bank): Problem[] {
 export const PF_LEN = 1632;
 /** fw 20 (firmware v0.20 and older, PROFILES.BIN): +50 (the camera's correction) and +51 (no grain) left at 0 so they accept
  *  the file. fw 21: +52 left at 0, the sharpness in +42 (-2..+2). fw 22: Sharp in +52, +42 at 0. */
-export function profilesBin(bank: Bank, fw: Fw = 22): Uint8Array {
+export function profilesBin(bank: Bank, fw: Fw = 22, includeLabels = true, includeEffects = true): Uint8Array {
+  const base = profilePrefix(bank, fw);
+  return fw >= 28 && includeLabels ? appendLabels(base, bank, includeEffects) : base;
+}
+
+function profilePrefix(bank: Bank, fw: Fw): Uint8Array {
   const b = new Uint8Array(PF_LEN), d = new DataView(b.buffer);
   b.set([0x4f, 0x4d, 0x33, 0x50]); d.setUint32(4, PF_LEN, true); d.setUint16(12, 1, true); d.setUint16(14, 20, true);
   bank.forEach((row, k) => row.forEach((l, j) => {
@@ -233,8 +239,8 @@ export const isV28Record = (rec: Uint8Array) => rec.subarray(57, 63).some(Boolea
  *  split toning codes as v0.28 half steps (also when any record has +57..+62 set); else as v0.26 steps. */
 export function readProfiles(b: Uint8Array, v28 = false): Bank {
   const d = new DataView(b.buffer, b.byteOffset, b.byteLength);
-  if (b.length !== PF_LEN || String.fromCharCode(...b.subarray(0, 4)) !== 'OM3P' || d.getUint32(4, true) !== PF_LEN) throw new Error('This is not a LOOKS.BIN (wrong size or header).');
-  if (crc32(b.subarray(12)) !== d.getUint32(8, true)) throw new Error('This LOOKS.BIN is damaged (checksum).');
+  if (b.length < PF_LEN || String.fromCharCode(...b.subarray(0, 4)) !== 'OM3P' || d.getUint32(4, true) !== PF_LEN) throw new Error('This is not a LOOKS.BIN (wrong size or header).');
+  if (crc32(b.subarray(12, PF_LEN)) !== d.getUint32(8, true)) throw new Error('This LOOKS.BIN is damaged (checksum).');
   if (d.getUint16(12, true) !== 1 || d.getUint16(14, true) !== 20) throw new Error('This LOOKS.BIN has an unknown version.');
   const bank = emptyBank();
   for (let r = 0; r < 20 && !v28; r++) v28 = isV28Record(b.subarray(32 + 64 * r, 96 + 64 * r));
@@ -244,6 +250,7 @@ export function readProfiles(b: Uint8Array, v28 = false): Bank {
     if (!name && !b.subarray(o, o + 57).some(Boolean)) continue;
     bank[Math.floor(r / 5)][r % 5] = lookFromRecord(b.subarray(o, o + 64), name || `Look ${(r % 5) + 1}`, v28);
   }
+  readLabels(b, bank);
   return bank;
 }
 /** One 64-byte LOOKS.BIN record (+ its name) -> a look. `v28` (or +57..+62 set): split toning codes are v0.28's.
@@ -313,7 +320,7 @@ export function lookFromPhotoCode(text: string): Look {
  *  in v0.26 steps and the half steps in byte 63 (firmware ex_cd1). lookFromPhotoCode reads it back. */
 export function photoCodeOf(l: Look): string {
   const bank = emptyBank(); bank[0][0] = l;
-  const rec = profilesBin(bank, 28).slice(32, 96);
+  const rec = profilePrefix(bank, 28).slice(32, 96);
   let half = 0;
   for (const [at, bit] of [[54, 1], [56, 2]] as const) {
     const v = (rec[at] << 24) >> 24;

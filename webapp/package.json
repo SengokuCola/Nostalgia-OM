@@ -1,7 +1,7 @@
 {
   "name": "caduceus-looks",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Caduceus for OM-3 Control Panel: make and share OM3MOD/LOOKS.BIN film looks (static site)",
   "license": "Apache-2.0",
   "type": "module",
@@ -9,10 +9,14 @@
     "dev": "vite",
     "gen-library": "node scripts/gen-library.mjs",
     "build": "tsc --noEmit && vite build",
+    "package:win": "tauri build --bundles nsis -- --locked",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "package:edge": "node design/build.mjs && node desktop/package.mjs",
+    "build:tauri": "tsc --noEmit && vite build --outDir dist-tauri && node desktop/tauri-help.mjs"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.12.6",
     "@types/node": "^24.0.0",
     "typescript": "~5.9.3",
     "vite": "^7.1.0",

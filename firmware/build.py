@@ -32,8 +32,10 @@ class P:                                   # toolchain and stock identity (set f
     STOCK = None
 
 LAYOUT = HERE / 'vendor' / 'caduceus-bundles-layout.json'    # Caduceus (Apache-2.0) bundle-table layout
-HOOKS = {'.hook_cc_recdisp': (0x60cbfa42, bytes.fromhex('dd055df4ff3018')),
+HOOKS = {'.hook_fb_clock': (0x610fd05c, bytes.fromhex('cde9020004')),
+         '.hook_fb_touch': (0x611998f1, bytes.fromhex('96fcccb4225061')),
          '.hook_fb_osd': (0x6021111f, bytes.fromhex('5808cdded6c00c')),
+         '.hook_cc_recdisp': (0x60cbfa42, bytes.fromhex('dd055df4ff3018')),
          '.hook_fb_key': (0x610b9fdb, bytes.fromhex('43049f009e')),
          '.hook_sb_done': (0x6054c30f, bytes.fromhex('f1ecf064803e')),
          '.hook_af_write': (0x609a0e4f, bytes.fromhex('fc83e4ab3ea3')),
@@ -148,6 +150,11 @@ DATA = {0x611d16c2: (bytes.fromhex('fcdc48c65461ca10'), bytes.fromhex('fcdca0ca5
         # Picture Mode's idle timer (id 500): mov 8000,d1 -> mov 30000,d1 at every id-500 arm in 0x611c20ad..0x611c3cc2.
         # The white balance screen just after it keeps 8000, as do the others. Signed 16-bit: 32767 ms max.
         **{a: (bytes.fromhex('2d401f'), bytes.fromhex('2d3075')) for a in PM_IDLE_SITES},
+        # Right-aligned names on plain version rows. Keep their right edge
+        # beside the colon while making room for the complete Nostalgia-OM label.
+        **{0x61420000 + 16 * i + offset: (struct.pack('<4h', x, y, 160, 62), struct.pack('<4h', x-160, y, 320, 62))
+           for i, y in enumerate((205, 269, 333, 173, 237, 301, 365))
+           for offset, x in ((0, 213), (8, 263))},
         # fwver 1: the Firmware Version page's value boxes (x, y, w, h shorts; research/NOTES.md "Our version on the
         # Firmware Version screen"): the 7 rows' plain place (x 477; the x 427 place is the update view's) 80 px ->
         # 300 px wide, so our line's value shows whole. The camera's own "1.1" sits at the box's left as before.
@@ -236,9 +243,47 @@ def db(b):
     return ''.join(' .byte ' + ','.join(f'0x{x:02x}' for x in b[i:i + 16]) + '\n' for i in range(0, len(b), 16))
 
 
-def build(defaults, testfile, out, *, version=None, without_sunlit=False):
+def arrange_shooting_readouts(main):
+    """Move the native photo HUD groups in both Genifa layouts (800 and 900 wide).
+    Each entry holds two signed x/y/w/h rectangles. Move the alternate widgets,
+    selection plates and scale marks together with their live readouts.
+    """
+    def move(first, last, delta800, delta900, dy=0):
+        for address in range(first, last + 1, 16):
+            for offset, dx, width in ((0, delta800, 800), (8, delta900, 900)):
+                pos = address - P.BASE + offset
+                x, y, w, h = struct.unpack_from('<4h', main, pos)
+                assert 0 < w <= width and 0 < h <= 600
+                assert 0 <= x + dx <= width - w and 0 <= y + dy <= 600 - h, hex(address)
+                struct.pack_into('<2h', main, pos, x + dx, y + dy)
+
+    # Top row: connectivity, movie format, aspect/quality, remaining shots/time.
+    move(0x6147c81a, 0x6147c93a, -432, -522)  # movie formats and selection plate
+    move(0x6147c96a, 0x6147c97a, -48, -96)   # still quality
+    move(0x6147c99a, 0x6147c9ba, -48, -96)   # aspect and its alternate values
+    move(0x6147c7ba, 0x6147c7ea, 384, 446)   # remaining time/count and their variants
+    move(0x6147c9ca, 0x6147ca4a, 384, 446)
+    # AF mode and stabilisation share the second status line on the right.
+    move(0x614781c8, 0x614781c8, -150, -150, -19)
+    move(0x61478168, 0x61478168, -2, -2, -259)
+    move(0x6147926c, 0x6147926c, -2, -2, -259)
+    # Bottom row: mode, shutter, aperture, ISO, exposure compensation and meter.
+    move(0x61474982, 0x614749a2, 0, 8)
+    move(0x61474952, 0x61474972, 0, -16)
+    move(0x61474322, 0x61474322, 0, -16)
+    move(0x61474922, 0x61474942, 0, -29)
+    move(0x61474312, 0x61474312, 0, -29)
+    move(0x614742d2, 0x614742f2, -286, -343)
+    move(0x61474342, 0x614743b2, -286, -343)
+    move(0x61474302, 0x61474302, 162, 160)
+    move(0x614743c2, 0x61474912, 162, 160)
+
+
+def build(defaults, testfile, out, *, version=None, without_sunlit=False, highlight_trial=False):
     without_sunlit = without_sunlit or not (HERE / 'src' / 'sunlit.lut').is_file()
     assembler_flags = ['--defsym', 'OM3_NO_SUNLIT=1'] if without_sunlit else []
+    if highlight_trial:
+        assembler_flags += ['--defsym', 'OM3_HIGHLIGHT_TRIAL=1']
     out = Path(out); out.mkdir(parents=True, exist_ok=False)
     lo, span = range_table()
     dflt, test = make_file(defaults), make_file(testfile)
@@ -362,10 +407,9 @@ def build(defaults, testfile, out, *, version=None, without_sunlit=False):
         return bytes(a<<6 | b<<4 | c<<2 | d for a,b,c,d in
                      zip(levels[::4], levels[1::4], levels[2::4], levels[3::4]))
 
-    face = ImageFont.truetype('DejaVuSansMono.ttf', 15)
-    letters = b''.join(packed_text((12, 18), chr(code), face, (1,14), 'ls') for code in range(32,127))
-    labels = b''.join(packed_text((132,21), label, ImageFont.truetype(zh_cn.FONT, px, index=2), anchor='lt')
-                      for label, px in [('胶卷盒',19), ('OK 应用',16)])
+    face = ImageFont.truetype('DejaVuSansCondensed-Bold.ttf', 19)
+    advances = bytes(max(3,round(face.getlength(chr(c)))) for c in range(32,127))
+    letters = b''.join(packed_text((24, 32), chr(code), face, (0,23), 'ls') for code in range(32,127))
     # Match the loaded bank by name, including reordered and renamed slots.
     looks = [
         ('', '自定义胶卷配方'), ('Portra 400', '暖调柔光，自然肤色'),
@@ -383,132 +427,55 @@ def build(defaults, testfile, out, *, version=None, without_sunlit=False):
     alphabet = sorted(set(''.join(caption for _, caption in looks)))
     # Use a common baseline from native glyph extents, including descenders.
     # Keep one pixel clear on each side around the ink.
-    caption_face = ImageFont.truetype(zh_cn.FONT, 16, index=2)
+    caption_face = ImageFont.truetype(zh_cn.FONT, 21, index=2)
     boxes = [caption_face.getbbox(ch, anchor='ls') for ch in alphabet]
     top = min(box[1] for box in boxes)
     bottom = max(box[3] for box in boxes)
-    baseline = (20 - (bottom-top))//2 - top
+    baseline = (30 - (bottom-top))//2 - top
     caption_glyphs = bytearray()
     for ch, (left, upper, right, lower) in zip(alphabet, boxes):
-        x = (20 - (right-left))//2 - left
-        assert 1 <= x+left and x+right <= 19
-        assert 1 <= baseline+upper and baseline+lower <= 19
-        caption_glyphs.extend(packed_text((20,20), ch, caption_face,
+        x = (24 - (right-left))//2 - left
+        assert 1 <= x+left and x+right <= 24
+        assert 0 <= baseline+upper and baseline+lower <= 30
+        caption_glyphs.extend(packed_text((24,30), ch, caption_face,
                                           xy=(x,baseline), anchor='ls'))
     captions = b''.join(bytes(alphabet.index(ch)+1 for ch in caption).ljust(12, b'\0')
                         for _, caption in looks)
     assert all(len(caption) <= 10 for _, caption in looks)
-    # One indexed master cartridge. Its two paper inks are selected by stock name.
-    # Ten metal levels are shared by every stock; the paper curves around the spool.
-    import math
-    can = Image.new('L', (76, 120), 3)
-    pen = ImageDraw.Draw(can)
-    pen.ellipse((8, 107, 67, 115), fill=1)
-    pen.polygon([(48,30),(72,25),(70,77),(64,80),(60,89),(48,92)], fill=5)
-    for y in range(34,76,9):
-        pen.rectangle((65,y,67,y+3), fill=3)
-    pen.rounded_rectangle((23,4,46,19), radius=3, fill=5)
-    for x in range(25,46,4):
-        pen.line((x,6,x,16), fill=9)
-    pen.ellipse((23,2,46,8), fill=11, outline=7)
-    pen.ellipse((29,4,41,6), fill=1)
-    for x in range(9,61):
-        u = (x-9)/51
-        bow = math.sin(math.pi*u)
-        shade = min(7, round(7*math.sin(math.pi*(u**0.72))))
-        lip = round(bow*4)
-        pen.line((x,17+lip,x,105+lip), fill=4+shade)
-        pen.line((x,27+lip,x,91+lip), fill=16+shade)
-        pen.line((x,62+lip,x,85+lip), fill=24+shade)
-        pen.line((x,88+lip,x,90+lip), fill=24+shade)
-        if 17<x<49 and x%7 in (0,2,3):
-            pen.line((x,94+lip,x,99+lip), fill=2)
-    # From above, the shell hides the bottom face. Only the rolled front lip
-    # projects below it. Its upper and lower edges follow the same ellipse.
-    for x in range(6,64):
-        u = (x - 34.5) / 28.5
-        front = 104 + round(5 * math.sqrt(max(0, 1 - u*u)))
-        pen.line((x,front-1,x,front+2), fill=5)
-        pen.point((x,front), fill=9 if 15 <= x <= 43 else 7)
-        pen.point((x,front+2), fill=2)
-    pen.ellipse((6,15,63,25), fill=2, outline=7)
-    pen.arc((7,15,62,23), 10,170, fill=11, width=2)
-    pen.ellipse((7,13,63,23), fill=6, outline=10)
-    pen.ellipse((23,14,47,20), fill=2, outline=8)
-    pen.rectangle((25,10,44,17), fill=5)
-    for x in range(27,45,4):
-        pen.line((x,10,x,16), fill=9)
-    inks = [
-        ('aaa69c','586c73'), ('edbb43','583c62'), ('ffc034','a72b53'),
-        ('ecc049','c54b32'), ('f4c344','28272c'), ('dbd4bd','365a87'),
-        ('d89851','883f32'), ('c8c8b9','944c36'), ('c6aa65','294965'),
-        ('d4dace','176958'), ('dce1bd','36804b'), ('cdd1b9','514c5e')]
-    # Same-family speeds share a wrapper. A renamed bank entry uses the neutral one.
-    families = [0,1,1,1,2,3,4,5,6,7,8,8,9,9,9,9,10,10,10,10,11,0]
-    assert len(families) == len(looks)
-    palettes = bytearray()
-    for paper, stripe in inks:
-        grays = [16,22,28,38,44,59,73,90,112,138,166,201,216,225,232,240]
-        colours = [(v,v,v) for v in grays]
-        for ink in (paper,stripe):
-            rgb = bytes.fromhex(ink)
-            colours.extend(tuple(round(c*(0.50+0.50*k/7)) for c in rgb) for k in range(8))
-        for rgb in colours:
-            y,cb,cr = Image.new('RGB',(1,1),rgb).convert('YCbCr').getpixel((0,0))
-            palettes.extend((y,cb,y,cr))
-    # Typeset a short series label directly on the cylindrical paper.
-    stamps = []
-    for name,_ in looks:
-        bits = Image.new('1',(48,12))
-        short = name.split()[0].upper()[:8] if name else '35 MM'
-        ImageDraw.Draw(bits).text((1,1), short, font=ImageFont.truetype('DejaVuSansCondensed-Bold.ttf',9),
-                                  fill=1,anchor='lt')
-        stamps.append(bits.tobytes())
-    # Literal packets carry 1..128 bytes. Match packets carry a 16-bit backwards
-    # distance and 3..130 bytes. Only this build-generated stream is decoded.
-    from collections import defaultdict, deque
-    atlas = letters + labels + caption_glyphs + can.tobytes()
-    assert len(atlas) <= 3*32768 - 256*144*2
-    positions = defaultdict(lambda: deque(maxlen=24))
-    stream, pending = bytearray(), bytearray()
-    def flush_literals():
-        if pending:
-            stream.append(len(pending)-1)
-            stream.extend(pending)
-            pending.clear()
-    i = 0
-    while i < len(atlas):
-        count, distance = 1, 0
-        for previous in reversed(positions[atlas[i:i+3]]):
-            n = 3
-            while n < min(130, len(atlas)-i) and atlas[i+n] == atlas[previous+n]:
-                n += 1
-            if n > count:
-                count, distance = n, i-previous
-        if distance:
-            flush_literals()
-            stream.extend(struct.pack('<BH', 128+count-3, distance))
-        else:
-            pending.append(atlas[i])
-            if len(pending) == 128:
-                flush_literals()
-        for pos in range(i, i+count):
-            if pos+3 <= len(atlas):
-                positions[atlas[pos:pos+3]].append(pos)
-        i += count
-    flush_literals()
-    definitions = [f'.set FB_COMMA, {alphabet.index(chr(0xff0c))+1}', '.set fb_font, FS_SRC+73728',
-                   f'.set fb_panel, fb_font+{len(letters)}',
-                   f'.set fb_caption_glyphs, fb_panel+{len(labels)}',
-                   f'.set fb_can, fb_caption_glyphs+{len(caption_glyphs)}']
-    (out / 'fb_art.inc').write_text('\n'.join(definitions)+'\nfb_atlas:\n'+db(stream)+
-        'fb_atlas_end:\nfb_families:\n'+db(bytes(families))+'fb_stamps:\n'+db(b''.join(stamps))+
-        ' .balign 4\nfb_palettes:\n'+db(palettes)+'fb_names:\n'+db(b''.join(name.encode().ljust(16,b'\0') for name,_ in looks))+
-        'fb_captions:\n'+db(captions)+f'.set FB_LOOK_COUNT, {len(looks)}\n')
+    from film_gate import gate_labels, gate_frames, gate_surround
+    tiles, palettes, offsets = gate_labels([name for name, _ in looks])
+    hint_face = ImageFont.truetype(zh_cn.FONT, 17, index=2)
+    hints = []
+    for word in ('开', '关'):
+        bits = Image.new('1', (240, 30))
+        pen = ImageDraw.Draw(bits)
+        pen.ellipse((1,9,9,17), fill=int(word == '开'), outline=1)
+        pen.text((17,6), '滤镜'+word, font=hint_face, fill=1, anchor='lt')
+        pen.text((238,6), '按住 OK 切换', font=hint_face, fill=1, anchor='rt')
+        hints.append(bits.tobytes())
+    # ROM artwork is read directly. Opening the picker never borrows focus/card pixels.
+    def asset(label, data):
+        return ' .balign 4\n'+label+':\n'+db(data)
+    surround, surround_palette, frame_runs, frame_words, frame_palette = gate_surround()
+    from film_style_tables import tables as film_style_tables, light_table
+    (out/'film_styles.lut').write_bytes(film_style_tables())
+    (out/'film_light.lut').write_bytes(light_table())
+    assets = [('fb_rim_runs',frame_runs), ('fb_rim_words',frame_words), ('fb_rim_palette',frame_palette), ('fb_surround',surround), ('fb_surround_palette',surround_palette), ('fb_font',letters), ('fb_advances',advances),
+              ('fb_caption_glyphs',caption_glyphs), ('fb_tags',tiles),
+              ('fb_palettes',palettes), ('fb_tag_offsets',offsets),
+              ('fb_hint_on',hints[0]), ('fb_hint_off',hints[1]),
+              ('fb_lanes',gate_frames()), ('fb_captions',captions),
+              ('fb_names',b''.join(name.encode().ljust(16,b'\0') for name,_ in looks))]
+    scp = Image.new('1',(58,30))
+    ImageDraw.Draw(scp).text((1,1), '胶卷', font=ImageFont.truetype(zh_cn.FONT,27,index=2), fill=1, anchor='lt')
+    scp = bytes(10 if ink else 0 for ink in scp.getdata())
+    (out/'fb_scp.inc').write_text(db(mkicons.encode11(scp,58,30)))
+    (out/'fb_art.inc').write_text(' .section .fb_runtime,"ax"\n' +
+        ''.join(asset(k,v) for k,v in assets) + f'.set FB_LOOK_COUNT, {len(looks)}\n')
     subprocess.run([P.AS, *assembler_flags, '-I', out, '-I', HERE / 'src', '-o', out / 'p.o', HERE / 'src' / 'editor.s'], check=True)
     subprocess.run([P.LD, '-T', HERE / 'src' / 'editor.ld', '-o', out / 'p.elf', out / 'p.o'], check=True)
     blobs = {}
-    for s in list(HOOKS) + ['.ext1', '.ext4', '.ext10', '.ext6', '.ext5', '.ext3', '.ext8', '.ext9', '.ext2', '.ext7', '.ext11', '.ext12', '.ext13']:
+    for s in list(HOOKS) + ['.fb_runtime', '.ext1', '.ext4', '.ext10', '.ext6', '.ext5', '.ext3', '.ext8', '.ext9', '.ext2', '.ext7', '.ext11', '.ext12', '.ext13']:
         subprocess.run([P.OBJCOPY, '-O', 'binary', '-j', s, out / 'p.elf', out / (s[1:] + '.bin')], check=True)
         blobs[s] = (out / (s[1:] + '.bin')).read_bytes()
     raw = Path(P.STOCK).read_bytes()
@@ -522,6 +489,7 @@ def build(defaults, testfile, out, *, version=None, without_sunlit=False):
         assert bytes(m[o(addr):o(addr) + len(stock)]) == stock and len(blobs[s]) == len(stock), (s, blobs[s].hex())
     nm0 = subprocess.run([P.TC / 'binutils/nm-new', out / 'p.elf'], capture_output=True, text=True).stdout
     sy = {l.split()[2]: int(l.split()[0], 16) for l in nm0.splitlines() if len(l.split()) == 3}
+    arrange_shooting_readouts(m)
     for a, k in RECORD_KEYS.items():
         assert struct.unpack_from('<H', m, o(a))[0] == k
     for a, (stock, name) in WORDS.items():
@@ -627,22 +595,11 @@ def build(defaults, testfile, out, *, version=None, without_sunlit=False):
         assert bytes(m[o(a):o(a) + 6]) == b'\xfc\xdc' + struct.pack('<I', IT) and bytes(m[o(c):o(c) + 2]) == b'\xa5\x11', hex(a)
         struct.pack_into('<I', m, o(a) + 2, sy['it_tab'])
         m[o(c) + 1] = 31                         # v0.25: + Glow / Clarity, Frame; v0.28 + Halation, Tone Balance; rgb-curves + RG_IT; + MX_IT; better grain g2 + GS_IT, SZ_IT
-    # v0.24 film list: item 111's option lists (title / left column / strip, 48 x 12 B) -> fl_l0..2 (the stock 48, then
-    # the films, written by editor.s), and setting 901's value table entry (COLOR 1-4) -> fl_rec, 4 + 20 records
-    e = struct.unpack_from('<10I', m, o(sy['it_tab']))
-    assert e[0] == 111 and (e[3], e[6], e[9]) == (48, 48, 48), e
-    for at, name in ((8, 'fl_l0'), (20, 'fl_l1'), (32, 'fl_l2')):
-        src = struct.unpack_from('<I', m, o(sy['it_tab']) + at)[0]
-        m[o(sy[name]):o(sy[name]) + 48 * 12] = m[o(src):o(src) + 48 * 12]
-        struct.pack_into('<II', m, o(sy['it_tab']) + at, sy[name], 48 + 20)
+    # Film Box sends film IDs directly to sx_set. Keep Picture Mode and its
+    # super-control-panel dial on the stock enumeration and current COLOR value.
+    assert m[o(sy['it_tab']):o(sy['it_tab']) + 40] == m[o(IT):o(IT) + 40]
     assert struct.unpack_from('<3I', m, o(0x6152f8dc)) == (901, 4, 0x6152f850)
-    assert bytes(m[o(0x6152f850):o(0x6152f850) + 80]) == bytes(m[o(sy['fl_rec']):o(sy['fl_rec']) + 80])
-    struct.pack_into('<II', m, o(0x6152f8e0), 24, sy['fl_rec'])
-    # sd3: the super control panel's dial-step table, entry 5 (key 901: COLOR 1-4) -> fl_scr (the stock four, then the films)
     assert struct.unpack_from('<4I', m, o(0x615384b4) + 80) == (901, 4, 54, 0x61538464)
-    assert bytes(m[o(0x61538464):o(0x61538464) + 80]) == bytes(m[o(sy['fl_scr']):o(sy['fl_scr']) + 80])
-    struct.pack_into('<I', m, o(0x615384b4) + 84, 24)
-    struct.pack_into('<I', m, o(0x615384b4) + 92, sy['fl_scr'])
     # film test 4: the held-OK reset sends its event to the rows listed for the selected picture mode (0x611c3c07
     # `add 0x61536324,d1` over 8 entries, bound `cmp 8,d1` at 0x611c3cae): fl_rtab = the stock 8 + the films
     assert struct.unpack_from('<HHI', m, o(0x61536324) + 8 * 4) == (54, 5, 0x61536310)
@@ -855,13 +812,15 @@ def build(defaults, testfile, out, *, version=None, without_sunlit=False):
     # v0.27 Creative Dial rows (editor.s "dial rows"): options Normal / COLOR 1-4 / FILM 1-20 (value DV0 + code)
     # dr3 (owner): each position -> Normal (its own mode) / CRT / ART / COLOR / MONO; on COLOR it keeps its own choice
     DV1, OBJ = 3900, 0x61570e04
-    dcodes = [0, 1, 2, 3, 4]
+    dcodes = [0, 1, 2, 3, 4, 5]
     NOPT = len(dcodes)
     dl = sy['dm_list']
-    assert list(struct.unpack_from('<5H', m, o(dl))) == [DV1 + c for c in dcodes] and sy['dm_lend'] - dl == 10
+    assert list(struct.unpack_from(f'<{NOPT}H', m, o(dl))) == [DV1 + c for c in dcodes] and sy['dm_lend'] - dl == 2 * NOPT
     def dstr(c):                # picker titles: "Normal", then ST_DC0 + 0..3 ("CRT" ...); cells / rows: pictures 0x7fe7..
+        if c == 5:
+            return sy['FB_TITLE']
         return 616 if c == 0 else 0x7f48 + c - 1
-    lab = b''.join(struct.pack('<3I', DV1 + c, ((0x7fe7 + i) << 16) | 0xc, OBJ) for i, c in enumerate(dcodes))
+    lab = b''.join(struct.pack('<3I', DV1 + c, (dstr(c) << 16 | 4) if c == 5 else ((0x7fe7 + c) << 16 | 0xc), OBJ) for c in dcodes)
     tit = b''.join(struct.pack('<3I', DV1 + c, (dstr(c) << 16) | 4, OBJ) for c in dcodes)
     hlp = b''.join(struct.pack('<3I', DV1 + c, (0x7f4c << 16) | 4, OBJ) for c in dcodes)
     m[o(sy['dm_tit']):o(sy['dm_tit']) + 12 * NOPT] = tit
@@ -1216,6 +1175,16 @@ def build(defaults, testfile, out, *, version=None, without_sunlit=False):
     assert vf_end <= 0x6103f000, hex(vf_end)
     struct.pack_into('<I', m, o(0x60045e9c), vf_end)
     print('BUILT IN: GUIDES, LABELS, TONES at 0x%x..0x%x, loader end word 0x%x' % (EXT12[1], at, vf_end))
+    # Only section 1 grows for the picker code and art. The camera's image
+    # buffer manager supplies the scanout memory at runtime.
+    def extend_section(start, limit, end_word, data):
+        end = (start + len(data) + 0x7ff) & ~0x7ff
+        assert start < end <= limit and set(m[o(start):o(end)]) == {0xff}
+        assert m[o(end_word)-2:o(end_word)] == bytes.fromhex('fccc')
+        assert struct.unpack_from('<I', m, o(end_word))[0] == start
+        struct.pack_into('<I', m, o(end_word), end)
+        m[o(start):o(end)] = data.ljust(end-start, b'\0')
+    extend_section(0x6031f000, 0x60357000, 0x60045e84, blobs['.fb_runtime'])
     hdr, trl = mc['hdr'], bytearray(mc['trl'])
     struct.pack_into('<I', trl, 28, 0)
     struct.pack_into('<I', trl, 28, (-(wordsum(hdr) + wordsum(bytes(m)) + wordsum(bytes(trl)))) & 0xFFFFFFFF)
@@ -1255,6 +1224,7 @@ def make_xblock(out, sy, xtag, assembler_flags):
                TG_OWN=sy['tg_own'], TG_BAD=sy['tg_bad'], GS_EFF=sy['gs_eff'],
                VG_RUN=sy['vg_run'], VG_LVL=sy['vg_lvl'], VG_NT=sy['vg_nt'], VG_ND=sy['vg_nd'],
                CC_RUN=sy['cc_run'], CC_CARD=sy['MF_CFG_CARD'],
+               STYLE_SLOT=sy['film_style_slot'], STYLE_RUN=sy['film_style_run'],
                PT_N=sy['pt_n'], PT_US=sy['pt_us'], PT_MX=sy['pt_mx'])    # glow-shots-1: our passes' timing (log)
     if 'sunlit_run' in sy:
         ext['SUN_RUN'] = sy['sunlit_run']
@@ -1315,8 +1285,9 @@ if __name__ == '__main__':
     ap.add_argument('--toolchain', required=True, help='binutils build directory for mn10300-elf')
     ap.add_argument('--out', required=True, help='new output directory')
     ap.add_argument('--version', help='override the firmware version string for the build')
+    ap.add_argument('--highlight-trial', action='store_true', help='enable the opt-in HILAT.TXT still highlight trial')
     ap.add_argument('--without-sunlit', action='store_true', help='build without the experimental Sunlit Foliage lookup')
     a = ap.parse_args()
     P.TC = Path(a.toolchain); P.AS, P.LD, P.OBJCOPY = P.TC / 'gas/as-new', P.TC / 'ld/ld-new', P.TC / 'binutils/objcopy'
     P.STOCK = a.stock
-    build({}, {}, a.out, version=a.version, without_sunlit=a.without_sunlit)
+    build({}, {}, a.out, version=a.version, without_sunlit=a.without_sunlit, highlight_trial=a.highlight_trial)

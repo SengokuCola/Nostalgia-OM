@@ -68,7 +68,7 @@ def elf_sections(path):
 
 def patched_sections(build):
     secs, _ = elf_sections(build / 'p.elf')
-    return {n: (a, s) for n, (a, s, _) in secs.items() if n.startswith((HOOK_PREFIX, EXT_PREFIX))}
+    return {n: (a, s) for n, (a, s, _) in secs.items() if n.startswith((HOOK_PREFIX, EXT_PREFIX)) or n == ".fb_runtime"}
 
 
 @functools.lru_cache(maxsize=None)
@@ -147,7 +147,17 @@ def known_intervals(build, m):
     iv.append((LOADER_END_WORD - MAIN_BASE, LOADER_END_WORD - MAIN_BASE + 4))
     if BUILTIN_START < end <= EXT_SPACE_LIMIT:
         iv.append((BUILTIN_START - MAIN_BASE, end - MAIN_BASE))
+    runtime = patched_sections(build).get('.fb_runtime')
+    if runtime:
+        for word, start, length in picker_extents(runtime):
+            iv.append((word - MAIN_BASE, word - MAIN_BASE + 4))
+            iv.append((start - MAIN_BASE, start - MAIN_BASE + length))
     return iv
+
+
+def picker_extents(runtime):
+    # Only code and artwork are boot-loaded. DMA pages are acquired at runtime.
+    return ((0x60045e84, runtime[0], (runtime[1]+2047) & ~2047),)
 
 
 def site_positions(build, stock):
@@ -270,6 +280,17 @@ def loader_end(build, stock):
         fails.append(f'loader end word is {hx(word)}, below {hx(need)} ({why}): code or data past it is not loaded')
     if word > EXT_SPACE_LIMIT:
         fails.append(f'loader end word {hx(word)} is past the proven limit {hx(EXT_SPACE_LIMIT)}')
+    runtime = patched_sections(build).get('.fb_runtime')
+    if runtime:
+        secs, elf = elf_sections(build / 'p.elf')
+        _, n, off = secs['.fb_runtime']
+        for loc, start, size in picker_extents(runtime):
+            src = start - MAIN_BASE
+            desired = elf[off:off+n] if start == runtime[0] else b'FPB2'
+            if (struct.unpack_from('<I', m, loc-MAIN_BASE)[0] != start+size
+                    or m[src:src+size] != desired.ljust(size, bytes(1))
+                    or s[src:src+size] != bytes([255])*size):
+                fails.append(f'film picker loader or contents differ at {hx(start)}')
     return fails
 
 
@@ -281,7 +302,7 @@ def loader_end(build, stock):
 # from a hook or patch site in sections 1..5 must not reach code or data in a later section (.ext11..13 are section
 # 6) unless it does the same check first (research/NOTES.md, "Crop round 7: the boot loop"; crop round 7 boot-looped
 # the camera this way). A gate is `mov (SEC_READY),dN; and BIT,dN; beq/bne` right before the jump or call.
-SECTION_ENDS = (0x6031f000, 0x60718800, 0x60820000, 0x60a8f800, 0x60adb800, EXT_SPACE_LIMIT, 0x6164b000, 0x617e4800,
+SECTION_ENDS = (0x60357000, 0x60718800, 0x60820000, 0x60ad6000, 0x60adb800, EXT_SPACE_LIMIT, 0x61691800, 0x617e4800,
                 0x619a9800, 0x61aa4800)
 EARLY_SECTIONS = 5
 SEC_READY = 0xa32de58c

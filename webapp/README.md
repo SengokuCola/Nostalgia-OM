@@ -2,6 +2,8 @@
 
 Modified by SengokuCola for the Caduceus for OM-3 fork.
 
+The darkroom workbench is the default LookLab page in both the local web app and the static `looklab/` build.
+
 A static web app for making, previewing and sharing the films of
 [Caduceus for OM-3](https://github.com/androidfanman/caduceus-om3) (the creative profiles the camera lists as FILM
 1–20). Everything runs in the browser: there is no backend, and no photo or look is ever uploaded. The live site is
@@ -17,8 +19,9 @@ cakelesscoder's own tool for the E-P7.
 - **Editor**: Hue / Lightness / Saturation ±5 per colour, Tone (Highlights / Shadows / Midtones ±7, Blacks / Whites
   ±5), the camera's Contrast, Sharpness and Shading, a WB shift (±5), split toning (v0.26, `src/split.ts`) and the
   Extras: Noise Filter, Glow / Clarity, lens vignette correction and Grain. Names are up to 15 characters.
-- **Lists**: named sets of all 20 films (localStorage `caduceus.om3.lists.v1`; the looks from before lists are
-  "Default"), with Save as…, Rename and Delete; the current list is the one being edited.
+- **Roll library and film boxes**: the left shelf holds reusable rolls and their labels. The top bar selects a box
+  of up to 20 rolls for the camera. A box preset keeps its own slot order and shares its rolls with the library.
+  Edits to a roll appear in every box using it. Saved lists migrate to `caduceus.om3.cabinet.v1` when opened.
 - **Film sims**: our own film looks (`src/data/om3films.json`, made by `scripts/films.py` from hand-written recipes),
   the 20 defaults first.
 - **Preview**: turns hue the OM-3 way (+ toward the clockwise neighbour) and includes Contrast, Sharpness, Shading,
@@ -65,6 +68,31 @@ VITE_DEFAULT_CAMERA=om3 npx vite build   # static site in dist/; copy it to ../l
 Before publishing LookLab, sync
 `public/LICENSE` and `public/NOTICE` from the repository root. Vite includes these files in the static
 build alongside the existing font licences and sample-photo credits.
+
+## Windows app
+
+The Windows app uses Tauri 2 and the system WebView2 Runtime. Photos, fonts,
+help, and the editor are bundled locally. Export a LookLab `.om3.json`
+backup from the browser or the earlier Edge app and open it in the Tauri app
+to transfer film banks. Subsequent launches use the Tauri app's own saved data.
+
+On Windows, install the Rust MSVC toolchain and Visual Studio C++ Build Tools
+with the Windows SDK, then run the following from `webapp/`.
+
+```powershell
+npm ci
+npm run package:win
+```
+
+The standalone executable is `src-tauri/target/release/looklab.exe`. The
+current-user NSIS installer is under `src-tauri/target/release/bundle/nsis/`.
+To run a development window with Vite, use `npx tauri dev`.
+
+On Nostalgia-OM, a published GitHub Release gets the LookLab Windows x64 NSIS
+installer and `LookLab-windows-x64.exe`. For a `fork-v*` tag, the release
+workflow builds LookLab after publishing the firmware kit. The executables are
+also available in the workflow's `looklab-windows-x64` artifact.
+The earlier C# Edge launcher can still be built with `npm run package:edge`.
 
 ## Self-host on a NAS (Docker)
 

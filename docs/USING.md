@@ -21,8 +21,9 @@ This page is for **v0.40.2**, the latest version. Not installed yet? Start with 
 
 ## Choosing a film
 
-In the Film Box test build, open the still-photo **Button Function** settings, set the arrow pad to **Direct Function**, and assign **Film Box** to an arrow key. With the creative dial on **COLOR**, press that key during live view to open the film picker. The picker temporarily hides the shooting HUD. Each film has a cartridge icon and a short description; unknown names show a custom-recipe label. Turn either dial to browse, press **OK** to apply the displayed film, or half-press the shutter to return to shooting with your previous film.
+**Film Box test firmware.** In the still-photo **Button Function** settings, set the arrow pad to **Direct Function** and assign **Film Box** to an arrow key. Press that key in still-photo live view to open the picker. Alternatively, in the same Button Function menu, assign **Film Box** directly to a front creative dial position (CRT, ART, COLOR or MONO). In still-photo live view, turning into that position opens the picker on the COLOR family. After closing the picker, turn away and back to open it again. The dial assignment works independently of the arrow pad. With Film Box assigned, the still-photo super control panel uses its COLOR cell for Film Box. Tap that cell, or highlight it and press **OK**. Turn either dial or press the arrow keys to apply a film immediately. Up and left select the previous enabled film. Down and right select the next. Hold **OK** to toggle the filter. Tap **OK** or half-press the shutter to close and keep the current selection. Without a Film Box assignment, the panel offers the native COLOR profiles. All 20 film slots are available to the picker, subject to your enabled-film settings.
 
+**Released v0.40.2:**
 1. Turn the creative dial to **COLOR**.
 2. Open **Picture Mode** (from the super control panel or the menu).
 3. The top row lists **COLOR 1–4, then FILM 1–20**. Turn to the film you want.
@@ -113,7 +114,7 @@ Both are in the camera's **Button Function** menu, with the other buttons.
 - **Delete button** (v0.29.3): its row (the trash can, after ▼) takes any function Fn can, in photo and video mode.
   Playback still erases with it; Off keeps it as before.
 - **Creative Dial:** the rows **CRT, ART, COLOR and MONO** are the four positions of the front dial. Set each to
-  **Normal** (its usual mode), **CRT**, **ART**, **COLOR** or **MONO**.
+  **Normal** (its usual mode), **CRT**, **ART**, **COLOR** or **MONO**. The Film Box test firmware also offers **Film Box** on each row.
 - **A film per position:** every position set to COLOR remembers the COLOR 1–4 or FILM 1–20 you pick while the dial is
   on it. Set all four to COLOR and you have four films on the dial.
 - After you switch the camera on, half-press once: that loads your films, and the dial position's setting takes effect
@@ -178,7 +179,7 @@ Mode, Remaining Files, Touch screen; Exposure Level Meter, Subject Detection and
 a row and that item leaves that display; INFO steps through your displays as before. Rear screen only, from the first
 half-press after switch-on; the viewfinder, video and playback are unchanged.
 
-The camera's **Firmware Version** page (wrench tab, page 6) shows Caduceus's version under OM's.
+The camera's **Firmware Version** page (wrench tab, page 6) lists **Nostalgia-OM** with its installed version beneath the camera's own firmware version.
 
 ## Questions
 

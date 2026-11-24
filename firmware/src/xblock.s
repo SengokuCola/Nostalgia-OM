@@ -192,6 +192,9 @@ xb_cap:
                                    * still through the Soft Focus passes (s1 called it after Glow / Halation / Border, so
                                    * a still with any of them kept the camera's strong Shading) */
  .endif
+ call STYLE_SLOT,[d2,d3,a2,a3],28
+ cmp 0,d0
+ bne 2f
  call xb_sunlit,[],0
  cmp 0,d0
  bne 2f
@@ -661,10 +664,11 @@ xb_rec:                           /* `call xb_rec,[d2,d3],12`, a0 = job -> a1 = 
  .set XB_USCLK, 0x98900284        /* glow-shots-1: the camera's us counter (counts down; editor.s USCLK) */
 xb_gs:                           /* `calls` (0,sp) = return, a0 = job */
  movm [d2,d3,a2,a3],(sp)
- add -32,sp                       /* (28) Sunlit for this invocation; (0) call slot, (4) job, (8) level, (12) result, (16) halation 0..5, (20) border 0..5,
+ add -36,sp                       /* (28) Sunlit for this invocation; (0) call slot, (4) job, (8) level, (12) result, (16) halation 0..5, (20) border 0..5,
                                      (24) gentler Shading -5..5 */
  mov a0,(4,sp)
  clr d0
+ mov d0,(32,sp)                   /* style mask and slot */
  mov d0,(28,sp)
  mov d0,(16,sp)
  mov d0,(20,sp)
@@ -683,6 +687,16 @@ xb_gs:                           /* `calls` (0,sp) = return, a0 = job */
  clr d0
  bra 10f
 80:
+ mov (4,sp),a0
+ mov (10276,a0),a0
+ cmp 0,a0
+ beq 82f
+ mov (5352,a0),d0
+ cmp 11,d0
+ bne 82f
+ call STYLE_SLOT,[d2,d3,a2,a3],28
+ mov d0,(32,sp)
+82:
  call xb_sunlit,[],0
  cmp 0,d0
  beq 81f
@@ -769,12 +783,15 @@ xb_gs:                           /* `calls` (0,sp) = return, a0 = job */
  mov (28,sp),d1
  cmp 0,d1
  bne 10f
+ mov (32,sp),d1
+ cmp 0,d1
+ bne 10f
  mov (CC_CARD),d1
  cmp 0,d1
  bne 10f
 90:                               /* no grain: the stock setup, as if called directly */
  mov (4,sp),a0
- add 32,sp
+ add 36,sp
  movm (sp),[d2,d3,a2,a3]
  jmp SF_ENT
 10:
@@ -847,6 +864,17 @@ xb_gs:                           /* `calls` (0,sp) = return, a0 = job */
  call SUN_RUN,[d2,d3,a2,a3],88
  .endif
 19:
+ mov (32,sp),d0
+ cmp 0,d0
+ beq 192f
+ mov (4,sp),a0
+ call xb_rec,[d2,d3],12
+ cmp 0,a1
+ beq 20f
+ mov a1,a0
+ mov (32,sp),d0
+ call STYLE_RUN,[d2,d3,a2,a3],88
+192:
  .if XB_BD
  mov (20,sp),d0                   /* borders: last, so no glow, halo or grain on the border */
  cmp 0,d0
@@ -887,7 +915,7 @@ xb_gs:                           /* `calls` (0,sp) = return, a0 = job */
  mov d2,(PT_MX)
 21:
  mov (12,sp),d0
- ret [d2,d3,a2,a3],48
+ ret [d2,d3,a2,a3],52
 
  .if XB_H0
 /* xb_h0 (v0.28 halation probe h0, experiment): which odd byte of buffer 0x1000 is Cb and which Cr, and whether chroma

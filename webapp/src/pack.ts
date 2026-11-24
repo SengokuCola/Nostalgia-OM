@@ -1,3 +1,5 @@
+import { parseLabel, type BoxLabel } from './boxlabel';
+import { parseFilmEffects, type FilmEffect } from './film-effects';
 import { parseSplit, type Split } from './split';
 import { parseCurves, parseMix, type RgbCurves } from './curves';
 // Pack model (schema "caduceus-pack/1") and its structural parsing. The value vocabulary is the one of the repo's
@@ -62,6 +64,8 @@ export const KELVIN = { lo: 2000, hi: 14000, step: 100, dflt: 5400 } as const;
 export interface FilmWb { mode: Exclude<WbMode, 'auto'>; kelvin?: number }
 
 export interface Look {
+  filmEffects?: FilmEffect[];
+  boxLabel?: BoxLabel;
   name: string;
   notes: string;
   kind: 'colour' | 'mono';
@@ -171,6 +175,8 @@ export function parseLook(v: unknown, what = 'look'): Look {
   }
   return {
     name: v.name,
+    ...(v.filmEffects !== undefined ? { filmEffects: parseFilmEffects(v.filmEffects) } : {}),
+    ...(v.boxLabel !== undefined ? { boxLabel: parseLabel(v.boxLabel) } : {}),
     notes: typeof v.notes === 'string' ? v.notes : '',
     kind,
     hue: intArr(v.hue ?? zeros12(), `${what} hue`),

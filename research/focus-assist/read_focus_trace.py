@@ -37,6 +37,12 @@ def decode(data):
             if outcome == 0:
                 phase['displayed_pairs'] = 2 * ((defmm > 0) - (defmm < 0))
             score = fine = coarse = raw = filtered = None
+        elif version == 2 and outcome == 7:
+            # The writer can snapshot the last contrast state when a phase
+            # sample is unavailable. It is not a measurement for this attempt.
+            if (fine, coarse, raw, filtered) != (EMPTY,) * 4 and (raw > 4 or filtered > 4):
+                raise ValueError(f'Invalid retained split level at attempt {seq}')
+            score = fine = coarse = raw = filtered = None
         elif outcome in (0, 3, 5, 6):
             if raw > 4 or filtered > 4:
                 raise ValueError(f'Invalid split level at attempt {seq}')

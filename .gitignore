@@ -1,3 +1,7 @@
+# Local calibration data
+/firmware/src/sunlit.lut
+/research/sunlit-foliage/sunlit.npz
+
 # never commit firmware: official or modified
 *.BIN
 *.bin

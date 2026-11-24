@@ -1,6 +1,6 @@
 {
   "base": "0819080133f6ca7edd455dfdfa209bd9eed291cc",
-  "patch_sha256": "e80a017bd35cb8ca9c617b641b6b0ff5fce5d0ca01939623764e366d287d2d07",
+  "patch_sha256": "8314e4484f354631fbb633cc495a4081c43edc5384f66df0ff657a70dd966179",
   "files": {
     "emu/checks/check_camera_layout.mjs": {
       "before": null,
@@ -21,6 +21,14 @@
     "emu/src/lab/display.mjs": {
       "before": "931e1505a12adc247f41b93e5e8f47405cb7ae2d58d8d95d192bae0deb878ef2",
       "after": "a0cd0e6b88493b6d7d0c779a71e980e620da326ef44e4a17de9d0cdb91a98af9"
+    },
+    "emu/src/lab/play.mjs": {
+      "before": "0c9f5b128b2b6141203368fe27bece1bbf7ed8b3d4ac3fa0f808f76e3aaadf74",
+      "after": "2f005840c960681dcc2669385d5781de721984e534430af8b39d98a38a0e0218"
+    },
+    "emu/src/lab/menu.mjs": {
+      "before": "3e563828ba9e6eb8b6d5ba7cbe68a324ee2ae63c64c6c323a0190799f3ab0029",
+      "after": "cf90827f42dbe62f2411a86cae30f2787a6501b0bddd122e8164b65ffa12489b"
     }
   }
 }

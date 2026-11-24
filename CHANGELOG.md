@@ -4,6 +4,13 @@ What changed in each version of Caduceus for OM-3, newest first. To install or u
 [install guide](docs/INSTALL.md). When you update, always copy the new `GUIDES.BIN` with the firmware, and keep your
 `LOOKS.BIN`, `EDITS.BIN` and `BUNDLES.BIN` (from v0.29 only the firmware: the rest is built in or kept in the camera).
 
+## Nostalgia-OM v0.2.0 · 2026-11-24
+
+- **走片窗胶卷盒**：左边滚动选卷，右边实时查看完整构图。拨轮和方向键都能切换，选到即应用；按住 OK 可开关滤镜，对照当前画面。
+- **取景和切卷更流畅**：改善连续拨轮和反向切换时的跟手感，减少预览卡顿和撕裂。胶卷盒仅在机背屏幕显示，举起相机仍可使用原来的电子取景器。
+- **胶卷入口更顺手**：可从超级控制面板进入，也可以把前部色轮设为胶卷盒入口。
+- **LookLab 暗房工作台**：可以给每卷自定义盒签和中文描述，整理常用胶卷、组合不同的胶卷盒。换卷时更新卡上的配方即可，原有的 `LOOKS.BIN` 仍可使用。
+
 ## At a glance
 
 | Version | Released | What's new |

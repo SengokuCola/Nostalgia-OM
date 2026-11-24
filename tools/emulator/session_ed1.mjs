@@ -113,6 +113,7 @@ function getv(id) {
   dd.m.setRegs(saved);
   return v;
 }
+let heldKey=false;
 for (const t of SCRIPT.split(/\s+/).filter(Boolean)) {
   if (process.env.WFROM && t === process.env.WFROM) globalThis.__armed = true;
   curStep = t + "#" + log.length;
@@ -120,6 +121,10 @@ for (const t of SCRIPT.split(/\s+/).filter(Boolean)) {
   if (t.startsWith('pset:')) { console.error('pset', pset(PHOTO_VIDEO_SWITCH, parseInt(t.slice(5), 10))); continue; }
   if (t.startsWith('mode:')) { s.switch_input('mode_dial', parseInt(t.slice(5), 10)); if (s.camapp) s.camapp.pump(); continue; }
   if (m) { s.dial_input(m[1], parseInt(m[2], 10)); s.camapp.pump(); }
+  else if (t.startsWith('front:')) {
+    s.switch_input('creative_dial', Number(t.slice(6)));
+    s.camapp.pump(); s.idle_slice(lab.lab_time() + 800e6); s.camapp.pump();
+  }
   else if (t.startsWith('dump:')) {
     const parts = []; for (const [lo, hi] of [[0x60000000, 0x63000000], [0xa2000000, 0xa6000000]]) { for (let a = lo; a < hi; a += 0x100000) parts.push(Buffer.from(rd(a, 0x100000))); }
     fs.writeFileSync(t.slice(5), Buffer.concat(parts));
@@ -481,8 +486,13 @@ for (const t of SCRIPT.split(/\s+/).filter(Boolean)) {
   else if (t.startsWith('tap:')) {        // tap:X:Y touches the rear screen at X,Y (pixels) for 150 ms
     const [x, y] = t.slice(4).split(':').map(Number); s.touch('down', x, y); s.idle_slice(lab.lab_time() + 150e6); s.touch('up', x, y);
   }
+  else if (t.startsWith('key-down:') || t.startsWith('key-up:')) {
+    const [edge,key]=t.split(':'); heldKey=edge==='key-down'; s.key(key,heldKey?'down':'up'); s.camapp.pump(); continue;
+  }
+  else if (t.startsWith('elapse:')) { s.idle_slice(lab.lab_time() + Number(t.slice(7))*1e6); continue; }
   else if (t.startsWith('hold:')) { const k = t.slice(5); s.key(k, 'down'); s.camapp.pump(); s.idle_slice(lab.lab_time() + 2000e6); s.key(k, 'up'); s.camapp.pump(); }
   else if (t !== 'wait') { s.key(t, 'down'); s.camapp.pump(); s.idle_slice(lab.lab_time() + 150e6); s.key(t, 'up'); s.camapp.pump(); }
+  if (heldKey && t.startsWith('expect:')) continue;
   curStep = t; s.idle_slice(lab.lab_time() + 1200e6); snap(t);
   if (wdbg) { if (t === 'down') wdbg.watch(WRANGE.split(',').map((r, i) => { const [lo, n] = r.split(':'); return { id: i, lo: parseInt(lo, 16), len: parseInt(n, 16), kind: process.env.WKIND || 'r', action: 'log' }; })); for (const r of wdbg.watchLog()) wlog.push({ step: t, id: r.id, pc: r.pc.toString(16), addr: (r.addr >>> 0).toString(16) }); }
 }
