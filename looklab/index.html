@@ -10,8 +10,8 @@
   <title>LookLab · OM-3 暗房工作台</title>
   <meta name="description" content="Caduceus LookLab: make, preview and share film looks for the OM SYSTEM OM-3 (OM3MOD/LOOKS.BIN), in your browser.">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23f08a3c'/%3E%3Cpath d='M16 5v22M11 10c5 0 10 3 10 6s-10 3-10 6 5 4 10 4M21 10c-5 0-10 3-10 6s10 3 10 6-5 4-10 4' stroke='%23141414' stroke-width='2' fill='none'/%3E%3C/svg%3E">
-  <script type="module" crossorigin src="./assets/index-CYWfrWsn.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-DYziFtGD.css">
+  <script type="module" crossorigin src="./assets/index-BAp5WFib.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-DVUsNcAi.css">
 </head>
 <body>
   <header class="mast">
@@ -23,24 +23,37 @@
       <button id="undo" title="撤销（Ctrl+Z）" aria-label="撤销">↶</button>
       <button id="redo" title="重做（Ctrl+Shift+Z）" aria-label="重做">↷</button>
       <details id="tools-menu"><summary>配方工具</summary><div class="tool-items">
-        <button data-command="openFile">打开配方或相机照片…</button>
-        <button id="import-grade">从 LUT 或 Lightroom 预设创建…</button>
-        <button data-command="films">胶片模拟库</button>
-        <button data-command="paste">粘贴分享链接…</button>
-        <button data-command="share">分享胶片组</button>
-        <button data-command="newEmpty">清空当前胶片盒</button>
-        <button data-command="newDefaults">装入默认 20 卷</button>
-        <button data-command="install">安装固件说明</button>
+        <div role="group" aria-labelledby="recipe-heading">
+          <span id="recipe-heading" class="menu-heading">导入与分享</span>
+          <button data-command="openFile">打开配方或相机照片…</button>
+          <button id="import-grade">导入 LUT 或 Lightroom 预设…</button>
+          <button data-command="paste">从分享链接导入…</button>
+          <button data-command="share">分享当前胶片盒</button>
+        </div>
+        <div role="group" aria-labelledby="box-heading">
+          <span id="box-heading" class="menu-heading">管理胶片盒</span>
+          <button data-command="newDefaults">装入默认 20 卷</button>
+          <button data-command="newEmpty">清空当前胶片盒</button>
+        </div>
       </div></details>
-      <button id="export">导出此盒 ↗</button>
+      <button id="export" title="导出配方文件或备份">导出到…</button>
+      <button id="write-card" title="将当前胶片盒写入所选 SD 卡">写入 SD 卡</button>
     </nav>
   </header>
   <main>
-    <aside class="roll-library" aria-label="胶卷库">
-      <header><h2>胶卷库 <span id="roll-count"></span></h2><button id="new-roll">＋ 新增</button></header>
-      <div id="roll-shelf"></div>
-      <footer><button id="delete-roll">删除所选胶卷</button></footer>
-    </aside>
+    <div class="roll-columns">
+      <details class="roll-library all-rolls" open>
+        <summary>所有胶卷 <span id="roll-count"></span></summary>
+        <div class="all-rolls-body">
+          <div id="roll-shelf" class="roll-list"></div>
+          <footer><button id="new-roll">＋ 新增</button><button id="browse-films">浏览胶片</button><button id="delete-roll">删除所选</button></footer>
+        </div>
+      </details>
+      <aside class="roll-library" aria-label="当前胶卷盒">
+        <header><h2>当前胶卷盒 <span id="current-roll-count"></span></h2></header>
+        <div id="current-rolls" class="roll-list"></div>
+      </aside>
+    </div>
     <section class="viewer" aria-label="样片预览">
       <div class="viewer-head"><span id="frame-name"></span>
         <div class="view-switch" aria-label="预览工具">
@@ -52,11 +65,10 @@
       </div>
       <div id="preview" data-view="graded"></div>
       <nav class="reference-links" aria-label="使用帮助">
-        <a href="../index.html">功能介绍</a><a href="../pages/install/index.html">安装</a>
-        <a href="../pages/faq/index.html">常见问题</a><a href="./samples/CREDITS.md">样片来源</a>
+        <button id="workbench-help">使用说明</button><button id="firmware-help">固件与安装</button>
       </nav>
     </section>
-    <aside class="deck" aria-label="胶片与色调">
+    <aside class="deck" aria-label="编辑胶片">
       <div class="stock" id="stock">
         <div class="stock-top"><span id="film-id"></span><span id="film-type"></span></div>
         <div class="stock-face">
