@@ -28,7 +28,7 @@ let page = substitute(template, '<link rel="stylesheet" href="assets/editor.css"
 page = substitute(page, '<link rel="stylesheet" href="looklab.css">', '');
 const nav = page.match(/<nav class="reference-links"[\s\S]*?<\/nav>/)?.[0];
 if (!nav) throw new Error('Offline help navigation is missing.');
-page = substitute(page, nav, help);
+page = substitute(page, nav, nav + help);
 const script = bundle.replace(/<\/script/gi, '<\\/script');
 page = substitute(page, '<script defer src="assets/console.js"></script>', '<script>' + script + '</script>');
 const scriptHash = createHash('sha256').update(script).digest('base64');

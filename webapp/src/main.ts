@@ -1,3 +1,4 @@
+import { loadGallery, storePhotos, storeRemoval, type ImportedPhoto } from './gallery-store';
 import { drawRollLabel, parseLabel, styles, type BoxLabel } from './boxlabel';
 import { filmEffects, effectNames } from './film-effects';
 // Modified by SengokuCola for the Caduceus for OM-3 fork.
@@ -24,7 +25,7 @@ import {
 import { namesBin } from './om3names';
 import { SPLIT_COLOURS, SPLIT_STEPS, fromSteps, toSteps, type Split } from './split';
 import { CHANNELS, CURVE_MAX, CURVE_STEP, MIX_MAX, curveDelta, flatCurves, flatMix, hasCurves, hasMix, type Channel } from './curves';
-import { CAMERA_FILMS, FILMS, FILM_GROUPS, filmLook, filmOf, type Film, type FilmGroup } from './om3films';
+import { CAMERA_FILMS, FILMS, FILM_GROUPS, applyStockLabel, filmLook, filmOf, type Film, type FilmGroup } from './om3films';
 import { parseLook as parseStoredLook } from './pack';
 import { localizeDescription } from './descriptions';
 import { cubeApply, fitLook, lightroomExtras, lightroomTransform, looksLikeLog, parseCube, parseLightroom, type RGB, type Transform } from './convert';
@@ -44,7 +45,7 @@ interface LookLabView {
   sampleUrl?: (id: string) => string;
   labelFont?: string;
   sync?: () => void;
-  photoChanged?: (name: string, source: ImageData, custom: boolean) => void;
+  photoChanged?: (name: string) => void;
 }
 let view: LookLabView = {};
 const sampleUrl = (id: string) => view.sampleUrl?.(id) ?? `${import.meta.env.BASE_URL}samples/${id}.jpg?v=${SAMPLE_REV}`;
@@ -70,7 +71,7 @@ const S = {
 // shared Caduceus Control Panel is gone from this tool)
 const STORE_OM3 = 'caduceus.om3.bank.v1';
 const CAM = 'om3' as const;
-const samples = () => OM3_SAMPLES;
+
 /** The OM-3 look bank: 4 COLORs x 5 numbers, positional like the camera's Film page. */
 const O = { name: 'OM-3 looks', bank: startBank(), k: 0, v: 0 };
 // Saved lists ("playlists"): named copies of all four COLORs' looks, kept in this browser. The list you're on is the
@@ -111,6 +112,7 @@ const LISTS: Lists = (() => {
   if (n) libNotice = (libNotice ? libNotice + ' ' : '') + `Film sims now set Sharp (firmware v0.22): ${n} of your film looks got their film's value.`;
 })();
 const STORE_CABINET = 'caduceus.om3.cabinet.v1';
+const STORE_SEEDED_FILMS = 'caduceus.om3.seeded-films.v1';
 let cabinet = new RollCabinet();
 let looseRoll: Look | undefined;
 function restoreCabinet(raw: string) {
@@ -123,6 +125,38 @@ try {
   const stored = localStorage.getItem(STORE_CABINET);
   if (stored) restoreCabinet(stored);
 } catch { /* keep legacy lists available when storage is unavailable */ }
+function seedBuiltinFilms() {
+  for (const bank of Object.values(LISTS.lists)) {
+    for (const row of bank) for (const look of row) if (look) cabinet.register(look);
+  }
+  let seeded = false;
+  try {
+    const key = 'caduceus.om3.stock-labels.v3';
+    if (!localStorage.getItem(key)) {
+      let changed = false;
+      const firstStyle = localStorage.getItem('caduceus.om3.stock-labels.v2') ? 13 : 0;
+      for (const look of cabinet.rolls.keys()) if (applyStockLabel(look, firstStyle)) changed = true;
+      if (changed) localStorage.setItem(STORE_CABINET, cabinet.encode(LISTS.current, LISTS.lists));
+      localStorage.setItem(key, '1');
+    }
+  } catch { /* local storage may be unavailable */ }
+  try { seeded = localStorage.getItem(STORE_SEEDED_FILMS) === '1'; } catch { /* private mode */ }
+  if (seeded) return;
+  const existing = new Set<Film>();
+  for (const look of cabinet.rolls.keys()) {
+    const f = filmOf(look);
+    if (f) existing.add(f);
+  }
+  let added = 0;
+  for (const f of FILMS) {
+    if (!existing.has(f)) { cabinet.register(filmLook(f)); added++; }
+  }
+  try {
+    localStorage.setItem(STORE_SEEDED_FILMS, '1');
+    if (added) localStorage.setItem(STORE_CABINET, cabinet.encode(LISTS.current, LISTS.lists));
+  } catch { /* private mode */ }
+}
+seedBuiltinFilms();
 O.bank = LISTS.lists[LISTS.current]; O.name = LISTS.current;
 function snapshot() {
   LISTS.lists[LISTS.current] = O.bank;
@@ -141,7 +175,9 @@ function startBank(): Bank {
 const bankSnapshot = () => JSON.stringify({ schema: BANK_SCHEMA, name: O.name, bank: O.bank });
 
 let saveTimer = 0;
+let pendingSave = false;
 function flush() {
+  if (!pendingSave) return true;
   clearTimeout(saveTimer);
   try {
     localStorage.setItem(STORE_CABINET, snapshot());
@@ -150,9 +186,10 @@ function flush() {
   }
   // Keep a single-box backup for older builds.
   try { localStorage.setItem(STORE_OM3, bankSnapshot()); } catch { /* best effort */ }
+  pendingSave = false;
   return true;
 }
-function persist() { clearTimeout(saveTimer); saveTimer = window.setTimeout(flush, 250); }
+function persist() { pendingSave = true; clearTimeout(saveTimer); saveTimer = window.setTimeout(flush, 250); }
 window.addEventListener('pagehide', flush);
 
 // ---------------------------------------------------------------- undo / redo
@@ -284,8 +321,8 @@ function steps(inp: HTMLInputElement): HTMLElement {
     h('button', { class: 'cam-step', 'aria-label': '增加', tabindex: -1, onclick: () => bump(1) }, '+'));
 }
 /** A Picture Mode row: the camera's name, a slider and the value. */
-function crow(label: string, lim: number, get: () => number, set: (x: number) => void, help: HelpBody): HTMLElement {
-  const { inp, out } = slider(-lim, lim, get(), (x) => { set(x); save(); schedulePreview(); refreshProblems(); }, undefined, label);
+function crow(label: string, lim: number, get: () => number, set: (x: number) => void, changed: () => void, help: HelpBody): HTMLElement {
+  const { inp, out } = slider(-lim, lim, get(), (x) => { set(x); changed(); }, undefined, label);
   return withHelp(h('div', { class: 'crow' }, h('span', { class: 'cname' }, label), steps(inp), out), label, help);
 }
 /** A Picture Mode row with a few choices. */
@@ -993,6 +1030,7 @@ function wbModeRow(l: Look, changed: () => void): HTMLElement {
 // Export targets describe actual firmware families. The numeric format level
 // still drives the compatible LOOKS.BIN fields and the preview.
 const exportTargets = [
+  { id: 'nostalgia-sunlit', name: 'Nostalgia-OM · 按卷 Sunlit', fw: 28, labels: true, curves: true },
   { id: 'nostalgia-effects', name: 'Nostalgia-OM · 胶卷效果实验版', fw: 28, labels: true, curves: true },
   { id: 'nostalgia', name: 'Nostalgia-OM v0.1.1', fw: 28, labels: true, curves: true },
   { id: 'caduceus-40', name: 'v0.40.2 / v0.40 系列', fw: 28, curves: true },
@@ -1018,8 +1056,13 @@ let exportTarget = savedExportTarget();
 const fwSetting = (): Fw => exportTarget.fw;
 const om3Fw25 = () => fwSetting() >= 25;
 const om3Fw28 = () => fwSetting() >= 28;
+function supportedEffects(look: Look): Look['filmEffects'] {
+  if (exportTarget.id === 'nostalgia-sunlit') return look.filmEffects;
+  if (exportTarget.id === 'nostalgia-effects') return look.filmEffects?.filter(effect => effect !== 'sunlit');
+  return undefined;
+}
 function splitPv(l: Look): Look {
-  if (l.filmEffects && exportTarget.id !== 'nostalgia-effects') l = { ...l, filmEffects: undefined };
+  if (l.filmEffects) l = { ...l, filmEffects: supportedEffects(l) };
   const fw = fwSetting();
   if (fw >= 28) return l;
   const c = (v: number) => Math.max(-5, Math.min(5, v));
@@ -1043,7 +1086,56 @@ function refreshProblems() {
 // ---------------------------------------------------------------- preview
 let srcData: ImageData | null = null;
 type PreviewPhoto = HTMLImageElement | HTMLCanvasElement;
-let userPhoto: HTMLCanvasElement | null = null;
+interface GalleryPhoto { id: string; label: string; key?: number; url?: string; thumbnail?: string }
+const gallery: GalleryPhoto[] = [...OM3_SAMPLES];
+let importSerial = 0;
+const GALLERY_SELECTION = 'caduceus.om3.preview-selection';
+function importedItem(photo: ImportedPhoto, key: number): GalleryPhoto {
+  return { id: `import-${key}`, key, label: photo.file.name, url: URL.createObjectURL(photo.file), thumbnail: photo.thumbnail };
+}
+
+async function restoreGallery() {
+  try {
+    const stored = await loadGallery();
+    gallery.splice(0, gallery.length, ...OM3_SAMPLES.filter(item => !stored.hidden.has(item.id)),
+      ...stored.imports.map(photo => importedItem(photo, photo.key)));
+  } catch { toast('无法读取本地预览图库', 'err'); }
+  let last: string | null = null;
+  try { last = localStorage.getItem(GALLERY_SELECTION); } catch { /* selection storage unavailable */ }
+  const selected = gallery.find(item => item.id === last) ?? gallery.find(item => item.id === S.image) ?? gallery[0];
+  renderGallery();
+  pickImage(selected?.id ?? '');
+  $<HTMLButtonElement>('#import-photos').disabled = false;
+}
+
+function renderGallery() {
+  $('#preview .thumbs').replaceChildren(...gallery.map(photo => {
+    const selected = photo.id === S.image;
+    return h('button', { class: `thumb${selected ? ' on' : ''}`, 'data-id': photo.id,
+      'aria-pressed': String(selected), title: photo.label, onclick: () => pickImage(photo.id) },
+      h('img', { src: photo.thumbnail ?? sampleUrl(photo.id), alt: photo.label, loading: 'lazy' }));
+  }));
+  $<HTMLButtonElement>('#remove-photo').disabled = !gallery.length;
+}
+
+async function removeSelectedPhoto() {
+  const target = gallery.find(photo => photo.id === S.image);
+  if (!target) return;
+  try { await storeRemoval(target.id, target.key); }
+  catch { toast('移除失败，本地图库未更新', 'err'); return; }
+  const index = gallery.indexOf(target);
+  if (index < 0) return;
+  const [removed] = gallery.splice(index, 1);
+  if (removed.url) URL.revokeObjectURL(removed.url);
+  if (removed.id === S.image) {
+    photoSource = renderedSource = srcData = beforeOf = null;
+    canvas.width = beforeCv.width = 0;
+    const next = gallery[Math.min(index, gallery.length - 1)];
+    pickImage(next?.id ?? '');
+  }
+  renderGallery();
+}
+
 let photoSource: PreviewPhoto | null = null;
 let detailPreview = false;
 let renderedSource: PreviewPhoto | null = null;
@@ -1055,11 +1147,7 @@ let previewQueued = false;
 
 function buildPreview() {
   canvas = h('canvas', { class: 'pv', 'aria-label': '当前胶片的模拟预览' });
-  const thumbs = h('div', { class: 'thumbs' },
-    ...samples().map((s) => h('button', { class: `thumb${S.image === s.id ? ' on' : ''}`, 'data-id': s.id, onclick: () => pickImage(s.id), title: s.label },
-      h('img', { src: sampleUrl(s.id), alt: s.label, loading: 'lazy' }))),
-    h('button', { class: `thumb own${S.image === 'user' ? ' on' : ''}`, 'data-id': 'user', onclick: () => (userPhoto ? pickImage('user') : $<HTMLInputElement>('#photo').click()), title: '自选照片（仅在本机处理）' },
-      h('span', {}, '＋ 自选照片')));
+  const thumbs = h('div', { class: 'thumbs' });
   // before / after: the untouched photo on its own canvas, clipped at a line you drag on the photo (or arrow keys)
   beforeCv = h('canvas', { class: 'before', 'aria-hidden': 'true' }); beforeOf = null;
   const divider = h('div', { class: 'divider', role: 'slider', tabindex: '0', 'aria-label': '原图与调色预览分界线', 'aria-valuemin': '0', 'aria-valuemax': '100' },
@@ -1098,29 +1186,33 @@ function buildPreview() {
         '画幅比例 ',
         h('select', { onchange: (e: Event) => { S.aspect = (e.target as HTMLSelectElement).value; try { localStorage.setItem('caduceus.om3.aspect', S.aspect); } catch { /* storage blocked */ } schedulePreview(); } },
           ...ASPECTS.map((a) => h('option', { value: a.id, selected: a.id === S.aspect }, a.label))), aspectHelp.q),
-      h('span', { class: 'help' }, 'Includes Contrast, Sharp, Shading, Film Grain, Border, Glow, Halation and the lens corners.'),
-      h('button', { class: 'link', onclick: () => $<HTMLInputElement>('#photo').click() }, '选择自己的照片…')),
-    aspectHelp.box,
-    h('p', { class: 'help' }, '在对比模式拖动分界线查看前后效果。双击照片放大，拖动查看局部。自选照片仅在本机处理。'));
-  pickImage(S.image);
+      h('div', { class: 'photo-actions' },
+        h('button', { class: 'link', id: 'import-photos', disabled: true, onclick: () => $<HTMLInputElement>('#photo').click() }, '＋ 导入图片'),
+        h('button', { class: 'link', id: 'remove-photo', disabled: true, onclick: removeSelectedPhoto }, '移除当前照片'))),
+    aspectHelp.box);
+  void restoreGallery();
 }
 
 let photoRequest = 0;
-let customPhotoName = '自选照片';
 async function pickImage(id: string) {
   const request = ++photoRequest;
   S.image = id;
-  document.querySelectorAll('.thumb').forEach((t) => t.classList.toggle('on', (t as HTMLElement).dataset.id === id));
-  if (id === 'user') {
-    if (userPhoto) showPreviewPhoto(userPhoto, customPhotoName, true);
+  try { localStorage.setItem(GALLERY_SELECTION, id); } catch { /* selection storage unavailable */ }
+  document.querySelectorAll<HTMLElement>('.thumb').forEach(t => {
+    t.classList.toggle('on', t.dataset.id === id);
+    t.setAttribute('aria-pressed', String(t.dataset.id === id));
+  });
+  const photo = gallery.find(item => item.id === id);
+  if (!photo) {
+    view.photoChanged?.('暂无预览照片');
     return;
   }
   try {
     const img = new Image();
-    img.src = sampleUrl(id);
+    img.src = photo.url ?? sampleUrl(id);
     await img.decode();
     if (request !== photoRequest) return;
-    showPreviewPhoto(img, id + '.jpg', false);
+    showPreviewPhoto(img, photo.url ? photo.label : id + '.jpg');
   } catch { if (request === photoRequest) toast('无法加载样片', 'err'); }
 }
 
@@ -1137,11 +1229,11 @@ function updatePreviewResolution() {
   schedulePreview();
 }
 
-function showPreviewPhoto(photo: PreviewPhoto, name: string, custom: boolean) {
+function showPreviewPhoto(photo: PreviewPhoto, name: string) {
   photoSource = photo;
   detailPreview = false;
   updatePreviewResolution();
-  if (srcData) view.photoChanged?.(name, srcData, custom);
+  if (srcData) view.photoChanged?.(name);
 }
 
 /** The preview's working size (long side, px): enough for the preview at this screen's pixel density (sharp on
@@ -1163,22 +1255,40 @@ function toImageData(img: CanvasImageSource, w: number, h0: number, max = previe
 }
 
 async function onPhoto(e: Event) {
-  const f = (e.target as HTMLInputElement).files?.[0];
-  (e.target as HTMLInputElement).value = '';
-  if (!f) return;
-  const request = ++photoRequest;
-  try {
-    const bmp = await createImageBitmap(f, { imageOrientation: 'from-image' } as ImageBitmapOptions);
-    if (request !== photoRequest) { bmp.close(); return; }
-    customPhotoName = f.name;
+  const input = e.target as HTMLInputElement;
+  const files = Array.from(input.files ?? []);
+  input.value = '';
+  if (!files.length) return;
+  const serial = ++importSerial;
+  const selection = photoRequest;
+  const decoded: ImportedPhoto[] = [];
+  const failed: string[] = [];
+  for (const file of files) {
+    const url = URL.createObjectURL(file);
     try {
-      const scale = Math.min(1, 2048 / Math.max(bmp.width, bmp.height));
-      const source = h('canvas', { width: Math.max(1, Math.round(bmp.width * scale)), height: Math.max(1, Math.round(bmp.height * scale)) });
-      source.getContext('2d')!.drawImage(bmp, 0, 0, source.width, source.height);
-      userPhoto = source;
-    } finally { bmp.close(); }
-    pickImage('user');
-  } catch { toast('无法读取此图片', 'err'); }
+      const image = new Image();
+      image.src = url;
+      await image.decode();
+      const scale = Math.min(1, 180 / Math.max(image.naturalWidth, image.naturalHeight));
+      const thumb = h('canvas', { width: Math.max(1, Math.round(image.naturalWidth * scale)),
+        height: Math.max(1, Math.round(image.naturalHeight * scale)) });
+      thumb.getContext('2d')!.drawImage(image, 0, 0, thumb.width, thumb.height);
+      decoded.push({ file, thumbnail: thumb.toDataURL() });
+    } catch {
+      failed.push(file.name);
+    } finally { URL.revokeObjectURL(url); }
+  }
+  if (decoded.length) {
+    let keys: number[];
+    try { keys = await storePhotos(decoded); }
+    catch { toast('照片未导入：无法写入本地图库，请检查浏览器存储空间和权限', 'err'); return; }
+    const added = decoded.map((photo, index) => importedItem(photo, keys[index]));
+    gallery.push(...added);
+    if (!S.image || (serial === importSerial && selection === photoRequest)) pickImage(added[0].id);
+    renderGallery();
+    $('#preview .thumb.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }
+  if (failed.length) toast(`无法读取：${failed.join('、')}`, 'err');
 }
 
 /** The photo frame: the photo's shape, as wide as the pane allows but no taller than 70% of the window. */
@@ -1237,7 +1347,6 @@ const rrName = (n: string) => n.replace(/[^\p{L}\p{N}_.-]+/gu, '-').replace(/^-+
 // ---------------------------------------------------------------- OM-3 (Caduceus for OM-3)
 // The OM-3 has no look list: each of COLOR 1-4 holds five numbered looks (the camera's Film page, dial 1-5).
 const OB_PREFIX = 'ob1_', OP_PREFIX = 'op1_';
-const OM3_GH = 'https://github.com/androidfanman/caduceus-om3';
 const at = (k: number, v: number) => `FILM ${k * PER + v + 1}`;   // owner 2026-11-08: one list, FILM 1-20 (COLOR k = (n - 1) / 5 on the card)
 
 function newBank(kind: 'library' | 'empty') {
@@ -1331,15 +1440,17 @@ function newRoll() {
 
 function togglePlacement(look: Look) {
   const slots = O.bank.flat();
-  const existing = slots.indexOf(look);
-  const slot = existing >= 0 ? existing : slots.indexOf(null);
+  const slot = slots.indexOf(null);
   if (slot < 0) { toast('胶片盒的 20 个位置已满，请先取出一卷。', 'err'); return; }
   const keepSelected = cur() === look || !cur();
-  O.bank[Math.floor(slot / PER)][slot % PER] = existing >= 0 ? null : look;
-  if (keepSelected) {
-    if (existing >= 0) looseRoll = look;
-    else selectSlot(Math.floor(slot / PER), slot % PER);
-  }
+  O.bank[Math.floor(slot / PER)][slot % PER] = look;
+  if (keepSelected) selectSlot(Math.floor(slot / PER), slot % PER);
+  save(); renderAll();
+}
+
+function takeOutRoll(look: Look, slot: number) {
+  O.bank[Math.floor(slot / PER)][slot % PER] = null;
+  if (cur() === look && O.k * PER + O.v === slot) looseRoll = look;
   save(); renderAll();
 }
 
@@ -1363,22 +1474,37 @@ function renderShelf() {
   const slots = O.bank.flat();
   const selected = cur();
   const rows = [...cabinet.rolls].map(([look, id]) => ({look, id, slot: slots.indexOf(look)}));
-  const signature = JSON.stringify(rows.map(({look, id, slot}) => [id, look.name, look.boxLabel, slot, look === selected]));
+  const selectedSlot = looseRoll ? -1 : O.k * PER + O.v;
+  const signature = JSON.stringify([
+    rows.map(({look, id}) => [id, look.name, look.boxLabel, look === selected]),
+    slots.map(look => look && cabinet.rolls.get(look)), selectedSlot,
+  ]);
   if (signature === shelfSignature) return;
   shelfSignature = signature;
   $('#roll-count').textContent = String(rows.length).padStart(2, '0');
   ($<HTMLButtonElement>('#delete-roll')).disabled = !selected;
-  shelf.replaceChildren(...rows.map(({look, slot}) => {
+  const used = slots.filter(Boolean).length;
+  $('#current-roll-count').textContent = `${used} / ${slots.length}`;
+  const pick = (look: Look, detail: string, active: boolean, onclick: () => void) => {
     const mark = drawRollLabel(look, 96);
     mark.setAttribute('aria-hidden', 'true');
-    return h('div', {class: 'roll-row'},
-      h('button', {class: 'roll-pick', 'aria-pressed': String(look === selected), onclick: () => selectRoll(look)}, mark,
-        h('span', {class: 'roll-copy'}, h('b', {}, look.name || '未命名'),
-          h('small', {}, look.boxLabel?.caption || (slot >= 0 ? 'FILM ' + String(slot + 1).padStart(2, '0') : '库藏胶卷')))),
-      h('button', {class: 'roll-place', title: slot >= 0 ? '从当前盒取出' : '装入当前盒',
-        'aria-label': (slot >= 0 ? '取出 ' : '装入 ') + look.name, onclick: () => togglePlacement(look)}, slot >= 0 ? '−' : '＋'));
-  }));
+    return h('button', {class: 'roll-pick', 'aria-pressed': String(active), onclick}, mark,
+      h('span', {class: 'roll-copy'}, h('b', {}, look.name || '未命名'), detail ? h('small', {}, detail) : null));
+  };
+  shelf.replaceChildren(...rows.map(({look, slot}) =>
+    h('div', {class: 'roll-row'},
+      pick(look, slot >= 0 ? '已装入当前盒' : look.boxLabel?.caption || '', look === selected, () => selectRoll(look)),
+      h('button', {class: 'roll-place', disabled: slot >= 0 || used === slots.length,
+        'aria-label': '装入 ' + look.name, title: slot >= 0 ? '已装入当前盒' : used === slots.length ? '当前盒已满' : '装入当前盒',
+        onclick: () => togglePlacement(look)}, '＋'))));
   if (!rows.length) shelf.append(h('p', {class: 'help'}, '胶卷库为空，点击「新增」创建第一卷。'));
+  $('#current-rolls').replaceChildren(...slots.flatMap((look, slot) => look ?
+    [h('div', {class: 'roll-row'},
+      pick(look, look.boxLabel?.caption || '', slot === selectedSlot, () => {
+        selectSlot(Math.floor(slot / PER), slot % PER); renderAll();
+      }),
+      h('button', {class: 'roll-place', 'aria-label': '取出 ' + look.name, title: '从当前盒取出',
+        onclick: () => takeOutRoll(look, slot)}, '−'))] : []));
 }
 
 function nameDialog(title: string, value: string, ok: string, done: (name: string) => void) {
@@ -1596,6 +1722,9 @@ function om3FilmPicker(into?: { k: number; v: number }) {
 
 const boxPalettes = [
   { name: '琥珀', paper: '#edb64c', accent: '#403b39', ink: '#332b26' },
+  { name: '金黄红', paper: '#f7c331', accent: '#bd3032', ink: '#332a1f' },
+  { name: '银灰黑', paper: '#dedfd9', accent: '#353c37', ink: '#18201c' },
+  { name: '钨丝蓝', paper: '#d5e4ea', accent: '#eb7643', ink: '#192e48' },
   { name: '森林', paper: '#e3e6c7', accent: '#315b46', ink: '#233d31' },
   { name: '夜蓝', paper: '#c0d1dc', accent: '#254766', ink: '#152b3f' },
   { name: '朱砂', paper: '#f4d9b0', accent: '#a8372e', ink: '#6b2922' },
@@ -1741,15 +1870,7 @@ function editStockLabel() {
   dialog.setAttribute('aria-label', '盒签与描述');
 }
 
-const editGroups = new Set(['对比度与锐度']);
-function editGroup(title: string, ...content: HTMLElement[]) {
-  const group = h('details', { class: 'edit-group', open: editGroups.has(title) }, h('summary', {}, title), ...content);
-  group.querySelector('summary')!.addEventListener('click', () => {
-    if (group.open) editGroups.delete(title); else editGroups.add(title);
-  });
-  return group;
-}
-
+const editGroups = new Set<string>();
 function renderOm3Editor(l: Look) {
   // v0.21: Grain with Glow / Clarity or an Art Effect takes the camera's slow route: say so next to the Grain setting
   const grainWarn = h('p', { class: 'warn', role: 'status' });
@@ -1762,7 +1883,22 @@ function renderOm3Editor(l: Look) {
   const fxChanged = () => { changed(); showWarn(); };
   showWarn();
   const el = $('#editor');
-  const changed = () => { save(); schedulePreview(); refreshProblems(); };
+  const summaries: (() => void)[] = [];
+  function editGroup(title: string, describe: () => string, ...content: HTMLElement[]) {
+    const value = h('span', { class: 'edit-summary-value' });
+    const refresh = () => { value.textContent = describe(); };
+    refresh();
+    summaries.push(refresh);
+    const heading = h('summary', {}, h('span', {}, title), value);
+    const group = h('details', { class: 'edit-group', open: editGroups.has(title) }, heading, ...content);
+    heading.addEventListener('click', () => {
+      if (group.open) editGroups.delete(title); else editGroups.add(title);
+    });
+    return group;
+  }
+  const changed = () => { summaries.forEach(refresh => refresh()); save(); schedulePreview(); refreshProblems(); };
+  const join = (...values: (string | undefined | false)[]) => values.filter(Boolean).join(' · ');
+  const channels = ['r', 'g', 'b'] as const;
   const film = filmOf(l), orig = film ? undefined : libraryOrigin(l, LIBRARY);
   el.replaceChildren(
       h('div', { class: 'ed-btns recipe-actions' },
@@ -1778,7 +1914,35 @@ function renderOm3Editor(l: Look) {
         }, '重置此配方'),
         h('button', { class: 'share-btn', onclick: () => om3ShareProfile(l), title: '生成这款胶片的分享链接' }, '分享')),
     h('div', { id: 'problems' }),
-    editGroup('胶卷成片效果', h('div', { class: 'group cam' }, ...filmEffects.map(effect =>
+    h('section', { class: 'quick-adjust' }, h('h3', {}, '常用调整'), h('div', { class: 'group cam rows' },
+      crow('对比度', OM3.contrast, () => l.advice.contrast ?? 0, (x) => { l.advice.contrast = x; }, changed, [
+        '正值增强对比，负值让影调更柔和。范围 −2 至 +2。',
+        '可用高光、阴影和黑白位进一步微调。']),
+      (() => {
+        const { inp, out } = slider(SHARP.lo, SHARP.hi, l.advice.sharpness ?? 0, (x) => { l.advice.sharpness = x; changed(); }, v => v <= SHARP.lo ? '关' : sharpLabel(v), '锐度');
+        return withHelp(h('div', { class: 'crow' }, h('span', { class: 'cname' }, '锐度'), steps(inp), out), '锐度', [
+          '正值增强细节，负值减弱锐化。调到 −5 关闭。',
+          '双击归零。可放大照片查看锐化效果。',
+          fwLine('固件 v0.22', '该版本起支持。')]);
+      })(),
+      (() => {
+        const note = h('p', {});
+        const show = () => {                     // after each preview: is the glow on this photo?
+          const v = l.halation ?? 0, r = lastHalation;
+          note.hidden = !v || (om3Fw28() && r !== 'off' && r !== 'none');
+          if (!om3Fw28()) { note.className = 'warn'; note.replaceChildren(h('b', {}, '胶片光晕需要较新固件。')); }
+          else if (r === 'off') { note.className = 'help'; note.replaceChildren(h('b', {}, '当前照片未显示光晕：'), '日光下光晕会减弱。可选择「夜间街道」或「蓝调时刻」观察灯光边缘。'); }
+          else { note.className = 'help'; note.replaceChildren(h('b', {}, '当前照片未显示光晕：'), '画面中没有能形成光晕的明亮光源。'); }
+        };
+        afterPreview = show;
+        const { inp, out } = slider(0, OM3.halation, l.halation ?? 0, (x) => { if (x) l.halation = x; else delete l.halation; changed(); }, (x) => (x ? `+${x}` : '0'), '胶片光晕');
+        show();
+        return withHelp(h('div', { class: 'crow' }, h('span', { class: 'cname' }, pmIcon('halo'), '胶片光晕'), steps(inp), out), '胶片光晕', [
+          '在低光场景为明亮光源添加红橙色光晕，可用夜景样片观察。',
+          '拖动滑杆或用加减按钮，双击归零。',
+          fwLine('固件 v0.28', '该版本起支持。')], note);
+      })())),
+    editGroup('胶卷成片效果', () => l.filmEffects?.map(effect => effectNames[effect]).join(' · ') || '关闭', h('div', { class: 'group cam' }, ...filmEffects.map(effect =>
       h('label', {}, h('input', { type: 'checkbox', checked: l.filmEffects?.includes(effect),
         onchange: (event: Event) => {
           const selected = new Set(l.filmEffects);
@@ -1786,7 +1950,11 @@ function renderOm3Editor(l: Look) {
           if (selected.size) l.filmEffects = filmEffects.filter(k => selected.has(k)); else delete l.filmEffects;
           changed();
         } }), effectNames[effect] + (effect === 'trichrome' ? '（仅保存设置，机内三帧拍摄尚未接通）' : ''))))),
-    editGroup('色轮与分离色调', hslPanel(l, changed), h('div', { class: 'group cam' },
+    editGroup('色轮与分离色调', () => {
+      const sectors = l.hue.filter((v, i) => v || l.sat[i] || l.light[i]).length;
+      return join(!!sectors && `${sectors} 个色区`, !!l.split?.sh && `阴影染色 ${l.split.sh}`,
+        !!l.split?.hl && `高光染色 ${l.split.hl}`, !!l.tone_balance && `平衡 ${signed(l.tone_balance)}`) || '中性';
+    }, hslPanel(l, changed), h('div', { class: 'group cam' },
       ...(() => {
         const note = h('p', {});
         const show = () => {
@@ -1802,22 +1970,23 @@ function renderOm3Editor(l: Look) {
           '范围 −5 至 +5，双击归零。',
           fwLine('固件 v0.28', '该版本起支持。')], note)];
       })())),
-    editGroup('白平衡', wbPanel(l, changed)),
-    editGroup('色调曲线与黑白位', tonePanel(l, changed), bwPanel(l, changed)),
-    editGroup('色彩混合', mixPanel(l, changed)),
-    editGroup('RGB 通道曲线', rgbPanel(l, changed)),
-    editGroup('对比度与锐度', h('div', { class: 'group cam rows' },
-      crow('对比度', OM3.contrast, () => l.advice.contrast ?? 0, (x) => { l.advice.contrast = x; }, [
-        '正值增强对比，负值让影调更柔和。范围 −2 至 +2。',
-        '可用高光、阴影和黑白位进一步微调。']),
-      (() => {
-        const { inp, out } = slider(SHARP.lo, SHARP.hi, l.advice.sharpness ?? 0, (x) => { l.advice.sharpness = x; changed(); }, v => v <= SHARP.lo ? '关' : sharpLabel(v), '锐度');
-        return withHelp(h('div', { class: 'crow' }, h('span', { class: 'cname' }, '锐度'), steps(inp), out), '锐度', [
-          '正值增强细节，负值减弱锐化。调到 −5 关闭。',
-          '双击归零。可放大照片查看锐化效果。',
-          fwLine('固件 v0.22', '该版本起支持。')]);
-      })())),
-    editGroup('降噪与镜头效果', h('div', { class: 'group cam rows' },
+    editGroup('白平衡', () => {
+      const wb = l.film_wb;
+      const mode = wb?.mode === 'custom' ? `${wb.kelvin ?? KELVIN.dflt} K` :
+        [...WB_MODE_NAMES, ...WB_ONE_TOUCH].find(([key]) => key === (wb?.mode ?? 'auto'))?.[1];
+      return join(mode, !!l.wb?.a_b && `A/B ${signed(l.wb.a_b)}`, !!l.wb?.g_m && `G/M ${signed(l.wb.g_m)}`);
+    }, wbPanel(l, changed)),
+    editGroup('色调曲线与黑白位', () => {
+      const { highlights, midtones, shadows, blacks, whites } = l.tone;
+      return join(!!highlights && `高光 ${signed(highlights)}`, !!midtones && `中间调 ${signed(midtones)}`,
+        !!shadows && `阴影 ${signed(shadows)}`, !!blacks && `黑位 ${signed(blacks)}`, !!whites && `白位 ${signed(whites)}`) || '线性';
+    }, tonePanel(l, changed), bwPanel(l, changed)),
+    editGroup('色彩混合', () => channels.filter((_, i) => l.mix?.[2*i] || l.mix?.[2*i+1]).map(c => RGB_NAME[c]).join(' · ') || '中性', mixPanel(l, changed)),
+    editGroup('RGB 通道曲线', () => channels.filter(c => l.rgb?.[c].some(Boolean)).map(c => RGB_NAME[c]).join(' · ') || '线性', rgbPanel(l, changed)),
+    editGroup('降噪与镜头效果', () => join(
+      l.effect && `${l.effect.type === 'bloom' ? '柔光' : '清晰度'} ${l.effect.strength}` || undefined,
+      !!l.vignette && `暗角 ${signed(l.vignette)}`, l.lens_correction && '暗角校正',
+      `降噪 ${({ off: '跟随机身', film: '关', fine: '低', standard: '标准', high: '高' })[l.grain]}`), h('div', { class: 'group cam rows' },
       cseg('降噪', [['off', '跟随机身'], ['film', '关'], ['fine', '低'], ['standard', '标准'], ['high', '高']], l.grain,
         (x) => { l.grain = x as Look['grain']; renderEditor(); changed(); }, [
           '为胶卷设定机身降噪强度。高档更平滑，低档保留更多纹理。',
@@ -1829,7 +1998,7 @@ function renderOm3Editor(l: Look) {
         '开启后，机身会补偿镜头边角的亮度下降。',
         '预览以 f/4 定焦镜头的典型暗角作示意。',
         fwLine('固件 v0.21', '该版本起支持。')]),
-      crow('暗角效果', OM3.shading, () => l.vignette, (x) => { l.vignette = x; }, [
+      crow('暗角效果', OM3.shading, () => l.vignette, (x) => { l.vignette = x; }, changed, [
         '负值压暗边缘，正值提亮边缘，中心亮度保持原样。',
         '一档即可看到明显变化。',
         '拖动滑杆或用加减按钮，双击归零。']),
@@ -1843,25 +2012,9 @@ function renderOm3Editor(l: Look) {
           '正值加入柔光，负值提升局部对比度。',
           '右拉增加柔光，左拉增加清晰度，双击归零。',
           fwLine('固件 v0.20', '该版本起支持。')]);
-      })(),
-      ...(() => {
-        const note = h('p', {});
-        const show = () => {                     // after each preview: is the glow on this photo?
-          const v = l.halation ?? 0, r = lastHalation;
-          note.hidden = !v || (om3Fw28() && r !== 'off' && r !== 'none');
-          if (!om3Fw28()) { note.className = 'warn'; note.replaceChildren(h('b', {}, '胶片光晕需要较新固件。')); }
-          else if (r === 'off') { note.className = 'help'; note.replaceChildren(h('b', {}, '当前照片未显示光晕：'), '日光下光晕会减弱。可选择「夜间街道」或「蓝调时刻」观察灯光边缘。'); }
-          else { note.className = 'help'; note.replaceChildren(h('b', {}, '当前照片未显示光晕：'), '画面中没有能形成光晕的明亮光源。'); }
-        };
-        afterPreview = show;
-        const { inp, out } = slider(0, OM3.halation, l.halation ?? 0, (x) => { if (x) l.halation = x; else delete l.halation; changed(); }, (x) => (x ? `+${x}` : '0'), '胶片光晕');
-        show();
-        return [withHelp(h('div', { class: 'crow' }, h('span', { class: 'cname' }, pmIcon('halo'), '胶片光晕'), steps(inp), out), '胶片光晕', [
-          '在低光场景为明亮光源添加红橙色光晕，可用夜景样片观察。',
-          '拖动滑杆或用加减按钮，双击归零。',
-          fwLine('固件 v0.28', '该版本起支持。')], note)];
       })())),
-    editGroup('颗粒与边框', h('div', { class: 'group cam rows' },
+    editGroup('颗粒与边框', () => join(`颗粒 ${grainStrength(l) || '关'}`,
+      l.border ? `${l.border > 0 ? '白边' : '黑边'} ${Math.abs(l.border)}` : '无边框'), h('div', { class: 'group cam rows' },
       ...(() => {                                // v0.40: Film Grain Off, 1..5 and Grain Size, as the camera's rows
         const note = h('p', { class: 'help' });
         const show = () => {
@@ -2125,76 +2278,77 @@ async function om3ShareProfile(l: Look) {
 }
 const bankPack = (looks: Look[]): Pack => ({ schema: PACK_SCHEMA, name: O.name, looks, slots: {} });
 
+function workbenchHelp() {
+  modal('使用说明', h('div', { class: 'install' },
+    h('h3', {}, '浏览与编辑'),
+    h('p', {}, '从左侧胶卷库选一卷，用中间样片对照原图和调色效果。右侧可以调整色调、配方和盒签。'),
+    h('h3', {}, '常见问题'),
+    h('p', {}, '胶卷库保存你的配方。只有装进当前胶片盒的胶卷才会随盒导出。若胶片盒有空位，可以从库中装入一卷。'),
+    h('p', {}, '要在另一台电脑继续编辑，请从「导出到…」下载配方备份，再用「配方工具」打开。'),
+    h('a', { href: 'https://github.com/SengokuCola/Nostalgia-OM/blob/main/docs/FAQ.md', target: '_blank', rel: 'noopener' }, '更多常见问题')));
+}
+
 function om3InstallDialog() {
-  const link = (href: string, text: string) => h('a', { href, target: '_blank', rel: 'noopener' }, text);
-  const code = (t: string) => h('code', {}, t);
-  const step = (title: string, ...body: (Node | string | null)[]) => h('li', { class: 'step' }, h('b', {}, title), h('div', { class: 'step-body' }, ...body));
-  const exportBtn = h('button', { onclick: () => { dlg.close(); om3ExportDialog(); } }, '打开导出面板');
-  const body = h('div', { class: 'install' },
-    h('p', { class: 'warn' }, '这是非官方实验固件。刷写失败可能导致相机无法启动，风险由使用者承担。恢复文件可用于还原官方固件。'),
-    h('ol', { class: 'steps' },
-      step('检查机身',
-        h('p', {}, '在「设置 → 固件版本」中确认机身是 ', h('b', {}, 'OM SYSTEM OM-3'), '，官方固件版本为 ', h('b', {}, '1.1'), '。请将电池充足电，并准备一张已在机内格式化的 SD 卡。')),
-      step('安装 Python 3.10 或更高版本（仅首次）',
-        h('p', {}, '从 ', link('https://www.python.org/downloads/', 'Python 官网'), ' 下载安装。macOS 用户安装后，还需在 Python 文件夹中运行 ', code('Install Certificates.command'), '。')),
-      step('下载 OM-3 版 Caduceus',
-        h('p', {}, '打开', link(`${OM3_GH}/releases/latest`, '最新发布页'), '，下载 ', h('b', {}, 'Source code (zip)'), ' 并解压。受 OM 固件许可限制，项目以源码发布；下一步将在本机用官方固件生成更新文件。')),
-      step('构建固件',
-        h('p', {}, '按完整说明运行 ', code('firmware/patch.py'), '。脚本会获取官方固件、应用补丁、校验文件，并生成 ', code('SD card files'), ' 文件夹。将其中的 ', code('DCOLYMP'), ' 复制到 SD 卡根目录。v0.29 以前还需复制 ', code('OM3MOD'), '；从 v0.29 起，其余安装资源已内置。请将 ', code('restore/'), ' 恢复文件夹留存在电脑上。')),
-      step('导入自定义配方（可选）',
-        h('p', {}, '可以直接在机身的胶片页创建配方。要使用 LookLab 编辑的配方，请按以下步骤操作。'),
-        h('ol', { class: 'substeps' },
-          h('li', {}, 'v0.28 及以前：如需保留机内调好的配方，先点「打开…」，读取卡上的 ', code('OM3MOD/LOOKS.BIN'), '（v0.19 以前为 ', code('PROFILES.BIN'), '）。从 v0.29 起，机身会自行保存配方和机内修改，只有遇到新胶片组时才读取 ', code('LOOKS.BIN'), '。在 LookLab 中未更改的胶片会保留其机内调整。'),
-          h('li', {}, '编辑完成后，选择「导出 → 写入 SD 卡」，也可以下载 SD 卡文件包并解压到卡的根目录。'),
-          h('li', {}, '把卡插回已安装 Caduceus 的相机，开机后半按一次快门即可加载配方。')),
-        exportBtn),
-      step('刷入固件',
-        h('p', {}, '关机插入 SD 卡，按住 ', h('b', {}, 'OK'), ' 键开机。更新期间请保持开机。等待指示灯从常亮变为闪烁，表示更新完成，此时再关机。随后从卡中删除 ', code('DCOLYMP/E1479999.BIN'), '。')),
-      step('选择胶片并拍摄',
-        h('p', {}, '在「图像模式」中，COLOR 1–4 之后会按 LookLab 中的顺序列出 ', h('b', {}, 'FILM 1–20'), '。选中胶片后，可在旁边的参数行继续微调；机身会将修改保存到这款胶片。')))
-  );
-  const dlg = modal('安装 OM-3 Caduceus 固件', body, [
-    h('a', { class: 'btn', href: `${OM3_GH}/blob/main/docs/INSTALL.md`, target: '_blank', rel: 'noopener' }, '在 GitHub 查看完整说明'),
-    h('a', { class: 'btn primary', href: `${OM3_GH}/releases/latest`, target: '_blank', rel: 'noopener' }, '最新版本'),
-  ]);
+  const project = 'https://github.com/SengokuCola/Nostalgia-OM';
+  modal('固件与安装', h('div', { class: 'install' },
+    h('p', {}, 'Nostalgia 适用于运行原厂固件 1.1 的 OM SYSTEM OM-3。首次安装和恢复原厂固件请按安装指南操作。'),
+    h('p', {}, '已安装 Nostalgia 时，可直接用「写入 SD 卡」更新胶片。把卡插回机身，开机后半按一次快门载入。')),
+    [h('a', { class: 'btn', href: project + '/blob/main/docs/INSTALL.md', target: '_blank', rel: 'noopener' }, '安装与恢复指南'),
+     h('a', { class: 'btn primary', href: project + '/releases', target: '_blank', rel: 'noopener' }, '固件下载')]);
 }
 
 type DirHandle = { name: string; getDirectoryHandle(n: string, o?: { create?: boolean }): Promise<DirHandle>; getFileHandle(n: string, o?: { create?: boolean }): Promise<{ createWritable(): Promise<{ write(d: BlobPart): Promise<void>; close(): Promise<void> }> }>; values(): AsyncIterable<{ name: string }> };
-async function om3ToCard(buildFiles: () => Promise<{ name: string; data: Uint8Array }[]>) {
+async function om3ToCard(status: HTMLElement) {
   const pick = (window as unknown as { showDirectoryPicker?: (o?: object) => Promise<DirHandle> }).showDirectoryPicker;
-  if (!pick) { toast('当前浏览器无法直接写入文件夹，请下载 SD 卡文件包并解压。', 'err'); return; }
+  if (!pick) return;
+  status.textContent = '';
   let dir: DirHandle;
   try { dir = await pick.call(window, { mode: 'readwrite', id: 'om3card' }); } catch (e) {
-    if ((e as Error).name !== 'AbortError') toast('无法打开目录，请下载 SD 卡文件包。', 'err');
+    if ((e as Error).name !== 'AbortError') status.textContent = '无法打开目录。可下载 SD 卡包后解压。';
     return;
   }
+  const destination = dir.name.toUpperCase() === 'OM3MOD' ? dir.name : dir.name + '/OM3MOD';
+  if (!confirm(`将「${O.name}」写入 ${destination}，并替换其中同名的配方文件？`)) return;
   try {
-    const files = await buildFiles();
+    status.textContent = `正在写入 ${destination}…`;
+    const files = await cardFiles();
     let om3 = dir;
     if (dir.name.toUpperCase() !== 'OM3MOD') om3 = await dir.getDirectoryHandle('OM3MOD', { create: true });
     for (const f of files) {
       const w = await (await om3.getFileHandle(f.name, { create: true })).createWritable();
       await w.write(f.data as BlobPart); await w.close();
     }
-    toast(`Saved ${files.map((f) => f.name).join(', ')} to ${dir.name === om3.name ? dir.name : `${dir.name}/OM3MOD`}. Put the card in the camera and half-press.`);
-  } catch (e) { toast(`写入 SD 卡失败： ${(e as Error).message}`, 'err'); }
+    status.textContent = `已写入 ${destination}。现在可以将卡插回相机。`;
+  } catch (e) { status.textContent = `写入失败，${(e as Error).message}`; }
 }
 
-function om3ExportDialog() {
+const profileName = () => exportTarget.id === 'profiles' ? 'PROFILES.BIN' : 'LOOKS.BIN';
+const looksBin = () => profilesBin(
+  O.bank.map(row => row.map(look => look && { ...look, filmEffects: supportedEffects(look) })),
+  exportTarget.fw, Boolean(exportTarget.labels));
+async function cardFiles() {
+  const lb = looksBin();
+  const profile = { name: profileName(), data: lb };
+  if (exportTarget.id === 'profiles') return [profile];
+  const files: {name: string; data: Uint8Array}[] = [];
+  if (exportTarget.curves) files.push({name: 'CURVES.BIN', data: curvesBin(lb, O.bank)});
+  files.push({name: 'NAMES.BIN', data: await namesBin(O.bank, view.labelFont)});
+  files.push(profile);
+  return files;
+}
+function om3ExportDialog(cardOnly = false) {
   const probs = validateBank(O.bank);
   const fname = (O.name || 'om3-looks').replace(/[^\p{L}\p{N}_.-]+/gu, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'om3-looks';
   const n = O.bank.flat().filter(Boolean).length;
   const bankJson = () => JSON.stringify(exportBank(), null, 1) + '\n';
-  const profileName = () => exportTarget.id === 'profiles' ? 'PROFILES.BIN' : 'LOOKS.BIN';
-  const looksBin = () => profilesBin(O.bank, exportTarget.fw, Boolean(exportTarget.labels), exportTarget.id === 'nostalgia-effects');
   const targetOptions = exportTargets.map(t => h('option', { value: t.id, selected: t === exportTarget }, t.name));
   const fwSel = h('select', { 'aria-label': '机身固件', onchange: (e: Event) => {
     const id = (e.target as HTMLSelectElement).value;
     exportTarget = exportTargets.find(t => t.id === id) ?? exportTargets[0];
     try { localStorage.setItem('caduceus.om3.export-target', id); } catch { /* storage blocked */ }
     renderEditor(); schedulePreview(); wbNote(); updateFiles();
-  } }, h('optgroup', { label: '本项目' }, targetOptions[0]),
-      h('optgroup', { label: '上游 Caduceus for OM-3' }, ...targetOptions.slice(1)));
+  } }, h('optgroup', { label: '本项目' }, ...targetOptions.slice(0, 3)),
+      h('optgroup', { label: '上游 Caduceus for OM-3' }, ...targetOptions.slice(3)));
   const wbBig = O.bank.flat().filter((l) => l?.wb && Math.max(Math.abs(l.wb.a_b), Math.abs(l.wb.g_m)) > 5).map((l) => l!.name);
   const wbBox = h('p', { class: 'warn' });
   const v28 = O.bank.flat().filter((l) => l && v28Parts(l).length).map((l) => `${l!.name} (${v28Parts(l!).join(', ')})`);
@@ -2202,29 +2356,22 @@ function om3ExportDialog() {
     const big = wbBig.length && exportTarget.fw < 26;
     const limited = v28.length && exportTarget.fw < 28;
     const labels = O.bank.flat().some(l => l?.boxLabel) && !exportTarget.labels;
-    const effects = O.bank.flat().some(l => l?.filmEffects?.length) && exportTarget.id !== 'nostalgia-effects';
+    const effects = O.bank.flat().some(l => l?.filmEffects?.some(effect => !supportedEffects(l)?.includes(effect)));
     const curves = O.bank.flat().some(l => l && (hasCurves(l) || hasMix(l))) && !exportTarget.curves;
     wbBox.hidden = !big && !limited && !labels && !curves && !effects;
     wbBox.replaceChildren(
       ...(big ? [h('div', {}, '白平衡偏移将限制在 ±5：', wbBig.join('、'))] : []),
       ...(limited ? [h('div', {}, '所选固件会略过 v0.28 新增参数，并使用旧版色调范围。')] : []),
       ...(labels ? [h('div', {}, '自定义盒签与机身短句会保留在 JSON 配方中。')] : []),
-      ...(effects ? [h('div', {}, '导出胶卷成片效果请选择「胶卷效果实验版」。')] : []),
+      ...(effects ? [h('div', {}, '当前目标固件会略过部分成片效果。导出 Sunlit 请选择「按卷 Sunlit」。')] : []),
       ...(curves ? [h('div', {}, '通道曲线与色彩混合会保留在 JSON 配方中。')] : []));
-  };
-  const cardFiles = async () => {
-    const lb = looksBin();
-    const files = [{ name: profileName(), data: lb }];
-    if (exportTarget.id === 'profiles') return files;
-    if (exportTarget.curves) files.push({ name: 'CURVES.BIN', data: curvesBin(lb, O.bank) });
-    files.push({ name: 'NAMES.BIN', data: await namesBin(O.bank, view.labelFont) as Uint8Array });
-    return files;
   };
   const busy = async (b: HTMLButtonElement, f: () => Promise<void>) => { b.disabled = true; try { await f(); } catch (e) { toast((e as Error).message, 'err'); } finally { b.disabled = probs.length > 0; } };
   const looks = O.bank.flat().filter(Boolean) as Look[];
   const rrAll = () => makeZip(looks.map((l, i) => ({ name: `${String(i + 1).padStart(2, '0')}-${rrName(l.name)}.rrpreset`, data: new TextEncoder().encode(rrpreset(bankPack(looks), i)) })));
   const fmt = (p: Problem) => (p.look !== undefined ? `${at(Math.floor(p.look / PER), p.look % PER)} (${O.bank[Math.floor(p.look / PER)][p.look % PER]?.name || 'no name'}): ` : '') + p.message;
-  const toCard: HTMLButtonElement = h('button', { class: 'primary', disabled: probs.length > 0, onclick: () => busy(toCard, () => om3ToCard(cardFiles)) }, '写入 SD 卡…');
+  const cardStatus = h('div', { class: 'card-status', role: 'status' });
+  const toCard: HTMLButtonElement = h('button', { class: 'primary', disabled: probs.length > 0, onclick: () => busy(toCard, () => om3ToCard(cardStatus)) }, '选择 SD 卡…');
   const zip: HTMLButtonElement = h('button', {
     disabled: probs.length > 0, onclick: () => busy(zip, async () => {
       const files = (await cardFiles()).map((f) => ({ name: `OM3MOD/${f.name}`, data: f.data }));
@@ -2243,31 +2390,36 @@ function om3ExportDialog() {
     filesNote.textContent = exportTarget.labels ? '包含自定义盒签与机身短句。' : '使用所选固件支持的文件格式。';
   }
   wbNote(); updateFiles();
-  modal('导出胶片盒 · ' + O.name, h('div', { class: 'export' },
+  const canWrite = typeof (window as unknown as {showDirectoryPicker?: unknown}).showDirectoryPicker === 'function';
+  toCard.hidden = !canWrite;
+  zip.textContent = '下载 SD 卡包';
+  const compatibility = h('details', { class: 'export-options' },
+    h('summary', {}, cardOnly ? '目标固件' : '固件兼容与单独文件'),
+    h('div', { class: 'ex-row' }, h('div', {}, h('b', {}, '目标固件'), filesNote), fwSel),
+    cardOnly ? null : h('div', { class: 'ex-row' }, h('b', {}, '单独下载'), h('div', { class: 'ex-btns' }, profileDownload, curveDownload, names)));
+  const other = h('details', { class: 'export-options' },
+    h('summary', {}, '其他格式'),
+    h('div', { class: 'ex-row' },
+      h('div', {}, h('b', {}, 'RapidRAW 预设'), h('p', { class: 'help' }, '用于 ORF 的近似配方。')),
+      h('button', { disabled: !looks.length, onclick: () => download(`${fname}-rapidraw.zip`, rrAll(), 'application/zip') }, '下载 ZIP')));
+  modal((cardOnly ? '写入 SD 卡' : '导出胶片盒') + ' · ' + O.name, h('div', { class: 'export' },
+    h('p', { class: 'export-count' }, `${n} / ${COLORS * PER} 卷`),
     probs.length
-      ? h('div', { class: 'problems-box' }, h('b', {}, `请先修正 ${probs.length} 处配方问题`), h('ul', { class: 'problems' }, ...probs.slice(0, 12).map((p) => h('li', {}, fmt(p)))))
-      : h('p', { class: 'ok' }, `✓ ${n} 卷胶片`),
-    h('div', { class: 'ex-row' },
-      h('div', {}, h('b', {}, '机身固件'), filesNote),
-      fwSel),
+      ? h('div', { class: 'problems-box' }, h('b', {}, `请先修正 ${probs.length} 处配方问题`), h('ul', { class: 'problems' }, ...probs.slice(0, 12).map(p => h('li', {}, fmt(p)))))
+      : null,
+    cardOnly
+      ? h('section', { class: 'card-export' },
+          h('p', {}, canWrite ? '选 SD 卡根目录，配方将写入 OM3MOD。也可以直接选 OM3MOD 文件夹。' : '当前浏览器不支持直接写入文件夹，请下载 SD 卡包并解压到 SD 卡根目录。'),
+          h('p', { class: 'help' }, '插回机身后，开机半按快门载入胶片。'),
+          h('div', { class: 'ex-btns' }, canWrite ? toCard : zip), cardStatus)
+      : h('div', { class: 'ex-row' },
+          h('div', {}, h('b', {}, 'SD 卡包'), h('p', { class: 'help' }, '包含 OM3MOD 配方文件与 JSON 备份，解压到 SD 卡根目录即可。')),
+          zip),
     wbBox,
-    h('div', { class: 'ex-row' },
-      h('div', {}, h('b', {}, '写入 SD 卡'), h('p', { class: 'help' }, '选择 SD 卡根目录或 OM3MOD 文件夹。')),
-      toCard),
-    h('div', { class: 'ex-row' },
-      h('div', {}, h('b', {}, 'SD 卡文件包（.zip）'), h('p', { class: 'help' }, '将压缩包解压到 SD 卡根目录。配方、名称和受支持的曲线文件位于 OM3MOD 文件夹，另附配方备份。')),
-      zip),
-    h('div', { class: 'ex-row' },
-      h('div', {}, h('b', {}, '机身文件')),
-      h('div', { class: 'ex-btns' },
-        profileDownload, curveDownload, names)),
-    h('div', { class: 'ex-row' },
-      h('div', {}, h('b', {}, '胶片配方文件（.json）'), h('p', { class: 'help' }, '包含所有配方和备注，可重新打开编辑或分享。')),
-      h('button', { onclick: () => download(`${fname}.om3.json`, bankJson(), 'application/json') }, '下载')),
-    h('div', { class: 'ex-row' },
-      h('div', {}, h('b', {}, 'RapidRAW 预设（.rrpreset）'), h('p', { class: 'help' }, '每款胶片导出一个用于 ORF 的近似预设，打包为 ZIP。')),
-      h('button', { disabled: !looks.length, onclick: () => download(`${fname}-rapidraw.zip`, rrAll(), 'application/zip') }, `下载全部 ${looks.length} 款（.zip）`)),
-    h('p', { class: 'help' }, '机身自动检查文件。载入新配方后，选择一款胶片即可使用。v0.29 起机身会忽略已经载入过的胶片组，修改配方后可重新导出。')));
+    cardOnly ? null : h('div', { class: 'ex-row' },
+      h('div', {}, h('b', {}, '配方备份'), h('p', { class: 'help' }, '保存当前盒的配方，之后可重新导入编辑。')),
+      h('button', { onclick: () => download(`${fname}.om3.json`, bankJson(), 'application/json') }, '下载 JSON')),
+    compatibility, cardOnly ? null : other));
 }
 
 // ---------------------------------------------------------------- start
@@ -2317,5 +2469,6 @@ export const workbench = {
   openFile, onFile: om3OnFile, onPhoto, onGrade: om3OnGradeFile,
   newEmpty: () => newBank('empty'), newDefaults: () => newBank('library'),
   films: () => om3FilmPicker(), paste: pasteDialog, share: om3Share,
-  install: om3InstallDialog, exportBank: om3ExportDialog,
+  install: om3InstallDialog, help: workbenchHelp,
+  exportBank: () => om3ExportDialog(), quickToCard: () => om3ExportDialog(true),
 };

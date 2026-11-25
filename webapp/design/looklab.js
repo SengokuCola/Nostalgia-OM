@@ -145,6 +145,7 @@ function syncWorkbench() {
 }
 
 get("new-roll").onclick = workbench.newRoll;
+get("browse-films").onclick = workbench.films;
 get("delete-roll").onclick = workbench.deleteRoll;
 get("choose").onclick = () => {
   get("film-dialog").showModal();
@@ -165,6 +166,9 @@ get("reset").onclick = workbench.resetTone;
 get("undo").onclick = workbench.undo;
 get("redo").onclick = workbench.redo;
 get("export").onclick = workbench.exportBank;
+get("write-card").onclick = workbench.quickToCard;
+get("workbench-help").onclick = workbench.help;
+get("firmware-help").onclick = workbench.install;
 get("file").onchange = workbench.onFile;
 get("photo").onchange = workbench.onPhoto;
 get("grade").onchange = workbench.onGrade;
@@ -226,33 +230,13 @@ function mountPreview() {
   const preview = get("preview");
   mountZoom(preview);
   const options = preview.querySelector(".pv-opts");
-  options.querySelector("button.link").textContent = "＋ 导入图片";
-  const note = options.querySelector(":scope > .help");
-  const help = document.createElement("details");
-  const title = document.createElement("summary");
-  title.textContent = "预览说明";
-  help.append(title, note, preview.lastElementChild);
-  preview.append(help);
   preview.querySelector(".thumbs").before(options);
 }
 
-function showPhoto(name, source, custom) {
+function showPhoto(name) {
   if (get("preview").dataset.zoom === "true") get("zoom").click();
   get("frame-name").textContent = name;
-  if (!custom) return;
-  const button = document.querySelector(".thumb.own");
-  const thumb = document.createElement("canvas");
-  const image = document.createElement("canvas");
-  image.width = source.width;
-  image.height = source.height;
-  image.getContext("2d").putImageData(source, 0, 0);
-  const scale = 120 / Math.max(source.width, source.height);
-  thumb.width = Math.max(1, Math.round(source.width * scale));
-  thumb.height = Math.max(1, Math.round(source.height * scale));
-  thumb.getContext("2d").drawImage(image, 0, 0, thumb.width, thumb.height);
-  button.replaceChildren(thumb);
-  button.title = name;
-  button.setAttribute("aria-label", name);
+
 }
 
 export function startDarkroom(resources = {}) {
