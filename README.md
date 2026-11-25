@@ -1,10 +1,14 @@
-# Nostalgia 怀旧
+# Nostalgia-OM
 
-**Nostalgia 怀旧** 为 **OM SYSTEM OM-3（原厂固件 1.1）** 提供 20 个胶片槽、机内色彩编辑和配方导入。拍摄时可以用 Film Box 在取景画面里切换胶片，用分像辅助手动对焦，也可以预览 Cyber Card 图卡并叠加到 JPEG 照片上。部分机内菜单和 LookLab 提供简体中文界面。
+**Nostalgia-OM** 是 **OM SYSTEM OM-3** 的一个补丁项目，基于原厂1.1固件 和 Caduceus for OM-3 项目（感谢 androidfanman和 cakelesscoder 的开源和贡献 [OM-3 上游](https://github.com/androidfanman/caduceus-om3) · [PEN E-P7 项目](https://github.com/cakelesscoder/caduceus-ep7)）
+
+提供了定制的胶片选择UI，自定义胶卷色彩编辑和配方导入。并且提供实验性的裂像对焦和赛博透卡功能
 
 [下载 Nostalgia](https://github.com/SengokuCola/Nostalgia-OM/releases) · [使用指南](docs/USING.md) · [报告问题](https://github.com/SengokuCola/Nostalgia-OM/issues)
 
-本仓库的 LookLab 默认打开暗房工作台。可在 Releases 下载 Windows 版，或按[本地运行说明](webapp/README.md)启动。另有[上游在线版](https://androidfanman.github.io/caduceus-om3/looklab/)。
+本仓库的 LookLab 默认打开暗房工作台。可在 Releases 下载 Windows 版，或按[本地运行说明](webapp/README.md)启动。
+
+![LookLab 暗房工作台中，左侧列出胶卷，中间预览 Portra 400 配方下的黄色出租车，右侧显示色调调整面板](docs/images/looklab-darkroom.png)
 
 ## 安装
 
@@ -17,16 +21,6 @@
 5. 保存生成的 `restore/E1479999.BIN`。需要恢复原厂 1.1 时，用它替换卡上 `DCOLYMP` 中的同名文件，再按相同方式更新。
 
 [上游安装和故障排查指南](https://androidfanman.github.io/caduceus-om3/pages/install/)
-
-## 构建与发布
-
-当前版本为 **v0.2.0**。[查看本版更新](CHANGELOG.md#nostalgia-om-v020--2026-11-24)。
-
-- 手动验证时，在 GitHub Actions 运行 **Nostalgia Release**，输入 `v0.2.0`，从运行结果下载补丁包。
-- 推送 `fork-v0.2.0` 格式的 Git 标签后，工作流会编译标签源码、逐字节验证补丁重建，并将 ZIP 和 `SHA256SUMS` 附到预发布版。
-- 本地构建时，在 Linux 或 WSL 中设置 `OM3_STOCK`（原厂 1.1 文件）和 `OM3_TOOLCHAIN`（MN10300 binutils 构建目录），执行 `bash tools/release-build.sh v0.2.0 out-release`。[构建说明](releases/README.md#fork-release-builds)
-
-补丁包包含启动器、补丁、配套卡文件、`LICENSE` 和 `NOTICE`。启动器使用原厂 1.1 文件在本地生成更新文件和恢复文件。
 
 ## The 20 film sims
 
@@ -64,7 +58,9 @@ Nostalgia 由 SengokuCola 基于 androidfanman 的 Caduceus for OM-3 v0.40.2 开
 
 项目采用 Apache License 2.0。[许可证](LICENSE) · [修改与第三方署名](NOTICE)
 
-OM SYSTEM、Olympus 和 OM-3 为其各自权利人的商标。
+
+
+
 
 ## 相较上游的详细改动
 
