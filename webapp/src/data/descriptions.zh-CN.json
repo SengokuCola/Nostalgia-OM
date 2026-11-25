@@ -1,9 +1,10 @@
 {
+  "Sunlit Foliage recolours by lightness and adds a dithered texture.": "按画面明度重新着色，呈现带抖动纹理的色块。",
   "Kodak Portra 400: the most loved colour negative, warm, natural skin, soft greens, gentle contrast and bright, airy midtones.": "经典人像彩色负片。肤色温暖自然，绿色柔和，对比度舒缓，中间调明亮通透。",
   "Kodak Gold 200: the classic consumer film, warm and golden with rich yellows, friendly skin and yellowish greens.": "经典日用彩色负片。整体呈暖金色，黄色浓郁，肤色讨喜，绿色略偏黄。",
   "Kodak Kodachrome 64: the classic magazine slide film, deep reds and golden yellows, dark, rich blues, restrained greens and dense shadows.": "经典杂志摄影反转片。红色深沉，黄色偏金，蓝色浓郁偏暗，绿色含蓄，阴影厚重。",
   "Kodak Portra 800: fast Portra for low light, warmer and richer than 400, with a touch more colour in the reds.": "适合弱光的高速人像负片。比 Portra 400 更暖、色彩更浓，红色也更饱满。",
-  "CineStill 800T: tungsten-balanced cinema film for night and city lights; cool, teal-leaning colour with warm skin and glowing reds (no halation: add Glow yourself).": "适合夜景和城市灯光的钨丝灯平衡电影胶片。整体偏冷青，肤色暖，红色明亮。配方默认不加光晕，可自行添加柔光。",
+  "CineStill 800T: balanced for 3200 K tungsten light, with red-orange halation around bright lamps against dark backgrounds.": "3200 K 钨丝灯平衡，日光下偏蓝。暗处的明亮灯点周围带红橙色光晕。",
   "Kodak Ektar 100: the finest-grained colour negative, with saturated colour, bold reds, vivid greens and strong, clean blues.": "颗粒极细的彩色负片。色彩饱和，红色醒目，绿色鲜活，蓝色浓郁纯净。",
   "Kodak UltraMax 400: Kodak's affordable all-rounder, warm, saturated and punchy, with rich blues and good skin tones.": "价格亲民的通用彩色负片。整体温暖鲜艳，对比鲜明，蓝色浓郁，肤色自然。",
   "Fujicolor Pro 400H: the pastel wedding favourite, soft colour, airy highlights, pale skin, minty greens and cyan skies.": "婚礼摄影常用的淡彩负片。高光通透，肤色浅淡，绿色偏薄荷，天空偏青。",

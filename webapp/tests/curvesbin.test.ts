@@ -13,11 +13,14 @@ CAMERA_FILMS.forEach((f, i) => { bank[Math.floor(i / PER)][i % PER] = filmLook(f
 const hex = (b: Uint8Array) => Buffer.from(b).toString('hex');
 
 describe('CURVES.BIN', () => {
-  const looks = profilesBin(bank, 28), curves = curvesBin(looks, bank);
-  it('goes with a LOOKS.BIN equal to v0.29.5\'s (the camera\'s built-in films)', () => {
-    expect(hex(looks)).toBe(hex(new Uint8Array(readFileSync(new URL('../../releases/v0.29.5/LOOKS.BIN', import.meta.url)))));
+  const looks = profilesBin(bank, 28, false), curves = curvesBin(looks, bank);
+  it('exports the standard camera files shipped together', () => {
+    expect(hex(looks)).toBe(readFileSync(new URL('../../card/standard/LOOKS.BIN', import.meta.url)).toString('hex'));
+    expect(hex(curves)).toBe(readFileSync(new URL('../../card/standard/CURVES.BIN', import.meta.url)).toString('hex'));
   });
-  it('matches the reference build byte for byte', () => {
+  it('matches the legacy curves reference when bound to the legacy recipe records', () => {
+    const archived = readFileSync(new URL('../../releases/v0.29.5/LOOKS.BIN', import.meta.url));
+    const curves = curvesBin(archived, bank);
     expect(curves.length).toBe(432);
     expect(hex(curves.subarray(0, 8))).toBe(hex(new Uint8Array([0x4f, 0x4d, 0x33, 0x4b, 1, 0, 0xb0, 1])));
     expect(hex(curves.subarray(32, 52))).toBe('1c8fb44b' + '00f0000000001201' + '0000ffffff00' + '0000');

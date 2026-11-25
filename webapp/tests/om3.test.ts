@@ -63,9 +63,12 @@ describe('OM-3 profile bank', () => {
     ]);
     expect(b[0][0]!.origin).toBe('film:Portra 400');
     expect(filmByName('Fuji 400H')!.name).toBe('Pro 400H');   // renamed films keep older looks' film
-    for (const l of b.flat()) {   // no grain, Glow / Clarity or Art Effect in the start-up looks
-      expect(l!.effect).toBeNull(); expect(l!.art_effect).toBe('off'); expect(l!.film_grain).toBeUndefined();
-    }
+    expect(b[1][3]?.boxLabel?.style).toBe(7);
+    const exported = readProfiles(profilesBin(b, 28, false), true);
+    expect(exported[1][3]).toMatchObject({ name: 'CineStill 800T', halation: 4,
+      film_wb: { mode: 'custom', kelvin: 3200 }, film_grain: 1, effect: null });
+    expect(exported.flat().filter(l => l?.halation)).toHaveLength(1);
+    expect(exported[3][4]?.film_grain).toBe(2);
   });
 
   it('toOm3: mono refused, ranges limited, v0.20 Extras kept (glow without colour, no Blur)', () => {
@@ -171,7 +174,7 @@ describe('OM-3 profile bank', () => {
     for (const [i, b] of [defaultBank(LIB, fromLibrary), randomBank(7), randomBank(8), emptyBank()].entries()) {
       writeFileSync(join(dir, `in${i}.json`), JSON.stringify(pyJson(b)));
       execFileSync('python3', ['-I', MK, join(dir, `in${i}.json`), join(dir, `out${i}.bin`)]);
-      expect(hex(profilesBin(b))).toBe(hex(new Uint8Array(readFileSync(join(dir, `out${i}.bin`)))));
+      expect(hex(profilesBin(b, 22, false))).toBe(hex(new Uint8Array(readFileSync(join(dir, `out${i}.bin`)))));
     }
   });
 
@@ -184,10 +187,10 @@ describe('OM-3 profile bank', () => {
       const l = filmLook(f);
       expect(validateProfile(l)).toEqual([]);
       expect(names.has(f.name.toLowerCase())).toBe(false); names.add(f.name.toLowerCase());
-      const back = readProfiles(profilesBin([[l]]))[0][0]!;
+      const back = readProfiles(profilesBin([[l]], 22, false))[0][0]!;
       expect(back.hue).toEqual(l.hue); expect(back.tone).toEqual(l.tone); expect(back.advice.contrast).toBe(f.contrast);
       expect(back.advice.sharpness).toBe(f.sharp); expect(f.sharp).toBeGreaterThan(-5);   // v0.22 Sharp, never Off
-      expect(l.effect).toBeNull(); expect(l.art_effect).toBe('off'); expect(l.film_grain).toBeUndefined();
+      expect(l.effect).toBeNull(); expect(l.art_effect).toBe('off'); expect(back.film_grain).toBe(f.film_grain);
     }
     expect(new Set(FILMS.map((f) => f.film)).size).toBe(FILMS.length);   // one look per film
     expect(filmByName('Portra 400 PV')?.name).toBe('Portra 400');        // older names map to their film

@@ -15,7 +15,7 @@ Recipe keys (all integers; out-of-range sums are clamped to the camera's limits)
   hl sh mid     Highlights / Shadows / Midtones (+ brighter)      blk wht   Blacks (+ = lifted, faded) / Whites (− = dimmer)
 Sharp (firmware v0.22, the camera's own numbers: 0 its normal, + crisper, − softer, −5 Off) comes from SHARP below:
 fine-grained slide and negative films a step crisper, portrait, cinema and fast films softer, instant film softest.
-No grain, Glow / Clarity or Art Effects: those stay the user's choice."""
+Selected fast stocks carry grain, and 800T uses the native halation pass."""
 import json, os
 
 SECTORS = ['Y', 'O', 'OR', 'R', 'M', 'V', 'B', 'BC', 'C', 'GC', 'G', 'YG']
@@ -42,6 +42,7 @@ def settings(r):
 
 # name (camera, ≤ 15 characters), group, film, description, recipe
 FILMS = [
+ ('Sunlit Foliage', 'effect', 'Sunlit Foliage', 'Sunlit Foliage recolours by lightness and adds a dithered texture.', {}),
  # --- the camera's 20 (owner, 2026-11-08): FILM 1-20 in this order (CAMERA below); rewritten for v0.25 ---
  ('Portra 400', 'neg', 'Kodak Portra 400', "Kodak Portra 400: the most loved colour negative, warm, natural skin, soft greens, gentle contrast and bright, airy midtones.",
   dict(sat=-1, s_O=1, l_O=1, h_O=-1, s_g=-1, h_g=1, s_b=-1, h_b=1, ab=1, con=-1, hl=-2, sh=1, mid=1, split=('BC', 1, 'O', 1))),
@@ -51,7 +52,7 @@ FILMS = [
   dict(sat=1, s_r=3, l_r=-1, s_y=2, h_y=1, s_g=-1, h_g=1, l_g=-1, s_b=2, l_b=-1, h_b=-1, ab=1, con=2, sh=-2, blk=-1, split=('B', 1, 'Y', 1))),
  ('Portra 800', 'neg', 'Kodak Portra 800', "Kodak Portra 800: fast Portra for low light, warmer and richer than 400, with a touch more colour in the reds.",
   dict(ab=2, s_O=1, l_O=1, h_O=-1, s_r=1, s_g=-1, h_g=1, s_b=-1, h_b=1, hl=-1, mid=1, split=('BC', 1, 'O', 1))),
- ('CineStill 800T', 'neg', 'CineStill 800T', "CineStill 800T: tungsten-balanced cinema film for night and city lights; cool, teal-leaning colour with warm skin and glowing reds (no halation: add Glow yourself).",
+ ('CineStill 800T', 'neg', 'CineStill 800T', "CineStill 800T: balanced for 3200 K tungsten light, with red-orange halation around bright lamps against dark backgrounds.",
   dict(ab=-2, s_O=1, s_OR=1, s_r=1, h_b=1, s_b=1, h_g=-1, s_g=-1, con=1, sh=-1, hl=-1, blk=1, split=('C', 2, 'O', 2))),
  ('Ektar 100', 'neg', 'Kodak Ektar 100', "Kodak Ektar 100: the finest-grained colour negative, with saturated colour, bold reds, vivid greens and strong, clean blues.",
   dict(sat=2, s_r=1, s_b=1, h_b=-1, s_O=-1, h_O=1, s_g=1, con=1, sh=-1)),
@@ -219,25 +220,26 @@ CAMERA = [
 # These values replace the recipe's hue / light / sat, WB, tone, Contrast and split (split=None: none). Sharp stays
 # SHARP's (Gold 200: Sharp -1, the owner's).
 GRADED = {
+ 'Sunlit Foliage': dict(hue=[0]*12, light=[0]*12, sat=[0]*12),
  # --- the camera's 20: v6, graded against reference photos of each film (camera-tested on the chart, 2026-11-11);
  # 11 of them (Portra 400 / 800, Gold, Ektar, ColorPlus, Ektachrome, Pro 400H, Velvia, Superia, C200, Provia) regraded
  # 2026-11-13 against film scans of a colour chart (camera model, not yet shot; feature/film-chart-grade) ---
- 'Portra 400': dict(hue=[0, 1, 0, 0, 0, 1, -1, 1, -1, 1, -1, 0], light=[0, 0, 1, 0, 0, -1, 0, 0, 1, 0, -1, 0], sat=[-1, 0, 0, 0, 0, 0, -2, 0, -1, 1, 1, -1], ab=1, gm=1, sh=2, mid=1, blk=1, split=None),
- 'Gold 200': dict(hue=[-1, 0, 0, 0, 0, -1, -1, -1, 0, 0, 0, 1], light=[-1, 1, 2, 0, 0, -1, 0, 1, 1, 0, -1, -1], sat=[1, 0, -1, 0, -1, 1, -1, -3, -1, 1, -1, 1], ab=1, gm=-1, con=1, sh=3, blk=1, wht=-1, split=('O', 1, 'O', 1)),
- 'Kodachrome 64': dict(hue=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], light=[0, 0, 0, 0, 0, 0, -1, 0, 0, 0, -1, 0], sat=[-1, 1, 0, 0, 2, 1, 3, 0, 2, 0, 0, -1], con=1, sh=-1, blk=-1, split=None),
- 'Portra 800': dict(hue=[0, 0, 0, 0, 0, -2, 0, -1, 0, 0, 0, 1], light=[0, 1, 1, 0, -1, 0, -1, 0, 0, 0, 0, 0], sat=[0, 0, 0, 0, 0, 0, 1, -1, 0, 0, 1, 0], ab=1, gm=-1, sh=2, blk=1, wht=-1, split=('BC', 1, 'Y', 1)),
- 'CineStill 800T': dict(hue=[0, 0, 0, 0, -1, -2, 0, 0, 0, 1, 1, 1], light=[0, -1, 1, 0, 0, 0, -1, 1, -1, -1, 0, -1], sat=[0, 2, 0, 0, 0, 0, 3, 1, 0, 0, -2, -1], ab=-1, gm=-2, hl=-1, sh=-1, blk=-1, split=('Y', 0, 'GC', 1)),
- 'Ektar 100': dict(hue=[0, 0, 0, 0, 0, 0, 0, 0, 0, 1, -1, 0], light=[1, 0, 0, 0, -1, 1, 0, -2, 1, 1, -2, 0], sat=[0, 2, 1, 0, 1, 2, 1, 2, 0, 0, 2, 0], ab=-1, con=1, hl=-2, wht=-1, split=('BC', 1, 'Y', 0)),
+ 'Portra 400': dict(hue=[0, 1, 0, 0, 0, 1, -1, 1, -1, 1, -1, 0], light=[0, 0, 1, 0, 0, -1, 0, 0, 1, 0, -1, 0], sat=[-1, 0, 0, 0, 0, 0, -2, 0, -1, 1, 1, -1], ab=1, gm=0, sh=2, mid=1, blk=1, split=None),
+ 'Gold 200': dict(hue=[-1, 0, 0, 0, 0, -1, -1, -1, 0, 0, 0, 1], light=[-1, 1, 2, 0, 0, -1, 0, 1, 1, 0, -1, -1], sat=[1, 0, -1, 0, -1, 1, -1, -3, -1, 1, -1, 1], ab=1, gm=-1, con=1, sh=2, blk=1, wht=-1, split=('O', 1, 'O', 1)),
+ 'Kodachrome 64': dict(hue=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], light=[0, 0, 0, 0, 0, 0, -1, 0, 0, 0, -1, 0], sat=[-1, 1, 0, 0, 2, 1, 3, 0, 2, 0, 0, -1], con=1, sh=-2, blk=-1, split=None),
+ 'Portra 800': dict(hue=[0, 0, 0, 0, 0, -2, 0, -1, 0, 0, 0, 1], light=[0, 1, 1, 0, -1, 0, -1, 0, 0, 0, 0, 0], sat=[0, 0, 0, 0, 0, 0, 1, -1, 0, 0, 1, 0], ab=1, gm=-1, sh=2, blk=1, wht=-1, split=('BC', 1, 'Y', 1), hl=-1),
+ 'CineStill 800T': dict(hue=[0, 0, 0, 0, -1, -2, 0, 0, 0, 1, 1, 1], light=[0, -1, 1, 0, 0, 0, -1, 1, -1, -1, 0, -1], sat=[0, 2, 0, 0, 0, 0, 3, 1, 0, 0, -2, -1], ab=0, gm=0, hl=0, sh=-1, blk=-1, split=None),
+ 'Ektar 100': dict(hue=[0, 0, 0, 0, 0, 0, 0, 0, 0, 1, -1, 0], light=[1, 0, 0, 0, -1, 1, 0, -2, 1, 1, -2, 0], sat=[0, 2, 1, 0, 1, 2, 1, 2, 0, 0, 2, 0], ab=-1, con=1, hl=-2, wht=0, split=('BC', 1, 'Y', 0)),
  'Ultramax 400': dict(hue=[0, 0, 0, 0, 0, 1, 1, -1, 0, 0, 1, 0], light=[0, -1, 0, 0, 0, -1, -1, 1, 1, 0, 0, 0], sat=[-1, 0, 1, 0, 5, 3, 2, -3, -1, 1, -1, 0], ab=-1, blk=1, split=None),
- 'Pro 400H': dict(hue=[0, 1, 0, 0, -1, 1, 1, 1, 0, 0, -1, 0], light=[1, 1, 0, 0, 0, 0, -2, -2, 0, 0, 0, 0], sat=[-2, 0, 0, 0, 0, -2, 0, 1, 0, 2, 1, -1], ab=-2, hl=-1, sh=2, mid=1, blk=-1, split=None),
- 'Velvia 50': dict(hue=[0, -1, 1, 0, 0, 0, 0, -1, 0, 2, -1, -2], light=[0, -2, -1, 0, 0, 1, 2, 2, -1, -1, 1, -1], sat=[4, 5, 1, 0, 2, 0, 1, 4, 3, -1, -1, 4], ab=1, con=2, hl=-1, sh=-2, blk=-2, wht=1, split=('BC', 1, 'B', 1)),
- 'Superia 400': dict(hue=[0, 0, 0, 0, 0, 1, -1, 1, 0, 1, 0, 1], light=[1, 0, 1, 0, 0, -1, 1, 0, 0, 0, -1, 0], sat=[3, 0, 0, 0, 0, 0, -1, 0, 1, 1, 0, 1], ab=2, hl=2, sh=3, blk=2, split=None),
- 'ColorPlus 200': dict(hue=[-1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], light=[-1, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0], sat=[-1, -1, -1, 0, -1, 0, 0, -3, 0, 0, 0, 0], ab=3, gm=1, hl=1, sh=4, mid=1, wht=-2, split=('OR', 1, 'Y', 0)),
+ 'Pro 400H': dict(hue=[0, 1, 0, 0, -1, 1, 1, 1, 0, 0, -1, 0], light=[1, 1, 0, 0, 0, 0, -2, -2, 0, 0, 0, 0], sat=[-2, 0, 0, 0, 0, -2, 0, 1, 0, 2, 1, -1], ab=-1, hl=-1, sh=2, mid=1, blk=-1, split=None),
+ 'Velvia 50': dict(hue=[0, -1, 1, 0, 0, 0, 0, -1, 0, 2, -1, -2], light=[0, -2, -1, 0, 0, 1, 2, 2, -1, -1, 1, -1], sat=[4, 5, 1, 0, 2, 0, 1, 4, 3, -1, -1, 4], ab=1, con=2, hl=-1, sh=-2, blk=-2, wht=1, split=None),
+ 'Superia 400': dict(hue=[0, 0, 0, 0, 0, 1, -1, 1, 0, 1, 0, 1], light=[1, 0, 1, 0, 0, -1, 1, 0, 0, 0, -1, 0], sat=[3, 0, 0, 0, 0, 0, -1, 0, 1, 1, 0, 1], ab=1, hl=1, sh=2, blk=1, split=None),
+ 'ColorPlus 200': dict(hue=[-1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], light=[-1, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0], sat=[-1, -1, -1, 0, -1, 0, 0, -3, 0, 0, 0, 0], ab=2, gm=1, hl=1, sh=2, mid=1, wht=-1, split=('OR', 1, 'Y', 0)),
  'CineStill 400D': dict(hue=[0, 0, 0, 0, 0, -1, 0, -1, 0, 0, 0, 1], light=[1, -1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0], sat=[-1, 0, 1, 0, 1, 0, 0, 0, -1, -1, -3, -1], ab=2, gm=-1, hl=1, blk=-1, split=('Y', 0, 'C', 1)),
- 'Fuji C200': dict(hue=[0, -1, 0, 0, 0, 1, 0, 0, 0, 1, -1, 0], light=[0, 1, 1, 0, 1, -1, -1, 0, 1, 1, 0, 0], sat=[0, 0, 0, 0, -1, 1, 0, -1, 0, 1, 2, 1], ab=1, con=1, sh=2, blk=-1, wht=-1, split=None),
- 'Ektachrome E100': dict(hue=[0, 0, 0, 0, 0, 0, 0, -1, 0, 2, -1, -1], light=[0, -2, -3, 0, -3, 1, -1, 1, -1, -2, 3, -2], sat=[3, 2, 2, 0, 5, 1, 1, 4, 2, 0, 0, 3], ab=-4, gm=-2, con=2, sh=-3, mid=-2, blk=3, split=('B', 1, 'Y', 0)),
+ 'Fuji C200': dict(hue=[0, -1, 0, 0, 0, 1, 0, 0, 0, 1, -1, 0], light=[0, 1, 1, 0, 1, -1, -1, 0, 1, 1, 0, 0], sat=[0, 0, 0, 0, -1, 1, 0, -1, 0, 1, 2, 1], ab=1, con=1, sh=1, blk=-1, wht=-1, split=None),
+ 'Ektachrome E100': dict(hue=[0, 0, 0, 0, 0, 0, 0, -1, 0, 2, -1, -1], light=[0, -2, -3, 0, -3, 1, -1, 1, -1, -2, 3, -2], sat=[3, 2, 2, 0, 5, 1, 1, 4, 2, 0, 0, 3], ab=-1, gm=0, con=1, sh=-2, mid=-1, blk=0, split=None),
  'Reala 100': dict(hue=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], light=[0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, -1], sat=[-1, 0, -1, 0, -1, 1, 0, -1, 0, 2, 3, -1], hl=3, sh=1, split=None),
- 'Provia 100F': dict(hue=[1, 0, 0, 0, 0, 0, 0, -1, 0, -2, 1, 1], light=[0, 0, -3, 0, -2, -1, 0, 1, -1, 0, 1, -1], sat=[0, 3, 1, 0, 4, -2, 0, 3, 2, 0, -1, 3], ab=-3, gm=-2, con=1, mid=-1, split=('BC', 2, 'Y', 0)),
+ 'Provia 100F': dict(hue=[1, 0, 0, 0, 0, 0, 0, -1, 0, -2, 1, 1], light=[0, 0, -3, 0, -2, -1, 0, 1, -1, 0, 1, -1], sat=[0, 3, 1, 0, 4, -2, 0, 3, 2, 0, -1, 3], ab=-1, gm=0, con=1, mid=-1, split=None),
  'Vision3 250D': dict(hue=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], light=[0, -1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0], sat=[-2, 0, -1, 0, 0, 0, 1, -1, 0, 0, -2, -2], hl=2, sh=1, split=None),
  'Fuji Eterna': dict(hue=[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0], light=[1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, -1], sat=[-2, -2, -1, 0, 0, 0, 0, 0, 0, 0, 0, -4], con=1, hl=2, blk=-1, split=None),
  'Astia 100F': dict(hue=[0, 0, 0, 0, 0, -1, 0, 1, 0, 0, -1, 0], light=[1, 0, 1, 0, -1, 0, 0, -1, -1, 0, 0, -1], sat=[-1, -1, -1, 0, 0, -1, 0, 4, 3, 1, 1, -2], ab=1, gm=-1, sh=-1, blk=-1, split=None),
@@ -262,13 +264,13 @@ GRADED = {
  'Kodachrome 200': dict(hue=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], light=[-1, 0, 0, 0, 0, 0, 0, 0, 0, -1, -1, 0], sat=[1, 0, 2, 3, 1, 1, 1, 1, 1, -1, 0, 0], ab=1, con=1, sh=-2, split=None),
  'Agfa Precisa': dict(hue=[0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0], light=[0, 0, 0, 0, -1, 0, 0, 0, 0, -1, 0, 0], sat=[2, 0, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2], ab=-1, con=1, sh=-1, split=None),
  'Polachrome': dict(hue=[0, 0, 1, 0, 0, 1, 0, 0, -1, -1, 0, 1], light=[-1, -1, 0, 0, -1, 0, 0, -1, 2, -2, -2, 0], sat=[-2, -3, -2, -3, -3, -1, -3, -1, -3, -5, -3, -3], ab=1, gm=1, con=2, sh=-2, wht=-1, split=None),
- 'Portra 160': dict(hue=[0, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1], light=[1, -1, 1, 0, 0, 0, 2, 3, 1, 0, -1, 0], sat=[0, -1, 0, -1, -1, -2, -1, 0, 0, -1, -1, 0], hl=1, sh=3, mid=1, blk=2, split=None),  # chart-graded 2026-11-13 (camera model, not shot)
+ 'Portra 160': dict(hue=[0, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1], light=[1, -1, 1, 0, 0, 0, 2, 3, 1, 0, -1, 0], sat=[0, -1, 0, -1, -1, -2, -1, 0, 0, -1, -1, 0], hl=1, sh=2, mid=1, blk=1, split=None),  # chart-graded 2026-11-13 (camera model, not shot)
  'Pro Image 100': dict(hue=[0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], light=[0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0], sat=[2, 0, 1, 1, 1, 1, 1, 1, 0, 2, 2, 2], con=1, split=None),
  'Kodacolor 100': dict(hue=[0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0], light=[0, 0, 0, 0, -1, 0, 0, 1, 0, -1, 0, -1], sat=[2, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2], con=1, sh=-1, split=None),
  'Superia 200': dict(hue=[0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, -1], light=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], sat=[2, 0, 1, 1, 1, 2, 0, 1, 1, 1, 2, 2], ab=-1, con=1, sh=-1, split=None),
  'Superia 800': dict(hue=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -1], light=[0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0], sat=[1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1], ab=-1, con=1, blk=1, split=None),
  'Superia 1600': dict(hue=[-1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0, -1], light=[0, 0, 0, 0, 0, 0, 1, 1, 1, -1, 0, 0], sat=[0, -1, -1, -1, -1, -1, -1, -2, -1, -2, -1, -1], ab=-1, sh=1, blk=1, split=None),
- 'Fujifilm 200': dict(hue=[0, -1, 0, 0, 0, -1, -1, -1, 0, 0, 1, 1], light=[0, 0, 2, 0, 1, 1, 0, 2, 1, 1, -1, -1], sat=[1, -1, -1, 0, -3, 5, 0, -3, -1, -1, -1, 1], ab=3, gm=1, sh=3, mid=1, split=('OR', 2, 'BC', 2)),  # chart-graded 2026-11-13 (camera model, not shot)
+ 'Fujifilm 200': dict(hue=[0, -1, 0, 0, 0, -1, -1, -1, 0, 0, 1, 1], light=[0, 0, 2, 0, 1, 1, 0, 2, 1, 1, -1, -1], sat=[1, -1, -1, 0, -3, 5, 0, -3, -1, -1, -1, 1], ab=1, gm=1, sh=2, mid=1, split=('OR', 2, 'BC', 2)),  # chart-graded 2026-11-13 (camera model, not shot)
  'Fuji 160C': dict(hue=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], light=[0, 0, 0, 0, 0, 1, 0, 0, 0, -1, 0, -1], sat=[3, 0, 1, 1, 1, 1, 1, 2, 1, 1, 3, 2], gm=-1, con=1, sh=-1, split=None),
  'Fuji 800Z': dict(hue=[0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, -1], light=[0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0], sat=[0, -1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0], sh=1, split=None),
  'Agfa Vista 200': dict(hue=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -1], light=[-1, 0, -1, 0, 0, 0, 0, 0, 0, 0, -1, 0], sat=[3, 0, 3, 4, 2, 2, 2, 2, 2, 1, 3, 2], ab=-1, gm=-1, con=1, sh=-1, split=None),
@@ -285,11 +287,11 @@ GRADED = {
  'Kodak 2383': dict(hue=[-1, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0], light=[0, 0, 0, 0, -1, 1, 0, 0, -1, 0, 0, 0], sat=[0, 0, 1, 1, 1, 1, 1, 1, 1, -1, 0, 0], con=2, sh=-2, blk=-1, split=None),
  'Kodak 2393': dict(hue=[0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0], light=[0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], sat=[2, 0, 1, 1, 1, 2, 0, 1, 1, 1, 1, 1], con=2, sh=-2, blk=-1, split=None),
  'Fuji 3513': dict(hue=[-1, 1, 0, 0, 0, 0, 0, 0, 0, 0, -1, -1], light=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], sat=[0, 0, 0, 0, 0, 0, 0, -1, 0, 0, 0, 0], ab=-1, con=1, sh=-1, split=None),
- 'Fujifilm 400': dict(hue=[-1, 0, 0, 0, 0, -1, -1, 0, 0, 1, 2, 1], light=[1, 0, 2, 0, -1, 1, 1, 2, 1, 1, -1, -1], sat=[4, 0, 0, 0, -2, 5, 1, -1, 1, -2, 1, 3], ab=2, con=1, sh=2, mid=1, blk=-1, wht=-1, split=('OR', 1, 'BC', 1)),  # chart-graded 2026-11-13 (camera model, not shot)
- 'Natura 1600': dict(hue=[0, 1, 0, 0, -1, -2, 1, 1, 0, 0, 0, 0], light=[0, -1, 1, 0, 0, -1, -1, 0, 2, 1, 1, 0], sat=[-1, 0, 1, -1, 1, -1, 0, -1, 0, 0, 0, -1], con=1, sh=1, mid=1, wht=-1, split=('OR', 1, 'BC', 1)),  # chart-graded 2026-11-13 (camera model, not shot)
- 'NHG II 800': dict(hue=[0, 1, 0, 0, 0, -1, 1, 0, 1, -1, 0, 0], light=[0, -1, 0, 0, -2, -2, -1, -1, 0, 0, -1, -1], sat=[0, -1, 0, 0, 0, 3, -1, -2, 1, 0, 1, 1], ab=1, gm=1, sh=2, mid=2, blk=1, split=('O', 1, 'Y', 0)),  # chart-graded 2026-11-13 (camera model, not shot)
- 'NPS 160': dict(hue=[1, 1, 0, 0, -1, -1, 1, 1, 1, 0, 0, -1], light=[0, -1, 2, 0, 0, 1, 0, -1, -1, 0, 0, 0], sat=[-2, 0, 0, 0, 2, -1, 0, 1, 4, -1, -1, -2], ab=1, gm=1, hl=2, sh=2, blk=2, wht=-1, split=None),  # chart-graded 2026-11-13 (camera model, not shot)
- 'Pro 160S': dict(hue=[0, 0, 0, 0, 1, -1, 0, 2, 0, 0, 0, 1], light=[0, -1, 0, 0, -1, 1, 0, 0, 1, 1, 0, 0], sat=[1, 0, 0, 0, 0, 3, 0, 0, 0, -1, 1, 0], ab=1, gm=2, hl=-1, sh=2, mid=1, split=('G', 1, 'M', 1)),  # chart-graded 2026-11-13 (camera model, not shot)
+ 'Fujifilm 400': dict(hue=[-1, 0, 0, 0, 0, -1, -1, 0, 0, 1, 2, 1], light=[1, 0, 2, 0, -1, 1, 1, 2, 1, 1, -1, -1], sat=[4, 0, 0, 0, -2, 5, 1, -1, 1, -2, 1, 3], ab=1, con=1, sh=2, mid=1, blk=-1, wht=0, split=('OR', 1, 'BC', 1)),  # chart-graded 2026-11-13 (camera model, not shot)
+ 'Natura 1600': dict(hue=[0, 1, 0, 0, -1, -2, 1, 1, 0, 0, 0, 0], light=[0, -1, 1, 0, 0, -1, -1, 0, 2, 1, 1, 0], sat=[-1, 0, 1, -1, 1, -1, 0, -1, 0, 0, 0, -1], con=1, sh=1, mid=1, wht=0, split=('OR', 1, 'BC', 1)),  # chart-graded 2026-11-13 (camera model, not shot)
+ 'NHG II 800': dict(hue=[0, 1, 0, 0, 0, -1, 1, 0, 1, -1, 0, 0], light=[0, -1, 0, 0, -2, -2, -1, -1, 0, 0, -1, -1], sat=[0, -1, 0, 0, 0, 3, -1, -2, 1, 0, 1, 1], ab=1, gm=1, sh=2, mid=1, blk=1, split=('O', 1, 'Y', 0)),  # chart-graded 2026-11-13 (camera model, not shot)
+ 'NPS 160': dict(hue=[1, 1, 0, 0, -1, -1, 1, 1, 1, 0, 0, -1], light=[0, -1, 2, 0, 0, 1, 0, -1, -1, 0, 0, 0], sat=[-2, 0, 0, 0, 2, -1, 0, 1, 4, -1, -1, -2], ab=1, gm=1, hl=1, sh=2, blk=1, wht=-1, split=None),  # chart-graded 2026-11-13 (camera model, not shot)
+ 'Pro 160S': dict(hue=[0, 0, 0, 0, 1, -1, 0, 2, 0, 0, 0, 1], light=[0, -1, 0, 0, -1, 1, 0, 0, 1, 1, 0, 0], sat=[1, 0, 0, 0, 0, 3, 0, 0, 0, -1, 1, 0], ab=1, gm=1, hl=-1, sh=2, mid=1, split=('G', 1, 'M', 1)),  # chart-graded 2026-11-13 (camera model, not shot)
 }
 # Colour matched (2026-11-13): graded against film scans of a colour chart (camera model; the camera's 20 among them also
 # rest on the v6 chart shoot). The rest are hand-tuned from public descriptions of each film.
@@ -297,6 +299,14 @@ MATCHED = {'Portra 400', 'Portra 800', 'Gold 200', 'Ektar 100', 'ColorPlus 200',
            'Superia 400', 'Fuji C200', 'Provia 100F', 'Portra 160', 'Fujifilm 200', 'Fujifilm 400', 'Natura 1600', 'NHG II 800',
            'NPS 160', 'Pro 160S'}
 TUNED_SHARP = {'Gold 200': -1}
+# Native JPEG processing alongside the colour grade. Grain is the OM-3 Low/Med level.
+CAPTURE_TRAITS = {
+    'Sunlit Foliage': dict(filmEffects=['sunlit']),
+    'CineStill 800T': dict(film_wb=dict(mode='custom', kelvin=3200), halation=4, film_grain=1),
+    'Portra 800': dict(film_grain=1),
+    'NHG II 800': dict(film_grain=1),
+    'Natura 1600': dict(film_grain=2),
+}
 # RGB curves + colour mix per camera film (feature/rgb-curves; 2026-11-15, LookLab preview fit, not camera-tested):
 # (R 5 points, G 5 points, B 5 points, mix [hue R, sat R, hue G, sat G, hue B, sat B]), -7..7. Fitted on top of GRADED
 # to the films' colour-chart reference (Kodachrome 64 / CineStill 800T: the mix only, to reference-photo statistics);
@@ -358,7 +368,8 @@ for name, grp, film, desc, recipe in FILMS:
     if cm:
         assert all(len(a) == 5 for a in cm[:3]) and len(cm[3]) == 6 and all(abs(x) <= 7 for a in cm for x in a), name
         cm = {**({'rgb': dict(zip('rgb', cm[:3]))} if any(x for a in cm[:3] for x in a) else {}), **({'mix': cm[3]} if any(cm[3]) else {})}
-    out.append({'name': name, 'group': grp, 'film': film, 'desc': desc, **s, 'sharp': TUNED_SHARP.get(name, SHARP.get(name, 0)), **({'matched': True} if name in MATCHED else {}), **cm})
+    traits = {} if RECIPES else CAPTURE_TRAITS.get(name, {})
+    out.append({'name': name, 'group': grp, 'film': film, 'desc': desc, **s, 'sharp': TUNED_SHARP.get(name, SHARP.get(name, 0)), **({'matched': True} if name in MATCHED else {}), **cm, **traits})
 if RECIPES:
     json.dump({'films': out, 'camera': CAMERA}, open(RECIPES, 'w'), separators=(',', ':')); print(len(out), 'recipes'); sys.exit()
 names = [f['name'] for f in out]

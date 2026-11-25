@@ -61,12 +61,31 @@ Each 1024-byte record follows its recipe's slot. Reserved bytes are zero.
 |---|---:|---|
 | 0 | 1 | 0 = built-in art and caption, 1 = band, 2 = wave, 3 = diagonal |
 | 1 | 9 | Paper, ink, accent colors as RGB triples |
+| 10 | 1 | Extended editor layout: 0 uses byte 0; 4 spine, 5 triple stripe, 6 slide mount, 7 film ticket. Layouts 8–13 use the specimen references below. Extended layouts set byte 0 to 1 for cameras that display the packed tile. |
 | 12 | 33 | Zero-padded UTF-8 wordmark, up to 8 Unicode scalar values |
 | 45 | 41 | Zero-padded UTF-8 caption, up to 10 Unicode scalar values |
 | 96 | 16 | Four palette entries, each Y/Cb/Y/Cr |
 | 112 | 576 | 48 × 48 label, 2 bits per pixel, high bits first |
 | 688 | 288 | 144 × 16 caption mask, one bit per pixel, high bit first |
 | 976 | 1 | Per-roll JPEG processing. Bits 1–4 enable false-colour infrared, colour screen print, film leader burn and back light leak. Bit 5 enables Sunlit Foliage recolouring in any slot. Bit 0 reserves three-exposure colour separation. Zero selects the recipe's normal processing, including the legacy named FILM 20 in firmware that supports it. |
+
+The packaging layouts are simplified drawings based on these Film Packaging Archive scans (in record order):
+[CineStill 800T](https://fp-archive.com/film_packaging/by_brand.html#cinestill-800t-ref-c96e),
+[Kodak Gold 200](https://fp-archive.com/film_packaging/by_brand.html#kodak-gold-200-ref-795c),
+[Kodak Portra 400, 120 pack](https://fp-archive.com/film_packaging/by_brand.html#kodak-portra-400-ref-9f18),
+[Fujifilm Velvia 50](https://fp-archive.com/film_packaging/by_brand.html#fujifilm-velvia-50-ref-9678),
+[Kodak Ektachrome E100](https://fp-archive.com/film_packaging/by_brand.html#kodak-ektachrome-e100-ref-94ff),
+[Polaroid Color 600 Film, 16 exposures](https://fp-archive.com/film_packaging/by_brand.html#polaroid-color-600-film-ref-e12f).
+Layouts 14–21 follow the packaging of
+[Provia 100F, 120](https://fp-archive.com/film_packaging/by_brand.html#fujifilm-fujichrome-provia-100f-ref-1b4b),
+[Pro 400H, 220](https://fp-archive.com/film_packaging/by_brand.html#fujifilm-fujicolor-pro-400h-ref-48ed),
+[Pro 160S, monochrome 135 illustration on page 4](https://125px.com/docs/film/fuji/AF3-203U_Pro160S_Product_Information_Bulletin.pdf#page=4),
+[NHG II 800, 120](https://buymorefilm.com/products/fuji-fujicolor-nhg-ii-800-120-film),
+[Superia X-TRA 400](https://fp-archive.com/film_packaging/by_brand.html#fujifilm-fujicolor-superia-x-tra-ref-713b),
+[Fuji C200](https://fp-archive.com/film_packaging/by_brand.html#fujifilm-fujicolor-c200-ref-2585),
+[Fujifilm 200](https://fp-archive.com/film_packaging/by_brand.html#fujifilm-200-ref-5b41) and
+[Natura 1600](https://fp-archive.com/film_packaging/by_brand.html#fujifilm-fujicolor-natura-1600-ref-2e06).
+The camera tile reduces each design to four colours at 48 × 48 pixels.
 
 LookLab keeps the editable fields and generates both bitmaps when exporting.
 The firmware reads the optional data with the card's recipe bank, checks its

@@ -1,9 +1,11 @@
 // Stable bit order in the optional OM3L record, byte 976.
-export const filmEffects = ['trichrome', 'infrared', 'screenprint', 'leader', 'lightLeak'] as const;
+import sunlitTableUrl from './data/sunlit.lut?url&inline';
+
+export const filmEffects = ['trichrome', 'infrared', 'screenprint', 'leader', 'lightLeak', 'sunlit'] as const;
 export type FilmEffect = typeof filmEffects[number];
 export const effectNames: Record<FilmEffect, string> = {
   trichrome: '分色不同步', infrared: '假色红外', screenprint: '彩色网版印刷',
-  leader: '卷首燃烧纹', lightLeak: '机背漏光',
+  leader: '卷首燃烧纹', lightLeak: '机背漏光', sunlit: 'Sunlit 重着色',
 };
 export function parseFilmEffects(input: unknown): FilmEffect[] {
   if (!Array.isArray(input) || input.some(x => !filmEffects.includes(x))) throw new Error('胶卷效果无效');
@@ -12,6 +14,7 @@ export function parseFilmEffects(input: unknown): FilmEffect[] {
 
 /** Static first-frame preview. A roll seed on the camera comes from its clock. */
 export function previewFilmEffects(img: Float32Array, w: number, h: number, effects: FilmEffect[], name: string) {
+  if (effects.includes('sunlit')) previewSunlit(img, w, h);
   const ir = effects.includes('infrared'), print = effects.includes('screenprint');
   const leader = effects.includes('leader'), back = effects.includes('lightLeak');
   if (!(ir || print || leader || back)) return;
@@ -54,5 +57,29 @@ export function previewFilmEffects(img: Float32Array, w: number, h: number, effe
     img[i]=r+(1-r)*mask;
     img[i+1]=g+(limit(.28+mask*mask)-g)*mask;
     img[i+2]=b+(limit(.08+mask**4)-b)*mask;
+  }
+}
+
+let sunlitTable: Uint8Array | undefined;
+function previewSunlit(img: Float32Array, w: number, h: number) {
+  sunlitTable ??= Uint8Array.from(atob(sunlitTableUrl.split(',')[1]), c => c.charCodeAt(0));
+  const table = sunlitTable;
+  const byte = (v: number) => Math.round(Math.max(0, Math.min(255, v)));
+  let seed = 21760;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = 3 * (y * w + x);
+      const [r, g, b] = [img[i], img[i+1], img[i+2]];
+      const yy = 255 * (.299*r + .587*g + .114*b);
+      const cb = byte(128 + (255*b - yy) / 1.772) >> 4;
+      const cr = byte(128 + (255*r - yy) / 1.402) >> 4;
+      const light = table[(cb * 16 + cr) * 64 + (byte(yy) >> 2)];
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      const idx = 16384 + ((seed >>> 26) * 256 + light) * 4;
+      const outY = table[idx], u = table[idx+1] - 128, v = table[idx+3] - 128;
+      img[i] = byte(outY + 1.402*v) / 255;
+      img[i+1] = byte(outY - .344*u - .714*v) / 255;
+      img[i+2] = byte(outY + 1.772*u) / 255;
+    }
   }
 }

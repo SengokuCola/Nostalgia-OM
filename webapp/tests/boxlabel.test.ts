@@ -43,7 +43,7 @@ describe('optional OM3L box labels', () => {
     bank[0][0] = blankProfile('IR');
     bank[3][4] = blankProfile('Leaks');
     const base = profilesBin(bank, 28);
-    bank[0][0]!.filmEffects = ['infrared', 'screenprint'];
+    bank[0][0]!.filmEffects = ['infrared', 'screenprint', 'sunlit'];
     bank[3][4]!.filmEffects = ['trichrome', 'leader', 'lightLeak'];
     const extended = profilesBin(bank, 28);
     expect(extended.slice(0,1632)).toEqual(base);
